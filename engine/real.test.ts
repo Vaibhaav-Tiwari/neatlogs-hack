@@ -853,6 +853,7 @@ describe('runRealTally', () => {
       dryRun: false,
       baseline: false,
       outputDir: join(dir, 'cfoai-remaining'),
+      latestRunDir: join(dir, 'latest'),
       now: fixedNow,
       ports: {
         intake,
