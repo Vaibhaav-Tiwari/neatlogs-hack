@@ -68,16 +68,16 @@ describe('runTally dry-run', () => {
   it('runs dry-run through the real loop with routing, ceiling stop, escalation and budget skip', async () => {
     const { dir, configPath } = writeFixture();
     const outputDir = join(dir, 'out');
-    const result = await runTally({ configPath, dryRun: true, baseline: false, budgetUsd: 7, outputDir, now: fixedNow });
+    const result = await runTally({ configPath, dryRun: true, baseline: false, budgetUsd: 4.9, outputDir, now: fixedNow });
 
     expect(result.runState.runId).toBe('run-20261011-030000Z');
     expect(result.runState.tasks).toHaveLength(3);
     expect(result.ledger.map((row) => `${row.taskId}:${row.attempt}:${row.result}:${row.tier}`)).toEqual([
       'T1:1:passed:cheap',
-      'T2:1:stopped:middle',
-      'T2:2:passed:top',
+      'T2:1:stopped:cheap',
+      'T2:2:passed:middle',
     ]);
-    expect(result.runState.tasks[1]).toMatchObject({ status: 'passed', attempts: 2, escalated: true, tier: 'top' });
+    expect(result.runState.tasks[1]).toMatchObject({ status: 'passed', attempts: 2, escalated: true, tier: 'middle' });
     expect(result.runState.tasks[2]).toMatchObject({ status: 'skipped', statusReason: 'not started: no budget' });
     expect(result.ledger.every((row) => row.costSource === 'simulated')).toBe(true);
     expect(result.ledger[0]?.decision).toContain('expected to cost');

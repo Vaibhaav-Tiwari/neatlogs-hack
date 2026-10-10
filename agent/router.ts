@@ -10,19 +10,21 @@
  */
 import { ceilingNanos, nanosToUsd } from '../schema/money.js';
 import type { TallyConfig, TaskSize, Tier } from '../schema/types.js';
-import { DEFAULT_PRIOR_WEIGHT, estimateFor, tierRank } from './history.js';
-import type { BudgetPort, PriceHistoryPort, TaskInput, TraceAttributes, TracePort } from './ports.js';
+import { DEFAULT_PRIOR_WEIGHT, estimateFor, priorFor } from './history.js';
+import type { BudgetPort, PriceHistoryPort, PriceStats, TaskInput, TraceAttributes, TracePort } from './ports.js';
 import type { SizeEstimate } from './sizer.js';
 import { traceDecision } from './trace.js';
 
 export interface RoutingOptions {
   /**
-   * Confidence the cheapest tier needs. Tiers in between need proportionally
-   * less, and the strongest tier needs none.
+   * Kept for compatibility with older callers; routing now derives the
+   * confidence needed for each cheaper tier from the expected-cost rule.
    */
-  cheapConfidence: number;
+  cheapConfidence?: number;
   /** How many observed attempts the prior is worth. */
   priorWeight: number;
+  /** Observations needed before routing trusts a history cell over the prior. */
+  minHistoryAttempts: number;
   /**
    * When the budget rules out the preferred tier, a cheaper one is tried
    * only if it is expected to pass at least this often.
@@ -31,8 +33,8 @@ export interface RoutingOptions {
 }
 
 export const DEFAULT_ROUTING: RoutingOptions = {
-  cheapConfidence: 0.65,
   priorWeight: DEFAULT_PRIOR_WEIGHT,
+  minHistoryAttempts: 2,
   minPassRateOnTightBudget: 0.5,
 };
 
@@ -90,11 +92,54 @@ interface Candidate {
   tier: Tier;
   ceiling: number;
   passRate: number;
+  avgCostNanos: number;
+  attempts: number;
+  source: 'history' | 'prior' | 'thin-history';
   expected: number;
+  expectedOnPrior: number;
   neededConfidence: number;
   worthIt: boolean;
+  worthItOnPrior: boolean;
   confident: boolean;
   fits: boolean;
+}
+
+interface PlanningEstimate {
+  passRate: number;
+  avgCostNanos: number;
+  attempts: number;
+  source: 'history' | 'prior' | 'thin-history';
+}
+
+async function observedFor(history: PriceHistoryPort | undefined, size: TaskSize, tier: string): Promise<PriceStats | null> {
+  try {
+    const observed = (await history?.lookup(size, tier)) ?? null;
+    return observed && observed.attempts > 0 ? observed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function planningEstimate(input: {
+  config: TallyConfig;
+  history: PriceHistoryPort | undefined;
+  size: TaskSize;
+  tierName: string;
+  minHistoryAttempts: number;
+}): Promise<PlanningEstimate> {
+  const prior = priorFor(input.config, input.size, input.tierName);
+  const observed = await observedFor(input.history, input.size, input.tierName);
+  if (!observed) return { ...prior, attempts: 0, source: 'prior' };
+  if (observed.attempts < input.minHistoryAttempts) {
+    return { ...prior, attempts: observed.attempts, source: 'thin-history' };
+  }
+  return { passRate: observed.passRate, avgCostNanos: observed.avgCostNanos, attempts: observed.attempts, source: 'history' };
+}
+
+function neededConfidenceForRule(ceiling: number, passRate: number, topCost: number): number {
+  if (ceiling <= 0) return 0;
+  if (passRate <= 0 || topCost <= 0) return 1;
+  return Math.min(1, ceiling / (passRate * topCost));
 }
 
 async function routeTaskCore(input: RouteInput): Promise<RouteDecision> {
@@ -105,38 +150,74 @@ async function routeTaskCore(input: RouteInput): Promise<RouteDecision> {
   if (!top) throw new Error('tally.yaml has no tiers');
 
   const remaining = Math.max(0, await input.ports.budget.remainingNanos());
-  const topCost = (await estimateFor(config, input.ports.history, size, top.name, options.priorWeight)).avgCostNanos;
+  const topPlan = await planningEstimate({
+    config,
+    history: input.ports.history,
+    size,
+    tierName: top.name,
+    minHistoryAttempts: options.minHistoryAttempts,
+  });
+  const topPriorCost = (await estimateFor(config, undefined, size, top.name, options.priorWeight)).avgCostNanos;
+  const topCost = topPlan.avgCostNanos;
   const topCeiling = ceilingNanos(config, size, top);
   const subject = `${size} task with ${estimate.summary}`;
   const common = { taskId: task.taskId, size, confidence };
 
   const cheaper: Candidate[] = [];
   for (const tier of config.tiers.slice(0, -1)) {
-    const { passRate } = await estimateFor(config, input.ports.history, size, tier.name, options.priorWeight);
+    const plan = await planningEstimate({
+      config,
+      history: input.ports.history,
+      size,
+      tierName: tier.name,
+      minHistoryAttempts: options.minHistoryAttempts,
+    });
+    const prior = priorFor(config, size, tier.name);
     const ceiling = ceilingNanos(config, size, tier);
-    const expected = Math.round(ceiling + (1 - passRate) * topCost);
-    const neededConfidence = options.cheapConfidence * (1 - tierRank(config, tier.name));
+    const expected = Math.round(ceiling + (1 - plan.passRate) * topCost);
+    const expectedOnPrior = Math.round(ceiling + (1 - prior.passRate) * topPriorCost);
+    const neededConfidence = neededConfidenceForRule(ceiling, plan.passRate, topCost);
     cheaper.push({
       tier,
       ceiling,
-      passRate,
+      passRate: plan.passRate,
+      avgCostNanos: plan.avgCostNanos,
+      attempts: plan.attempts,
+      source: plan.source,
       expected,
+      expectedOnPrior,
       neededConfidence,
       worthIt: expected < topCost,
+      worthItOnPrior: expectedOnPrior < topPriorCost,
       confident: confidence >= neededConfidence,
       fits: ceiling <= remaining,
     });
   }
 
+  const historyNote = (candidate: Candidate): string | null => {
+    if (candidate.source === 'thin-history') {
+      return `History has only ${candidate.attempts} ${candidate.tier.name} attempt${candidate.attempts === 1 ? '' : 's'} for ${size}, so it uses the prior`;
+    }
+    if (candidate.source === 'prior') return `No usable history exists for ${candidate.tier.name} on ${size}, so it uses the prior`;
+    if (candidate.worthIt !== candidate.worthItOnPrior) {
+      return `History changed the choice for ${candidate.tier.name}: ${candidate.attempts} attempts show a ${percent(candidate.passRate)} pass rate and ${usd(candidate.avgCostNanos)} average cost`;
+    }
+    return null;
+  };
+
   // Why the tiers below the chosen one were passed over, most telling first.
   const passedOver = (below: Candidate[]): string | null => {
     const unsure = below.find((c) => c.worthIt && !c.confident);
     if (unsure) {
-      return `${capitalise(subject)} is too uncertain for ${unsure.tier.name} (confidence ${confidence.toFixed(2)} of ${unsure.neededConfidence.toFixed(2)} needed)`;
+      const note = historyNote(unsure);
+      const reason = `${subject} is too uncertain for ${unsure.tier.name} (confidence ${confidence.toFixed(2)} of ${unsure.neededConfidence.toFixed(2)} needed)`;
+      return note ? `${note}; ${reason}` : capitalise(reason);
     }
     const failing = below.find((c) => !c.worthIt);
     if (failing) {
-      return `${capitalise(failing.tier.name)} is expected to fail ${percent(1 - failing.passRate)} of ${size} tasks, too often for an attempt capped at ${usd(failing.ceiling)} to beat ${usd(topCost)} on ${top.name}`;
+      const note = historyNote(failing);
+      const reason = `${failing.tier.name} is expected to fail ${percent(1 - failing.passRate)} of ${size} tasks, too often for an attempt capped at ${usd(failing.ceiling)} to beat ${usd(topCost)} on ${top.name}`;
+      return note ? `${note}; ${reason}` : capitalise(reason);
     }
     return null;
   };
@@ -146,9 +227,12 @@ async function routeTaskCore(input: RouteInput): Promise<RouteDecision> {
   if (chosen) {
     const why = passedOver(cheaper.slice(0, chosenIndex));
     const odds = `expected to cost ${usd(chosen.expected)} against ${usd(topCost)} for going straight to ${top.name}`;
+    const note = historyNote(chosen);
     const reason = why
       ? `${why}, so it starts on ${chosen.tier.name} capped at ${usd(chosen.ceiling)}, ${odds}.`
-      : `${capitalise(subject)}, so a ${chosen.tier.name} attempt capped at ${usd(chosen.ceiling)} is ${odds}.`;
+      : note
+        ? `${note}; ${subject} starts on ${chosen.tier.name} capped at ${usd(chosen.ceiling)}, ${odds}.`
+        : `${capitalise(subject)}, so a ${chosen.tier.name} attempt capped at ${usd(chosen.ceiling)} is ${odds}.`;
     return {
       ...common,
       action: 'start',

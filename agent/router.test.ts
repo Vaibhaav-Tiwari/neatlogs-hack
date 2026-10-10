@@ -94,10 +94,10 @@ describe('routeTask', () => {
     expect(decision.reason).toMatch(/uncertain/);
   });
 
-  it('starts in the middle when it is sure enough for that but not for the cheapest', async () => {
+  it('derives the confidence threshold from the expected-cost rule instead of a hand-set cutoff', async () => {
     const decision = started(await route('medium', 0.5));
-    expect(decision.tier.name).toBe('silver');
-    expect(decision.reason).toMatch(/uncertain for bronze/);
+    expect(decision.tier.name).toBe('bronze');
+    expect(decision.reason).toContain('uses the prior');
   });
 
   it('applies the rule: ceiling + P(fail) x top cost must be below top cost', async () => {
@@ -135,7 +135,24 @@ describe('routeTask', () => {
   it('uses the prior when the history cannot be read', async () => {
     const history = new FakeHistory();
     history.failWith = new Error('unreachable');
-    expect(started(await route('small', 0.9, 40, history)).tier.name).toBe('bronze');
+    const decision = started(await route('small', 0.9, 40, history));
+    expect(decision.tier.name).toBe('bronze');
+    expect(decision.reason).toContain('uses the prior');
+  });
+
+  it('falls back to the prior when there is too little history and says so', async () => {
+    const history = new FakeHistory().set('small', 'bronze', { attempts: 1, passRate: 0, avgCostNanos: usdToNanos(0.3) });
+    const decision = started(await route('small', 0.9, 40, history));
+    expect(decision.tier.name).toBe('bronze');
+    expect(decision.reason).toContain('History has only 1 bronze attempt for small, so it uses the prior');
+  });
+
+  it('says when observed history changed the routing choice', async () => {
+    const history = new FakeHistory().set('small', 'bronze', { attempts: 2, passRate: 0, avgCostNanos: usdToNanos(0.3) });
+    const decision = started(await route('small', 1, 40, history));
+    expect(decision.tier.name).not.toBe('bronze');
+    expect(decision.reason).toContain('History changed the choice for bronze');
+    expect(decision.reason).toContain('2 attempts');
   });
 
   describe('budget', () => {
