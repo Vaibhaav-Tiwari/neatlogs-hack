@@ -220,5 +220,9 @@ export interface TallyConfig {
     };
   };
   concurrency?: number;
+  entire?: {
+    /** Off by default: generation may export session content to Entire's summary provider. */
+    generatedSummaries?: boolean;
+  };
   integrations: Record<'neatlogs' | 'entire' | 'cfoai' | 'slack', boolean>;
 }

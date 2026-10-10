@@ -117,6 +117,10 @@ export interface HandoffContext {
   branch?: string | null;
   checkoutPath?: string | null;
   checkpointId?: string | null;
+  task?: TaskInput;
+  result?: AttemptResult;
+  resultReason?: string | null;
+  changedFiles?: string[];
 }
 
 export interface HandoffPort {

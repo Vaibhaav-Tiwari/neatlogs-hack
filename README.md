@@ -89,8 +89,12 @@ With `integrations.entire: true`, enable Entire in the target repository and
 trust its Codex hooks through `/hooks` before starting workers. Tally records
 the task commit's `Entire-Checkpoint` trailer and its native `entireSessionId`
 separately from the AO `sessionId`. Logs-only checkpoints retain conversation
-context; escalation uses a generated summary when available and otherwise
-describes the recorded files without claiming an AI summary was generated.
+context; escalation defaults to a metadata-only handoff containing the
+checkpoint/session IDs, branch, recorded and changed files, attempt verdict,
+and task text. It does not generate a summary or export a transcript.
+`entire.generatedSummaries: true` explicitly opts into Entire's summary
+provider (`checkpoint explain --generate`), which may export session content;
+this setting is off by default and requires the user's approval.
 When Tally publishes a verified branch, it also pushes the checkpoint refs
 named by its new commits to `origin` and to an `entire` remote when configured.
 Checkpoint upload failures are reported as publishing failures. Dry runs do
