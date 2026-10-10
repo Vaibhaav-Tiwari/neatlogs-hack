@@ -1,9 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { contentHash, configHash, installRecordPath, type InstallRecord } from './install-record.js';
+import { applyInitTransaction, finishInitTransaction, pendingInitPath, readPendingInit, type InitTransaction } from './init-transaction.js';
+import { validateConfig, type TallyConfig } from '../schema/index.js';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { runDoctor, type DoctorLine } from './doctor.js';
 import { tierPriceNote } from './pricing.js';
+import { CommandError, resolveAoBinary, runCommand } from '../adapters/command.js';
+import { checkCfoaiConnection } from '../adapters/cfoai.js';
+import { loadEnv } from './env.js';
 
 export interface InitCommandResult {
   stdout: string;
@@ -24,6 +29,8 @@ export interface InitOptions {
   print?: (line: string) => void;
   yes?: boolean;
   dryRun?: boolean;
+  env?: Record<string, string>;
+  cfoaiCheck?: typeof checkCfoaiConnection;
 }
 
 export interface InitResult {
@@ -49,7 +56,8 @@ const CLAUDE_TIERS = [
   ['top', 'claude-opus-5-5', 4, 0.4, 20, 1],
 ] as const;
 
-export async function defaultCommand(file: string, args: string[], options?: { cwd?: string }): Promise<InitCommandResult> {
+export async function defaultCommand(file: string, args: string[], options?: { cwd?: string; aoBin?: string }): Promise<InitCommandResult> {
+  if (file === 'ao') resolveAoBinary(options);
   // The CLI config mirror drops fields such as effort; use the full daemon object.
   if (file === 'ao' && args[0] === 'project' && (args[1] === 'get' || args[1] === 'set-config')) {
     const id = encodeURIComponent(args[2]!);
@@ -58,14 +66,19 @@ export async function defaultCommand(file: string, args: string[], options?: { c
       method: editing ? 'PUT' : 'GET',
       ...(editing ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ config: JSON.parse(args[args.indexOf('--config-json') + 1]!) }) } : {}),
       signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) throw new Error(`AO project ${args[1]} failed: HTTP ${response.status}`);
+    }).catch(() => { throw new InitError('AO project API could not be reached; start AO and retry.'); });
+    if (!response.ok) throw new InitError(`AO project ${args[1]} failed: HTTP ${response.status}; check AO is running before retrying.`);
     return { stdout: JSON.stringify(await response.json()), stderr: '' };
   }
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const result = await promisify(execFile)(file, args, { cwd: options?.cwd, encoding: 'utf8' });
-  return { stdout: String(result.stdout), stderr: String(result.stderr) };
+  return runCommand(file, args, options);
+}
+
+async function projectOrNull(command: InitCommandRunner, projectId: string, cwd: string): Promise<string | null> {
+  try { return (await command('ao', ['project', 'get', projectId, '--json'], { cwd })).stdout; }
+  catch (error) {
+    if (error instanceof Error && /missing project|not found|HTTP 404/i.test(error.message)) return null;
+    throw error;
+  }
 }
 
 export async function defaultReadLine(question: string, defaultValue = ''): Promise<string> {
@@ -83,7 +96,8 @@ export async function defaultReadLine(question: string, defaultValue = ''): Prom
 async function commandOrNull(command: InitCommandRunner, file: string, args: string[], cwd: string): Promise<string | null> {
   try {
     return (await command(file, args, { cwd })).stdout.trim();
-  } catch {
+  } catch (error) {
+    if (file === 'ao' && error instanceof CommandError) throw error;
     return null;
   }
 }
@@ -195,19 +209,33 @@ function withPostCreate(config: unknown, setupCommand: string | null): Record<st
   return base;
 }
 
-async function ensureAoProject(input: { command: InitCommandRunner; cwd: string; repoRoot: string; projectId: string; setupCommand: string | null }) {
-  const existing = await commandOrNull(input.command, 'ao', ['project', 'get', input.projectId, '--json'], input.cwd);
-  if (!existing) {
-    await input.command('ao', ['project', 'add', '--path', input.repoRoot, '--id', input.projectId], { cwd: input.cwd });
+async function initPrerequisites(config: TallyConfig, command: InitCommandRunner, cwd: string, options: InitOptions): Promise<void> {
+  await command('ao', ['status'], { cwd });
+  await command('git', ['--version'], { cwd });
+  await command('gh', ['auth', 'status'], { cwd });
+  const env = options.env ?? { ...loadEnv(), ...process.env };
+  if (config.integrations.neatlogs && !env.NEATLOGS_API_KEY) throw new InitError('neatlogs was requested but NEATLOGS_API_KEY is missing; add it to ~/.tally/.env before rerunning init; nothing was changed.');
+  if (config.integrations.cfoai) {
+    const status = await (options.cfoaiCheck ?? checkCfoaiConnection)();
+    if (status.status !== 'ok') throw new InitError('cfo.ai was requested but is not connected; run tally login cfoai, then rerun init; nothing was changed.');
   }
-  const payloadText = (await input.command('ao', ['project', 'get', input.projectId, '--json'], { cwd: input.cwd })).stdout;
-  const current = (parseYaml(payloadText) as { project?: { config?: unknown } })?.project?.config ?? {};
-  const next = withPostCreate(current, input.setupCommand);
-  const postCreateBefore = Array.isArray((current as Record<string, unknown>).postCreate) ? (current as { postCreate: string[] }).postCreate : [];
-  const postCreateAfter = Array.isArray(next.postCreate) ? next.postCreate as string[] : [];
-  await input.command('ao', ['project', 'set-config', input.projectId, '--config-json', JSON.stringify(next), '--json'], { cwd: input.cwd });
-  return { projectCreated: !existing, projectConfigHash: configHash(next), postCreateExisted: Array.isArray((current as Record<string, unknown>).postCreate), postCreateAfterHash: configHash(postCreateAfter),
-    addedSetupCommand: input.setupCommand && !postCreateBefore.includes(input.setupCommand) ? input.setupCommand : null };
+  if (config.integrations.entire) {
+    await command('entire', ['--version'], { cwd });
+    await command('entire', ['graph', '--help'], { cwd });
+    const status = JSON.parse((await command('entire', ['status', '--json'], { cwd })).stdout);
+    if (status.enabled !== true) throw new InitError(`Entire was requested but is not enabled in ${cwd}; run cd ${JSON.stringify(cwd)} && entire enable, review its repository/hook changes and trust the harness hooks, then rerun init; nothing was changed.`);
+  }
+}
+
+async function finishInit(options: InitOptions, transaction: InitTransaction, command: InitCommandRunner, recordPath: string): Promise<DoctorLine[]> {
+  await applyInitTransaction(transaction, command, recordPath);
+  try {
+    const doctor = await (options.doctor ?? ((path) => runDoctor({ configPath: path })))(transaction.configPath);
+    finishInitTransaction(transaction.configPath);
+    return doctor;
+  } catch (error) {
+    throw new InitError(`Init configured AO and wrote ${transaction.configPath} and ${recordPath}, but doctor failed: ${error instanceof Error ? error.message : 'unknown error'}; rerun tally init --config ${JSON.stringify(transaction.configPath)} to resume from ${pendingInitPath(transaction.configPath)}; files will not be overwritten.`);
+  }
 }
 
 export async function runInit(options: InitOptions = {}): Promise<InitResult> {
@@ -218,7 +246,21 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const repoRoot = (await commandOrNull(command, 'git', ['rev-parse', '--show-toplevel'], cwd)) ?? cwd;
   const configPath = resolve(repoRoot, options.configPath ?? 'tally.yaml');
   const recordPath = installRecordPath(configPath);
-  if (existsSync(configPath) || existsSync(recordPath)) throw new Error('Tally configuration or install record already exists; init will not overwrite it.');
+  const pending = readPendingInit(configPath);
+  if (pending) {
+    const saved = parseYaml(pending.configText) as TallyConfig;
+    const validation = validateConfig(saved);
+    if (!validation.ok || resolve(pending.repoRoot) !== resolve(repoRoot)) throw new InitError('Init recovery configuration is invalid or belongs to a different repository; no changes made.');
+    const resumeCommand: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: saved.repo.aoBin ? resolve(dirname(configPath), saved.repo.aoBin) : undefined }));
+    try { await initPrerequisites(saved, resumeCommand, repoRoot, options); }
+    catch (error) { throw new InitError(`Incomplete init remains at ${pendingInitPath(configPath)}; ${configPath} ${existsSync(configPath) ? 'exists' : 'was not written'}, ${recordPath} ${existsSync(recordPath) ? 'exists' : 'was not written'}; no additional changes made: ${error instanceof Error ? error.message : 'prerequisites failed'}; fix the prerequisite and rerun tally init --config ${JSON.stringify(configPath)}.`); }
+    print(`Resume incomplete init from ${pendingInitPath(configPath)}; preserve matching files and existing AO settings.\n${pending.configText}`);
+    print(`AO project ${pending.record.projectId}; setup entry: ${pending.record.addedSetupCommand ?? 'none'}; worker allow-list: not installed; no global harness settings changed.`);
+    const result = { configPath, projectId: pending.record.projectId, testCommand: saved.test.command, setupCommand: saved.test.setupCommand ?? null, baseBranch: saved.repo.baseBranch, tiers: saved.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
+    if (options.dryRun || (!options.yes && !parseYes(await readLine('Resume these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
+    return { ...result, applied: true, doctor: await finishInit(options, pending, resumeCommand, recordPath) };
+  }
+  if (existsSync(configPath) || existsSync(recordPath)) throw new InitError(`Tally configuration or install record already exists; init will not overwrite it; use tally doctor --config ${JSON.stringify(configPath)} for a completed installation or tally uninstall --config ${JSON.stringify(configPath)} to remove an owned partial installation before retrying.`);
   const baseBranch = (await commandOrNull(command, 'git', ['branch', '--show-current'], repoRoot)) || 'main';
   const remote = await commandOrNull(command, 'git', ['remote', 'get-url', 'origin'], repoRoot);
   let testCommand = detectTestCommand(repoRoot);
@@ -245,7 +287,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   print(`Installed coding agents detected: ${[...agents].join(', ')}. Proposing ${tiers[0]!.harness} tiers.`);
   if (!agents.has('codex')) print('Codex is not installed; proposing tiers for the installed Claude Code agent instead.');
   const projectId = basename(repoRoot);
-  const config = {
+  const config: TallyConfig = {
     version: 1,
     repo: {
       path: '.',
@@ -273,7 +315,12 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     concurrency: 3,
     integrations: { neatlogs, entire, cfoai, slack: false },
   };
-  const existingProject = await commandOrNull(command, 'ao', ['project', 'get', projectId, '--json'], cwd);
+  const validation = validateConfig(config);
+  if (!validation.ok) throw new InitError(`Proposed configuration is invalid: ${validation.errors.join('; ')}; nothing was changed.`);
+  await initPrerequisites(config, command, repoRoot, options);
+  const existingProject = await projectOrNull(command, projectId, cwd);
+  const existingProjectPath = existingProject ? (JSON.parse(existingProject) as { project?: { path?: string } }).project?.path : undefined;
+  if (existingProjectPath && resolve(existingProjectPath) !== resolve(repoRoot)) throw new InitError(`AO project ${projectId} belongs to ${existingProjectPath}, not ${repoRoot}; choose a distinct project id before init; nothing was changed.`);
   const currentProjectConfig = existingProject ? (parseYaml(existingProject) as { project?: { config?: unknown } })?.project?.config ?? {} : {};
   const nextProjectConfig = withPostCreate(currentProjectConfig, setupCommand);
   print('Tally init proposed changes:');
@@ -292,12 +339,13 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   if (options.dryRun || (!options.yes && !parseYes(await readLine('Apply these changes? y/N', 'N')))) {
     return { ...result, applied: false };
   }
-  const projectChanges = await ensureAoProject({ command, cwd, repoRoot, projectId, setupCommand });
   const configText = stringifyYaml(config);
-  const record: InstallRecord = { version: 1, configPath, configHash: contentHash(configText), projectId, ...projectChanges };
-  mkdirSync(dirname(recordPath), { recursive: true });
-  writeFileSync(recordPath, JSON.stringify(record, null, 2), { mode: 0o600, flag: 'wx' });
-  writeFileSync(configPath, configText, { flag: 'wx' });
-  const doctor = await (options.doctor ?? ((path) => runDoctor({ configPath: path })))(configPath);
+  const before = currentProjectConfig as Record<string, unknown>;
+  const postCreateBefore = Array.isArray(before.postCreate) ? before.postCreate as string[] : [];
+  const record: InstallRecord = { version: 1, configPath, configHash: contentHash(configText), projectId,
+    projectCreated: !existingProject, projectConfigHash: configHash(nextProjectConfig),
+    postCreateExisted: Array.isArray(before.postCreate), postCreateAfterHash: configHash(nextProjectConfig.postCreate ?? []),
+    addedSetupCommand: setupCommand && !postCreateBefore.includes(setupCommand) ? setupCommand : null };
+  const doctor = await finishInit(options, { version: 1, repoRoot, configPath, configText, beforeProjectConfigHash: configHash(currentProjectConfig), record }, command, recordPath);
   return { ...result, applied: true, doctor };
 }

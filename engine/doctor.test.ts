@@ -3,8 +3,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runDoctor, type DoctorRunner } from './doctor.js';
+import { CommandError } from '../adapters/command.js';
 
 describe('runDoctor', () => {
+  it('reports a missing AO executable honestly instead of daemon-only connectivity', async () => {
+    const detail = 'Agent Orchestrator (AO) is required; looked in PATH and app bundles; set TALLY_AO_BIN to its executable path.';
+    const lines = await runDoctor({ runner: async (file) => {
+      if (file === 'ao') throw new CommandError(detail, 'ENOENT');
+      return { stdout: 'ok', stderr: '' };
+    }, env: {}, cfoaiCheck: async () => ({ status: 'missing', detail: 'test' }) });
+    expect(lines.find((line) => line.product === 'AO daemon')).toMatchObject({ status: 'missing', detail, fix: expect.stringContaining('TALLY_AO_BIN') });
+  });
   it('reports product status and exact fix commands', async () => {
     const runner: DoctorRunner = async (file, args) => {
       const command = `${file} ${args.join(' ')}`;

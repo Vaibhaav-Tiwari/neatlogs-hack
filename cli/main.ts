@@ -5,6 +5,7 @@ import { BacklogError } from '../engine/backlog.js';
 import { ConfigError, loadConfig } from '../engine/config.js';
 import { runDoctor } from '../engine/doctor.js';
 import { InitError, runInit } from '../engine/init.js';
+import { CommandError } from '../adapters/command.js';
 import { runUninstall } from '../engine/uninstall.js';
 import { runExperiment } from '../engine/experiment.js';
 import { planTally, readPlanBudget } from '../engine/plan.js';
@@ -242,6 +243,11 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
     io.stdout(`wrote ${result.ledgerPath}`);
     io.stdout(`updated ${result.latestRunDir}`);
     io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+    if (result.runState.tasks.length === 0 && result.runState.backlog?.source === 'github-issues') {
+      const label = result.runState.backlog.issueLabel ?? 'tally';
+      const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
+      io.stdout(`No matching open issues with label ${JSON.stringify(label)} in ${result.runState.repo}; nothing started. Label an issue with: gh issue edit <issue-number> --repo ${quote(result.runState.repo)} --add-label ${quote(label)}`);
+    }
     printIntegrations(result, io);
     if (options.dashboard) await dashboardCommand(options, io);
     return 0;
@@ -267,7 +273,8 @@ async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
     }
     return result.doctor.some((line) => line.status !== 'connected') ? 1 : 0;
   } catch (e) {
-    return reportError('tally init', e, io);
+    io.stderr(`tally init: ${e instanceof Error ? e.message : 'initialization failed; no changes confirmed'}`);
+    return 2;
   }
 }
 
@@ -349,7 +356,7 @@ async function marketCommand(options: CliOptions, io: CliIO): Promise<number> {
 }
 
 function reportError(prefix: string, error: unknown, io: CliIO): number {
-  if (error instanceof InitError || error instanceof ConfigError || error instanceof BacklogError || error instanceof RunError || error instanceof CrustDataError) {
+  if (error instanceof CommandError || error instanceof InitError || error instanceof ConfigError || error instanceof BacklogError || error instanceof RunError || error instanceof CrustDataError) {
     io.stderr(`${prefix}: ${error.message}`);
     return 2;
   }

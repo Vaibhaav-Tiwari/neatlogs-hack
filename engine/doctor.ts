@@ -1,12 +1,10 @@
-import { execFile } from 'node:child_process';
+import { CommandError, runCommand } from '../adapters/command.js';
 import { existsSync } from 'node:fs';
-import { promisify } from 'node:util';
+import { dirname, resolve } from 'node:path';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadConfig } from './config.js';
 import { loadEnv } from './env.js';
 import { checkSetupPostCreate, checkWorkerAutoMode } from './preflight.js';
-
-const execFileAsync = promisify(execFile);
 
 export type DoctorStatus = 'connected' | 'missing' | 'broken';
 
@@ -17,17 +15,13 @@ export interface DoctorLine {
   fix: string | null;
 }
 
-export type DoctorRunner = (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
+export type DoctorRunner = (file: string, args: string[], options?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }>;
 
 export interface DoctorOptions {
   runner?: DoctorRunner;
   env?: Record<string, string>;
   cfoaiCheck?: typeof checkCfoaiConnection;
   configPath?: string;
-}
-
-function defaultRunner(file: string, args: string[]) {
-  return execFileAsync(file, args);
 }
 
 async function commandLine(product: string, runner: DoctorRunner, file: string, args: string[], fix: string): Promise<DoctorLine> {
@@ -37,7 +31,7 @@ async function commandLine(product: string, runner: DoctorRunner, file: string, 
   } catch (e) {
     const code = (e as { code?: unknown }).code;
     const status: DoctorStatus = code === 'ENOENT' ? 'missing' : 'broken';
-    return { product, status, detail: status === 'missing' ? `${file} not found` : `${file} failed`, fix };
+    return { product, status, detail: e instanceof CommandError ? e.message : status === 'missing' ? `${file} not found` : `${file} failed`, fix: file === 'ao' && status === 'missing' ? 'set TALLY_AO_BIN to the installed AO executable path' : fix };
   }
 }
 
@@ -63,7 +57,8 @@ async function aoWorkerModeLine(configPath: string, runner: DoctorRunner): Promi
       detail: check.detail,
       fix: check.ok ? null : check.fix,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof CommandError && error.code === 'ENOENT') return { product: 'AO worker auto mode', status: 'missing', detail: error.message, fix: 'set TALLY_AO_BIN to the installed AO executable path' };
     return {
       product: 'AO worker auto mode',
       status: 'missing',
@@ -96,7 +91,8 @@ async function aoSetupPostCreateLine(configPath: string, runner: DoctorRunner): 
       detail: check.detail,
       fix: check.ok ? null : check.fix,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof CommandError && error.code === 'ENOENT') return { product: 'AO setup post-create', status: 'missing', detail: error.message, fix: 'set TALLY_AO_BIN to the installed AO executable path' };
     return {
       product: 'AO setup post-create',
       status: 'missing',
@@ -107,8 +103,12 @@ async function aoSetupPostCreateLine(configPath: string, runner: DoctorRunner): 
 }
 
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine[]> {
-  const runner = options.runner ?? defaultRunner;
-  const env = options.env ?? loadEnv();
+  const config = options.configPath && existsSync(options.configPath) ? loadConfig(options.configPath) : null;
+  const runner = options.runner ?? ((file, args, commandOptions) => runCommand(file, args, {
+    ...commandOptions,
+    aoBin: config?.repo.aoBin ? resolve(dirname(options.configPath!), config.repo.aoBin) : undefined,
+  }));
+  const env = options.env ?? { ...loadEnv(), ...process.env };
   const cfoaiCheck = options.cfoaiCheck ?? checkCfoaiConnection;
   const lines: DoctorLine[] = [];
   lines.push(await commandLine('AO daemon', runner, 'ao', ['status'], 'ao start'));
@@ -121,6 +121,16 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
   lines.push(await commandLine('GitHub CLI', runner, 'gh', ['auth', 'status'], 'gh auth login'));
   lines.push(await commandLine('Entire CLI', runner, 'entire', ['--version'], 'pipx install entire'));
   lines.push(await commandLine('Entire graph plugin', runner, 'entire', ['graph', '--help'], 'entire enable'));
+  if (config?.integrations.entire) {
+    const cwd = resolve(dirname(options.configPath!), config.repo.path);
+    try {
+      const output = await runner('entire', ['status', '--json'], { cwd });
+      const enabled = JSON.parse(output.stdout).enabled === true;
+      lines.push({ product: 'Entire repository', status: enabled ? 'connected' : 'missing', detail: enabled ? `Entire is enabled in ${cwd}` : `Entire is not enabled in ${cwd}`, fix: enabled ? null : `cd ${JSON.stringify(cwd)} && entire enable` });
+    } catch (error) {
+      lines.push({ product: 'Entire repository', status: 'broken', detail: error instanceof Error ? error.message : 'Entire status failed', fix: `cd ${JSON.stringify(cwd)} && entire enable` });
+    }
+  }
   lines.push(
     env.NEATLOGS_API_KEY
       ? { product: 'neatlogs key', status: 'connected', detail: 'NEATLOGS_API_KEY is set', fix: null }

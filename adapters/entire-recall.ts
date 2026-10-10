@@ -1,8 +1,7 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runCommand } from './command.js';
 import type { CheckpointRecall, CheckpointRecallPort, TaskInput } from '../agent/ports.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync = runCommand;
 
 export interface CommandResult {
   stdout: string;

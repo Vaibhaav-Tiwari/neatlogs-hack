@@ -1,4 +1,5 @@
-import { exec, execFile } from 'node:child_process';
+import { exec } from 'node:child_process';
+import { runCommand } from './command.js';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,7 +7,7 @@ import { promisify } from 'node:util';
 import type { TallyConfig } from '../schema/index.js';
 
 const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
+const execFileAsync = runCommand;
 
 export interface VerifyInput {
   checkoutPath: string | null;
