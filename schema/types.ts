@@ -72,6 +72,8 @@ export interface LedgerRow {
   /** attemptId of the attempt this one took over from, if it is an escalation. */
   escalatedFrom: string | null;
   handoff: Handoff;
+  /** Exact context included in the worker prompt; null for an initial attempt. */
+  handoffText?: string | null;
   prUrl: string | null;
   /** Neatlogs trace id for the routing or escalation decision that created this attempt. */
   traceId: string | null;

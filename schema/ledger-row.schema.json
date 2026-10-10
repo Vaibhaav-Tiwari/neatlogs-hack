@@ -69,6 +69,7 @@
     "scopeWarnings": { "type": "array", "items": { "type": "string" } },
     "escalatedFrom": { "type": ["string", "null"] },
     "handoff": { "enum": ["none", "restart", "entire-handoff"] },
+    "handoffText": { "type": ["string", "null"] },
     "prUrl": { "type": ["string", "null"], "format": "uri" },
     "traceId": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{32}$" },
     "traceUrl": { "type": ["string", "null"], "format": "uri" },
