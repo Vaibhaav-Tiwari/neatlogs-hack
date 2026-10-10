@@ -5,7 +5,8 @@ import { frameAt } from './replay-core.js';
 import { displayedCost, isRunning, withLiveCosts } from './live-state.js';
 import { createCodeGraph } from './code-graph.js';
 import { experimentMarkup, experimentMatches, validExperiment } from './experiment-view.js';
-import { budgetPageUrl } from './budget-link.js';
+import { budgetPageUrl, budgetProvenance } from './budget-link.js';
+import { attemptAmounts, attemptReason } from './cost-format.js';
 import { copyableIdEvidence, installSessionCopy, sessionEvidence } from './session-evidence.js';
 import { reasonText } from './reason-text.js';
 
@@ -445,13 +446,11 @@ function drawComparison(run, source) {
 }
 
 function budgetSource(run) {
-  if (run.budget.source !== 'cfoai') return 'Source: tally.yaml';
+  const provenance = budgetProvenance(run.budget);
   const pageUrl = budgetPageUrl(run.budget);
-  const label = 'Source: cfo.ai budget table';
-  if (pageUrl) {
-    return `Source: <a href="${esc(pageUrl)}" target="_blank" rel="noreferrer">cfo.ai budget table</a>`;
-  }
-  return label;
+  const label = value => value.startsWith('cfo.ai') && pageUrl
+    ? `<a href="${esc(pageUrl)}" target="_blank" rel="noreferrer">${esc(value)}</a>` : esc(value);
+  return `Limit source: ${label(provenance.limit)} · System of record: ${label(provenance.record)}`;
 }
 
 function drawBudget(run, ledger) {
@@ -622,7 +621,7 @@ function taskDecision(attempts) {
   const first = attempts[0];
   const last = attempts[attempts.length - 1];
   const carry = attempts.length > 1 && last?.escalatedFrom ? `<p class="carried">Latest attempt continues the previous work.</p>` : '';
-  return `${carry}<p>${esc(first.decision)}</p>${last?.attempt !== first.attempt ? `<p class="reason">Final decision: ${esc(last.decision)}</p>` : ''}${last?.resultReason ? `<p class="reason ${last.result === 'stopped' ? 'over' : ''}">${reasonText(last.resultReason)}</p>` : ''}`;
+  return `${carry}<p>${esc(first.decision)}</p>${last?.attempt !== first.attempt ? `<p class="reason">Final decision: ${esc(last.decision)}</p>` : ''}${last?.resultReason ? `<p class="reason ${last.result === 'stopped' ? 'over' : ''}">${reasonText(attemptReason(last))}</p>` : ''}`;
 }
 
 const taskGraphs = new Map();
@@ -692,18 +691,19 @@ function attemptTable(run, ledger) {
       const running = isRunning(row);
       const kind = running ? 'running' : row.result;
       const suspect = isSuspectPass(row, run);
+      const amounts = attemptAmounts(displayedCost(row), row.ceilingNanos, row.result === 'stopped');
       const links = [link(row.prUrl, 'PR'), aoSessionEvidence(row.sessionId), idEvidence('Entire session', row.entireSessionId), checkpointEvidence(row), traceEvidence(row)].filter(Boolean);
       const tokenSplit = `${count(row.tokens.uncachedInput)} in, ${count(row.tokens.cachedInput)} cached, ${count(row.tokens.output)} out`;
       return `<tr class="attempt-row a-${esc(kind)} ${suspect ? 'a-suspect' : ''}">
         <td class="fig" data-label="Attempt">${row.attempt}${row.escalatedFrom ? '<span class="l-note">continues previous attempt</span>' : ''}</td>
         <td data-label="Tier and model"><span class="fig">${esc(row.model)}</span><span class="l-note">${esc(row.tier)} tier, ${esc(row.harness)}</span></td>
         <td class="num" data-label="Tokens"><span class="fig">${count(row.tokens.total)}</span><span class="l-note">${tokenSplit}</span></td>
-        <td class="num fig ${row.result === 'stopped' ? 'over' : ''}" data-label="Cost">${usd(displayedCost(row))}${
+        <td class="num fig ${row.result === 'stopped' ? 'over' : ''}" data-label="Cost">${amounts.cost}${
           row.displayIsReplay ? '<span class="l-note">replay</span>' : row.displayIsLiveEstimate ? '<span class="l-note">live estimate</span>' : row.costSource === 'simulated' ? '<span class="l-note">simulated</span>' : row.costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : ''
         }</td>
-        <td class="num fig" data-label="Ceiling">${row.ceilingNanos == null ? '<span class="blank">uncapped</span>' : usd(row.ceilingNanos)}</td>
+        <td class="num fig" data-label="Ceiling">${amounts.ceiling ?? '<span class="blank">uncapped</span>'}</td>
         <td class="num fig" data-label="Time">${running ? `since ${clock(row.startedAt)}` : minutes(row.startedAt, row.endedAt ?? row.startedAt)}</td>
-        <td class="l-result" data-label="Result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${suspect ? '<span class="suspect">suspect pass</span>' : ''}${row.resultReason ? `<span class="l-note">${reasonText(row.resultReason)}</span>` : ''}</td>
+        <td class="l-result" data-label="Result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${suspect ? '<span class="suspect">suspect pass</span>' : ''}${row.resultReason ? `<span class="l-note">${reasonText(attemptReason(row))}</span>` : ''}</td>
         <td class="l-links" data-label="Evidence">${links.length ? links.join(' ') : '<span class="blank">none yet</span>'}${suspect ? '<span class="l-note over">Missing PR/branch evidence or has zero cost with non-zero tokens.</span>' : ''}</td></tr>`;
     })
     .join('');
