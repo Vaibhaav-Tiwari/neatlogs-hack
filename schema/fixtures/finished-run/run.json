@@ -21,6 +21,17 @@
       "issueNumber": 12,
       "issueUrl": "https://github.com/acme/payments-service/issues/12",
       "size": "small",
+      "impact": {
+        "source": "scripted", "query": "Reject negative amounts in refund validator",
+        "nodes": [
+          { "id": "src/refund.ts", "kind": "target", "weight": 10 },
+          { "id": "tests/refund.test.ts", "kind": "test", "weight": 5 }
+        ],
+        "edges": [{ "from": "tests/refund.test.ts", "to": "src/refund.ts", "kind": "tests" }],
+        "totals": { "filesTouched": 1, "dependents": 1, "testsPresent": true, "nodes": 2, "edges": 1 },
+        "truncated": false
+      },
+      "changedFiles": ["src/refund.ts", "tests/refund.test.ts"],
       "status": "passed",
       "statusReason": null,
       "attempts": 1,

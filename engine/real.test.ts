@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
-import { usdToNanos, validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
+import { usdToNanos, validateLedger, validateRunState, type TaskImpact, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
 import { runRealTally, type CfoaiBudgetPort, type WorkerPort, type WorkerResult, type WorkerStartInput, type WorktreePort } from './real.js';
@@ -307,6 +307,43 @@ describe('runRealTally', () => {
     expect(reads).toBe(1);
     expect(worker.starts).toHaveLength(1);
     expect(cfoai.writes).toEqual([result.runState.budget.spentNanos]);
+  });
+  it('persists frozen impact before spawning and diffs against the recorded attempt base', async () => {
+    const { dir, configPath } = fixture();
+    const outputDir = join(dir, 'impact');
+    const impact: TaskImpact = { source: 'entire-graph', query: 'calc', nodes: [{ id: 'calc.ts', kind: 'target', weight: 10 }], edges: [],
+      totals: { filesTouched: 1, dependents: 0, testsPresent: true, nodes: 1, edges: 0 }, truncated: false };
+    let commitReads = 0;
+    let diffBase: string | null | undefined;
+    class ImpactWorker extends FakeWorker {
+      async start(input: WorkerStartInput) {
+        const snapshot = JSON.parse(readFileSync(join(outputDir, 'run.json'), 'utf8'));
+        expect(snapshot.tasks[0].impact).toEqual(impact);
+        impact.nodes[0]!.id = 'mutated.ts';
+        return super.start(input);
+      }
+      async changedFiles(input?: { baseCommit?: string | null }) {
+        diffBase = input?.baseCommit;
+        return ['calc.ts', 'tests/calc.test.ts'];
+      }
+    }
+    const worker = new ImpactWorker();
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir, latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals: { async signalsFor() { return { ...impact.totals, source: 'entire-graph', impact }; } },
+        worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker,
+        worktrees: { async checkoutPathFor() { return '/worker'; }, async commitFor() { return ++commitReads === 1 ? 'run-base' : 'attempt-base'; } } } });
+    expect(result.runState.baseCommit).toBe('run-base');
+    expect(result.ledger[0]!.baseCommit).toBe('attempt-base');
+    expect(diffBase).toBe('attempt-base');
+    expect(result.runState.tasks[0]!.impact!.nodes[0]!.id).toBe('calc.ts');
+    expect(result.runState.tasks[0]!.changedFiles).toEqual(['calc.ts', 'tests/calc.test.ts']);
+    expect(validateRunState(result.runState).ok).toBe(true);
+    const resumed = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir, latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals: { async signalsFor() { throw new Error('must not resize completed task'); } },
+        worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker } });
+    expect(resumed.runState.tasks[0]!.impact).toEqual(result.runState.tasks[0]!.impact);
+    expect(resumed.runState.tasks[0]!.changedFiles).toEqual(result.runState.tasks[0]!.changedFiles);
+    expect(resumed.runState.baseCommit).toBe('run-base');
   });
   it.each([false, true])('records scope warnings and only blocks when configured: %s', async (block) => {
     const { dir, configPath } = fixture();
