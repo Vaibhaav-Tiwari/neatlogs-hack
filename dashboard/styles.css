@@ -295,6 +295,14 @@ th.num, td.num { text-align: right; }
 .ledger tfoot .fig { font-style: normal; font-weight: 600; }
 .ledger tfoot .total { text-decoration: underline double; text-underline-offset: 4px; }
 .empty { font-style: italic; color: var(--ink-2); padding: 22px 4px; }
+/* a run with nothing entered yet: says why, and what to type next */
+.empty-state { max-width: 86ch; margin: 14px 0 18px; padding: 16px 20px 18px; border: 1px solid var(--rule); border-left-width: 6px; }
+.empty-state h3 { margin: 0 0 6px; font: 700 20px/1.25 var(--serif); }
+.empty-state p { font-size: 17px; line-height: 1.45; }
+.empty-state p + p { margin-top: 10px; }
+.empty-commands { margin: 8px 0 0; padding: 10px 12px; border: 1px dashed var(--rule-soft); background: var(--paper-deep); overflow-x: auto; }
+.empty-commands code { font: 500 14px/1.7 var(--mono); user-select: all; }
+@media (max-width: 560px) { .empty-state { padding: 12px 12px 14px; } .empty-state p { font-size: 16px; } .empty-commands code { font-size: 12.5px; } }
 .suspect {
   display: block;
   margin-top: 4px;
