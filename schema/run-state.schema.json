@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tally.dev/schema/run-state.schema.json",
+  "title": "RunState",
+  "description": "The state of one run: budget, spend and per-task status. Money is integer nanos of USD.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "mode",
+    "dryRun",
+    "status",
+    "repo",
+    "baseCommit",
+    "startedAt",
+    "updatedAt",
+    "endedAt",
+    "budget",
+    "tasks",
+    "integrations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["tally", "baseline"] },
+    "dryRun": { "type": "boolean" },
+    "status": { "enum": ["running", "finished", "interrupted"] },
+    "repo": { "type": "string", "minLength": 1 },
+    "baseCommit": { "type": ["string", "null"] },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": ["string", "null"], "format": "date-time" },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "limitNanos", "spentNanos"],
+      "properties": {
+        "source": { "enum": ["config", "cfoai"] },
+        "limitNanos": { "type": "integer", "minimum": 0 },
+        "spentNanos": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/task" }
+    },
+    "integrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["neatlogs", "entire", "cfoai", "github", "slack"],
+      "properties": {
+        "neatlogs": { "$ref": "#/definitions/integration" },
+        "entire": { "$ref": "#/definitions/integration" },
+        "cfoai": { "$ref": "#/definitions/integration" },
+        "github": { "$ref": "#/definitions/integration" },
+        "slack": { "$ref": "#/definitions/integration" }
+      }
+    }
+  },
+  "definitions": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "title",
+        "issueNumber",
+        "issueUrl",
+        "size",
+        "status",
+        "statusReason",
+        "attempts",
+        "tier",
+        "model",
+        "spentNanos",
+        "escalated",
+        "prUrl"
+      ],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "issueNumber": { "type": ["integer", "null"] },
+        "issueUrl": { "type": ["string", "null"], "format": "uri" },
+        "size": { "enum": ["small", "medium", "large", null] },
+        "status": { "enum": ["pending", "running", "passed", "failed", "skipped"] },
+        "statusReason": { "type": ["string", "null"] },
+        "attempts": { "type": "integer", "minimum": 0 },
+        "tier": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "spentNanos": { "type": "integer", "minimum": 0 },
+        "escalated": { "type": "boolean" },
+        "prUrl": { "type": ["string", "null"], "format": "uri" }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "detail"],
+      "properties": {
+        "status": { "enum": ["ok", "off", "missing", "error"] },
+        "detail": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
