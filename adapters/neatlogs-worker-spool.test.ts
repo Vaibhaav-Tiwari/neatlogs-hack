@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -48,10 +48,36 @@ describe('NeatlogsWorkerSpoolAdapter', () => {
     const malformed = join(root, 'spool', 'pending', 'broken.json');
     writeFileSync(malformed, 'invalid json');
     writeFileSync(join(root, 'spool', 'drain.lock'), '');
-    const adapter = new NeatlogsWorkerSpoolAdapter({ root, exporter: { exportSpans: async () => { throw new Error('must not export while locked'); } } });
+    const adapter = new NeatlogsWorkerSpoolAdapter({ root, lockWaitMs: 0, exporter: { exportSpans: async () => { throw new Error('must not export while locked'); } } });
     await adapter.drainWorker({ checkoutPath: null, entireSessionId: 'native' });
     expect(existsSync(path)).toBe(true);
     expect(readFileSync(malformed, 'utf8')).toBe('invalid json');
     expect(adapter.status().detail).toContain('another drain holds the lock');
+  });
+
+  it('waits briefly for a competing lock to release and then drains only its worker', async () => {
+    const { root, enqueue } = fixture();
+    const path = enqueue('native');
+    const other = enqueue('other');
+    const lock = join(root, 'spool', 'drain.lock');
+    writeFileSync(lock, '');
+    const release = setTimeout(() => rmSync(lock), 20);
+    const adapter = new NeatlogsWorkerSpoolAdapter({ root, lockWaitMs: 200, exporter: { exportSpans: async () => 'success' } });
+    try { await adapter.drainWorker({ checkoutPath: null, entireSessionId: 'native' }); } finally { clearTimeout(release); }
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(other)).toBe(true);
+    expect(adapter.status().status).toBe('ok');
+  });
+
+  it.each([false, true])('clears stale locks only after confirming no open owner: open=%s', async open => {
+    const { root, enqueue } = fixture();
+    const path = enqueue('native');
+    const lock = join(root, 'spool', 'drain.lock');
+    writeFileSync(lock, '');
+    utimesSync(lock, new Date(0), new Date(0));
+    const adapter = new NeatlogsWorkerSpoolAdapter({ root, lockWaitMs: 0, lockIsOpen: async () => open, exporter: { exportSpans: async () => 'success' } });
+    await adapter.drainWorker({ checkoutPath: null, entireSessionId: 'native' });
+    expect(existsSync(path)).toBe(open);
+    expect(existsSync(lock)).toBe(open);
   });
 });
