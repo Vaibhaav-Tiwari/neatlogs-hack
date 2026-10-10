@@ -84,6 +84,11 @@ class DryRunState implements WorkerPort, LiveUsagePort, SessionControlPort, Veri
     };
   }
 
+  async changedFilesFor(sessionId: string): Promise<string[] | null> {
+    const files = this.session(sessionId).script.changedFiles;
+    return files ? [...files] : null;
+  }
+
   private session(sessionId: string): DrySession {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`unknown dry-run session ${sessionId}`);

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { validateTaskImpact, type AttemptResult, type Handoff, type TaskImpact, type TaskSize, type TallyConfig, type TokenUsage } from '../schema/index.js';
+import { validateChangedFiles, validateTaskImpact, type AttemptResult, type Handoff, type TaskImpact, type TaskSize, type TallyConfig, type TokenUsage } from '../schema/index.js';
 
 export interface ScriptedAttempt {
   tier?: string;
@@ -10,6 +10,7 @@ export interface ScriptedAttempt {
   tokens: TokenUsage;
   handoff: Exclude<Handoff, 'none'> | null;
   decision: string | null;
+  changedFiles?: string[];
 }
 
 export interface BacklogTask {
@@ -124,7 +125,12 @@ function parseScriptedAttempts(task: Record<string, unknown>, outcomes: AttemptR
     if (tier !== undefined && (typeof tier !== 'string' || tier.length === 0)) {
       problems.push(`${attemptPrefix}.tier must be a non-empty string`);
     }
+    if (attempt.changedFiles !== undefined) {
+      const validation = validateChangedFiles(attempt.changedFiles);
+      if (!validation.ok) problems.push(...validation.errors.map((error) => `${attemptPrefix}.changedFiles ${error}`));
+    }
     return {
+      ...(attempt.changedFiles !== undefined ? { changedFiles: attempt.changedFiles as string[] } : {}),
       ...(typeof tier === 'string' && tier.length > 0 ? { tier } : {}),
       result: typeof result === 'string' && OUTCOMES.has(result as AttemptResult) ? (result as AttemptResult) : 'error',
       resultReason: typeof attempt.resultReason === 'string' && attempt.resultReason.length > 0 ? attempt.resultReason : null,

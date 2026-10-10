@@ -19,6 +19,18 @@ test:
 
 tasks:
   - id: T1
+    impact:
+      source: scripted
+      query: src/invoices/writer.ts
+      nodes:
+        - { id: src/invoices/writer.ts, kind: target, weight: 1 }
+        - { id: src/invoices/tax.ts, kind: coChange, weight: 1 }
+        - { id: tests/invoice-rounding.test.ts, kind: test, weight: 1 }
+      edges:
+        - { from: src/invoices/writer.ts, to: src/invoices/tax.ts, kind: changesWith }
+        - { from: tests/invoice-rounding.test.ts, to: src/invoices/writer.ts, kind: tests }
+      totals: { filesTouched: 1, dependents: 0, testsPresent: true, nodes: 3, edges: 2 }
+      truncated: false
     title: Round invoice totals to cents before writing ledger rows
     size: small
     issueNumber: 101
@@ -37,6 +49,18 @@ tasks:
           tokens: { uncachedInput: 15200, cachedInput: 2400, output: 730 }
 
   - id: T2
+    impact:
+      source: scripted
+      query: src/emails/receipt.ts
+      nodes:
+        - { id: src/emails/receipt.ts, kind: target, weight: 1 }
+        - { id: src/emails/templates.ts, kind: coChange, weight: 1 }
+        - { id: tests/receipt-email.test.ts, kind: test, weight: 1 }
+      edges:
+        - { from: src/emails/receipt.ts, to: src/emails/templates.ts, kind: changesWith }
+        - { from: tests/receipt-email.test.ts, to: src/emails/receipt.ts, kind: tests }
+      totals: { filesTouched: 1, dependents: 0, testsPresent: true, nodes: 3, edges: 2 }
+      truncated: false
     title: Show customer name in the receipt email subject
     size: small
     issueNumber: 102
@@ -55,6 +79,18 @@ tasks:
           tokens: { uncachedInput: 11800, cachedInput: 2100, output: 520 }
 
   - id: T3
+    impact:
+      source: scripted
+      query: src/webhooks/payments.ts
+      nodes:
+        - { id: src/webhooks/payments.ts, kind: target, weight: 1 }
+        - { id: src/ledger/event-store.ts, kind: coChange, weight: 1 }
+        - { id: tests/webhook-idempotency.test.ts, kind: test, weight: 1 }
+      edges:
+        - { from: src/webhooks/payments.ts, to: src/ledger/event-store.ts, kind: changesWith }
+        - { from: tests/webhook-idempotency.test.ts, to: src/webhooks/payments.ts, kind: tests }
+      totals: { filesTouched: 1, dependents: 0, testsPresent: true, nodes: 3, edges: 2 }
+      truncated: false
     title: Reject duplicate webhook deliveries by event id
     size: small
     issueNumber: 103
@@ -73,6 +109,29 @@ tasks:
           tokens: { uncachedInput: 18400, cachedInput: 3200, output: 900 }
 
   - id: T4
+    impact:
+      source: scripted
+      query: src/exports/monthly.ts
+      nodes:
+        - { id: src/exports/monthly.ts, kind: target, weight: 1 }
+        - { id: src/exports/csv.ts, kind: target, weight: 1 }
+        - { id: src/routes/ledger.ts, kind: target, weight: 1 }
+        - { id: src/ledger/monthly-query.ts, kind: target, weight: 1 }
+        - { id: src/routes/admin.ts, kind: caller, weight: 1 }
+        - { id: src/jobs/monthly-close.ts, kind: caller, weight: 1 }
+        - { id: src/reports/revenue.ts, kind: caller, weight: 1 }
+        - { id: src/reports/customer.ts, kind: caller, weight: 1 }
+        - { id: src/exports/columns.ts, kind: coChange, weight: 1 }
+        - { id: tests/monthly-export.test.ts, kind: test, weight: 1 }
+      edges:
+        - { from: src/routes/admin.ts, to: src/exports/monthly.ts, kind: calls }
+        - { from: src/jobs/monthly-close.ts, to: src/exports/monthly.ts, kind: calls }
+        - { from: src/reports/revenue.ts, to: src/exports/monthly.ts, kind: calls }
+        - { from: src/reports/customer.ts, to: src/exports/monthly.ts, kind: calls }
+        - { from: src/exports/monthly.ts, to: src/exports/columns.ts, kind: changesWith }
+        - { from: tests/monthly-export.test.ts, to: src/exports/monthly.ts, kind: tests }
+      totals: { filesTouched: 4, dependents: 4, testsPresent: true, nodes: 10, edges: 6 }
+      truncated: false
     title: Add CSV export for the monthly ledger
     size: medium
     issueNumber: 104
@@ -91,6 +150,29 @@ tasks:
           tokens: { uncachedInput: 32200, cachedInput: 5100, output: 1640 }
 
   - id: T5
+    impact:
+      source: scripted
+      query: src/rates/cache.ts
+      nodes:
+        - { id: src/rates/cache.ts, kind: target, weight: 1 }
+        - { id: src/rates/provider.ts, kind: target, weight: 1 }
+        - { id: src/rates/converter.ts, kind: target, weight: 1 }
+        - { id: src/rates/refresh.ts, kind: target, weight: 1 }
+        - { id: src/invoices/currency.ts, kind: caller, weight: 1 }
+        - { id: src/quotes/pricing.ts, kind: caller, weight: 1 }
+        - { id: src/refunds/currency.ts, kind: caller, weight: 1 }
+        - { id: src/reports/currency.ts, kind: caller, weight: 1 }
+        - { id: src/rates/types.ts, kind: coChange, weight: 1 }
+        - { id: tests/exchange-rate-cache.test.ts, kind: test, weight: 1 }
+      edges:
+        - { from: src/invoices/currency.ts, to: src/rates/cache.ts, kind: calls }
+        - { from: src/quotes/pricing.ts, to: src/rates/cache.ts, kind: calls }
+        - { from: src/refunds/currency.ts, to: src/rates/cache.ts, kind: calls }
+        - { from: src/reports/currency.ts, to: src/rates/cache.ts, kind: calls }
+        - { from: src/rates/cache.ts, to: src/rates/types.ts, kind: changesWith }
+        - { from: tests/exchange-rate-cache.test.ts, to: src/rates/cache.ts, kind: tests }
+      totals: { filesTouched: 4, dependents: 4, testsPresent: true, nodes: 10, edges: 6 }
+      truncated: false
     title: Cache exchange rates without serving stale conversions
     size: medium
     issueNumber: 105
@@ -107,14 +189,40 @@ tasks:
         - tier: cheap
           result: stopped
           resultReason: Ceiling crossed while chasing stale-cache edge cases.
+          changedFiles: [src/rates/cache.ts]
           tokens: { uncachedInput: 51200, cachedInput: 9800, output: 2740 }
         - tier: middle
           result: passed
           handoff: entire-handoff
           decision: Cheap stopped at its ceiling, so continue the same branch on middle with the Entire handoff.
+          # The clock repair was not in the predicted slice: show the warning.
+          changedFiles: [src/rates/cache.ts, src/rates/refresh.ts, src/shared/clock.ts]
           tokens: { uncachedInput: 43800, cachedInput: 12100, output: 2180 }
 
   - id: T6
+    impact:
+      source: scripted
+      query: src/refunds/reconcile.ts
+      nodes:
+        - { id: src/refunds/reconcile.ts, kind: target, weight: 1 }
+        - { id: src/refunds/state.ts, kind: target, weight: 1 }
+        - { id: src/ledger/revenue.ts, kind: target, weight: 1 }
+        - { id: src/invoices/status.ts, kind: target, weight: 1 }
+        - { id: src/webhooks/refunds.ts, kind: caller, weight: 1 }
+        - { id: src/routes/refunds.ts, kind: caller, weight: 1 }
+        - { id: src/reports/revenue.ts, kind: caller, weight: 1 }
+        - { id: src/jobs/reconcile.ts, kind: caller, weight: 1 }
+        - { id: src/refunds/types.ts, kind: coChange, weight: 1 }
+        - { id: tests/refund-reconciliation.test.ts, kind: test, weight: 1 }
+      edges:
+        - { from: src/webhooks/refunds.ts, to: src/refunds/reconcile.ts, kind: calls }
+        - { from: src/routes/refunds.ts, to: src/refunds/reconcile.ts, kind: calls }
+        - { from: src/reports/revenue.ts, to: src/refunds/reconcile.ts, kind: calls }
+        - { from: src/jobs/reconcile.ts, to: src/refunds/reconcile.ts, kind: calls }
+        - { from: src/refunds/reconcile.ts, to: src/refunds/types.ts, kind: changesWith }
+        - { from: tests/refund-reconciliation.test.ts, to: src/refunds/reconcile.ts, kind: tests }
+      totals: { filesTouched: 4, dependents: 4, testsPresent: true, nodes: 10, edges: 6 }
+      truncated: false
     title: Reconcile partial refunds against the original invoice
     size: medium
     issueNumber: 106
@@ -139,6 +247,48 @@ tasks:
           tokens: { uncachedInput: 52600, cachedInput: 13400, output: 2860 }
 
   - id: T7
+    impact:
+      source: scripted
+      query: src/tax/calculator.ts
+      nodes:
+        - { id: src/tax/calculator.ts, kind: target, weight: 1 }
+        - { id: src/tax/rules.ts, kind: target, weight: 1 }
+        - { id: src/tax/regions.ts, kind: target, weight: 1 }
+        - { id: src/tax/exemptions.ts, kind: target, weight: 1 }
+        - { id: src/tax/thresholds.ts, kind: target, weight: 1 }
+        - { id: src/tax/filing.ts, kind: target, weight: 1 }
+        - { id: src/tax/effective-date.ts, kind: target, weight: 1 }
+        - { id: src/tax/jurisdiction.ts, kind: target, weight: 1 }
+        - { id: src/tax/rates.ts, kind: target, weight: 1 }
+        - { id: src/invoices/tax.ts, kind: caller, weight: 1 }
+        - { id: src/quotes/tax.ts, kind: caller, weight: 1 }
+        - { id: src/refunds/tax.ts, kind: caller, weight: 1 }
+        - { id: src/reports/tax.ts, kind: caller, weight: 1 }
+        - { id: src/routes/tax.ts, kind: caller, weight: 1 }
+        - { id: src/jobs/tax.ts, kind: caller, weight: 1 }
+        - { id: src/exports/tax.ts, kind: caller, weight: 1 }
+        - { id: src/payments/tax.ts, kind: caller, weight: 1 }
+        - { id: src/ledger/tax.ts, kind: caller, weight: 1 }
+        - { id: src/customers/tax.ts, kind: caller, weight: 1 }
+        - { id: src/emails/tax.ts, kind: caller, weight: 1 }
+        - { id: src/subscriptions/tax.ts, kind: caller, weight: 1 }
+        - { id: src/tax/types.ts, kind: coChange, weight: 1 }
+      edges:
+        - { from: src/invoices/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/quotes/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/refunds/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/reports/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/routes/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/jobs/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/exports/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/payments/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/ledger/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/customers/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/emails/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/subscriptions/tax.ts, to: src/tax/calculator.ts, kind: calls }
+        - { from: src/tax/calculator.ts, to: src/tax/types.ts, kind: changesWith }
+      totals: { filesTouched: 9, dependents: 12, testsPresent: false, nodes: 22, edges: 13 }
+      truncated: false
     title: Support tax rules for every country in one change
     size: large
     issueNumber: 107
