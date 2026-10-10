@@ -5,8 +5,9 @@ each task, sends it to the cheapest model likely to finish it, stops any task
 that overruns its spend ceiling, hands failed work to a stronger model, and
 ends with a ledger tying every dollar to a merged PR.
 
-Status: early scaffold. The shared data contract and the CLI entry point
-exist; the commands are stubs.
+Status: early build. The shared data contract exists, `tally demo` runs a
+simulated backlog, and `tally run --dry-run` writes run state plus a ledger from
+a file-backed backlog. Real AO workers and external adapters are next.
 
 ## Setup
 
@@ -19,14 +20,15 @@ npm run build     # compile to dist/
 node bin/tally.js --help
 ```
 
-During development, `npm run tally -- <command>` runs the CLI from source.
+During development, `npm run tally -- <command>` runs the CLI from source. After
+`npm run build`, `node bin/tally.js <command>` runs the compiled package entry.
 
 ## Commands
 
 | Command | What it will do |
 |---|---|
-| `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`. |
-| `tally demo` | Run the full loop with simulated workers on a sample backlog. No accounts or keys. |
+| `tally run` | Run the backlog against the budget in `tally.yaml`. Today this requires `--dry-run`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`. |
+| `tally demo` | Run the full loop with simulated workers on a sample backlog. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`. |
 | `tally init` | Detect the test command, ask for a budget and issue label, and write `tally.yaml`. |
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 
@@ -52,6 +54,22 @@ example and `schema/tally-config.schema.json` for the rules.
 Money in the ledger and run state is stored as integer nanos of USD
 (1 USD = 1,000,000,000). Cost is always tokens multiplied by the list price in
 `tally.yaml`.
+
+For dry runs, set `backlog.source: file` and point `backlog.file` at YAML like:
+
+```yaml
+tasks:
+  - id: T1
+    title: Add validation for empty player name
+    size: small
+    outcomes: [passed]
+  - id: T2
+    title: Persist settings after restart
+    size: medium
+    outcomes: [stopped, passed]
+```
+
+`outcomes` is optional and defaults to one passed simulated attempt.
 
 ## Secrets
 

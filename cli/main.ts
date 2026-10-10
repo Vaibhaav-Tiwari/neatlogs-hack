@@ -1,6 +1,9 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { BacklogError } from '../engine/backlog.js';
+import { ConfigError } from '../engine/config.js';
+import { RunError, runDemo, runTally } from '../engine/run.js';
 
 export const COMMANDS = ['run', 'demo', 'init', 'doctor'] as const;
 export type Command = (typeof COMMANDS)[number];
@@ -108,9 +111,51 @@ const stub =
     return 0;
   };
 
+async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
+  if (!options.dryRun) {
+    io.stderr('tally run: real worker execution is not implemented yet; pass --dry-run');
+    return 2;
+  }
+  try {
+    const result = await runTally({
+      configPath: options.config,
+      dryRun: true,
+      baseline: options.baseline,
+      budgetUsd: options.budgetUsd,
+      only: options.only,
+    });
+    io.stdout(`wrote ${result.runStatePath}`);
+    io.stdout(`wrote ${result.ledgerPath}`);
+    io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+    return 0;
+  } catch (e) {
+    return reportError('tally run', e, io);
+  }
+}
+
+async function demoCommand(_options: CliOptions, io: CliIO): Promise<number> {
+  try {
+    const result = await runDemo();
+    io.stdout(`wrote ${result.runStatePath}`);
+    io.stdout(`wrote ${result.ledgerPath}`);
+    io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+    return 0;
+  } catch (e) {
+    return reportError('tally demo', e, io);
+  }
+}
+
+function reportError(prefix: string, error: unknown, io: CliIO): number {
+  if (error instanceof ConfigError || error instanceof BacklogError || error instanceof RunError) {
+    io.stderr(`${prefix}: ${error.message}`);
+    return 2;
+  }
+  throw error;
+}
+
 const handlers: Record<Command, Handler> = {
-  run: stub('run'),
-  demo: stub('demo'),
+  run: runCommand,
+  demo: demoCommand,
   init: stub('init'),
   doctor: stub('doctor'),
 };
