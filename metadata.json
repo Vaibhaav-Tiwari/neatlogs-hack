@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KQZYAEMX85VQ53PNKJHDDQ",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/verified-trace-recovery",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/neatlogs-worker-traces.test.ts",
+    "adapters/neatlogs-worker-traces.ts",
+    "cli/main.test.ts",
+    "cli/main.ts",
+    "engine/trace-recovery.test.ts",
+    "engine/trace-recovery.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8703,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 823936,
+    "output_tokens": 3958,
+    "api_call_count": 4
+  }
+}
