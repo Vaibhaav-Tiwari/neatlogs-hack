@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tally</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23f2e8d0'/%3E%3Cg stroke='%2317130d' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M17 13v38M27 12v40M37 13v38M47 12v40'/%3E%3C/g%3E%3Cpath d='M8 46 56 18' stroke='%23cf2e17' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="sheet">
+
+  <header class="head">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 64 64" role="img" aria-label="Tally mark: four strokes crossed by a fifth">
+        <g class="mark-strokes"><path d="M17 13v38M27 12v40M37 13v38M47 12v40"/></g>
+        <path class="mark-slash" d="M8 46 56 18"/>
+      </svg>
+      <div>
+        <h1>Tally</h1>
+        <p class="strap">Every dollar a fleet of coding agents spends, entered against the pull request it bought.</p>
+      </div>
+    </div>
+    <dl class="run" id="run"></dl>
+  </header>
+
+  <p class="notice" id="notice" hidden></p>
+
+  <section class="summary" aria-label="Summary">
+    <div class="headline" id="headline"></div>
+    <div class="budget" id="budget"></div>
+  </section>
+
+  <section class="integrations" id="integrations" aria-label="Integrations"></section>
+
+  <section aria-labelledby="tasks-title">
+    <h2 id="tasks-title">Tasks</h2>
+    <div class="scroll"><table class="tasks" id="tasks"></table></div>
+  </section>
+
+  <section aria-labelledby="ledger-title">
+    <h2 id="ledger-title">Ledger <span class="h2-note">one line per attempt</span></h2>
+    <div class="scroll"><table class="ledger" id="ledger"></table></div>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<script src="config.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
