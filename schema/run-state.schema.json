@@ -39,6 +39,14 @@
         "source": { "enum": ["config", "cfoai"] },
         "limitSource": { "enum": ["config", "cfoai", "cli"] },
         "systemOfRecord": { "enum": ["ledger", "cfoai"] },
+        "cfoai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pageUrl": { "type": "string", "format": "uri", "pattern": "^https://[^/?#\\s]+" },
+            "tableUrl": { "type": "string", "format": "uri", "pattern": "^https://[^/?#\\s]+" }
+          }
+        },
         "limitNanos": { "type": "integer", "minimum": 0 },
         "spentNanos": { "type": "integer", "minimum": 0 }
       }

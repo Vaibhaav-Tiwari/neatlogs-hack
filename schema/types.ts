@@ -150,6 +150,7 @@ export interface RunState {
     /** Origin of this run's effective limit, distinct from spend accounting. */
     limitSource?: BudgetSource | 'cli';
     systemOfRecord?: 'ledger' | 'cfoai';
+    cfoai?: { pageUrl?: string; tableUrl?: string };
     limitNanos: number;
     /** Always the sum of estimatedCostNanos over this run's ledger rows. */
     spentNanos: number;
@@ -232,6 +233,7 @@ export interface TallyConfig {
       runSpendRow?: string;
       cumulativeRunSpendRow?: string;
       tableUrl?: string;
+      pageUrl?: string;
       serverUrl?: string;
     };
   };

@@ -280,6 +280,42 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it.each([
+    { dryRun: true, source: 'cfoai', enabled: false },
+    { dryRun: false, source: 'cfoai', enabled: false },
+    { dryRun: true, source: 'config', enabled: true },
+    { dryRun: false, source: 'config', enabled: true },
+    { dryRun: true, source: 'config', enabled: false },
+  ])('persists configured cfo.ai links only when applicable: %j', async ({ dryRun, source, enabled }) => {
+    const { dir, configPath } = fixture(`neatlogs: false, entire: false, cfoai: ${enabled}, slack: false`);
+    const links = { pageUrl: 'https://app.cfo.ai/page/tally', tableUrl: 'https://app.cfo.ai/s/table' };
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }',
+      `budget: { source: ${source}, usd: 40, cfoai: ${JSON.stringify(links)} }`));
+    const worker = new FakeWorker();
+    const result = await runRealTally({ configPath, dryRun, baseline: false, outputDir: join(dir, 'links'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        cfoai: new FakeCfoaiBudget(), verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+    const saved = JSON.parse(readFileSync(join(result.outputDir, 'run.json'), 'utf8'));
+    expect(saved.budget.cfoai).toEqual(source === 'cfoai' || enabled ? links : undefined);
+    expect(result.runState.budget.cfoai).toEqual(saved.budget.cfoai);
+  });
+  it.each([
+    { dryRun: false, enabled: true }, { dryRun: true, enabled: true }, { dryRun: false, enabled: false },
+  ])('drains Codex traces after closing real workers only: %j', async ({ dryRun, enabled }) => {
+    const { dir, configPath } = fixture(`neatlogs: ${enabled}, entire: false, cfoai: false, slack: false`);
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('harness: claude-code', 'harness: codex'));
+    const worker = new FakeWorker();
+    const contexts: unknown[] = [];
+    const result = await runRealTally({ configPath, dryRun, baseline: false, outputDir: join(dir, 'drain'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, trace: new FakeTrace(),
+        history: { lookup: async () => null, record: async () => {} },
+        worktrees: { checkoutPathFor: async () => '/worker' },
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        workerTraceDrain: { drainWorker: async (context) => { expect(worker.stopped).toContain('session-1'); contexts.push(context); } },
+      } });
+    expect(contexts.length).toBe(!dryRun && enabled ? 1 : 0);
+    expect(result.runState.status).toBe('finished');
+  });
   it('uses a first-attempt override to stop via the watcher and escalates with the normal ceiling', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();

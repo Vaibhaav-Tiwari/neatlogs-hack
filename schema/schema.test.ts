@@ -181,6 +181,18 @@ describe('finished-run fixture', () => {
 });
 
 describe('config schema', () => {
+  it('accepts only HTTPS cfo.ai dashboard links in config and persisted runs', () => {
+    for (const key of ['pageUrl', 'tableUrl']) {
+      for (const url of ['https://app.cfo.ai/s/table', 'https://app.cfo.ai/page?scenario=Main#budget']) {
+        expect(validateConfig({ ...config, budget: { ...config.budget, cfoai: { [key]: url } } }).ok).toBe(true);
+        expect(validateRunState({ ...run, budget: { ...run.budget, cfoai: { [key]: url } } }).ok).toBe(true);
+      }
+      for (const url of ['http://app.cfo.ai/s/table', 'javascript:alert(1)', '/relative', 'https://', 'https:///missing-host']) {
+        expect(validateConfig({ ...config, budget: { ...config.budget, cfoai: { [key]: url } } }).ok).toBe(false);
+        expect(validateRunState({ ...run, budget: { ...run.budget, cfoai: { [key]: url } } }).ok).toBe(false);
+      }
+    }
+  });
   it('requires repo, test command and at least one tier', () => {
     expect(validateConfig({ ...config, repo: undefined }).ok).toBe(false);
     expect(validateConfig({ ...config, test: {} }).ok).toBe(false);

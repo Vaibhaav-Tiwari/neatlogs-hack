@@ -110,7 +110,8 @@
             },
             "runSpendRow": { "type": "string", "minLength": 1 },
             "cumulativeRunSpendRow": { "type": "string", "minLength": 1 },
-            "tableUrl": { "type": "string", "format": "uri" },
+            "tableUrl": { "type": "string", "format": "uri", "pattern": "^https://[^/?#\\s]+" },
+            "pageUrl": { "type": "string", "format": "uri", "pattern": "^https://[^/?#\\s]+" },
             "serverUrl": { "type": "string", "format": "uri" }
           }
         }
