@@ -156,9 +156,11 @@ class SequenceVerifier implements VerifierPort {
 
 class FakeCfoaiBudget implements CfoaiBudgetPort {
   writes: number[] = [];
+  detailWrites: Array<{ attempts: Array<{ tier: string; costNanos: number }>; cumulativeRunSpendNanos: number }> = [];
   constructor(
     private readonly budgetNanos = usdToNanos(40),
     private readonly failRead = false,
+    private readonly currentSpend = 0,
   ) {}
 
   async remainingNanos() {
@@ -170,9 +172,20 @@ class FakeCfoaiBudget implements CfoaiBudgetPort {
     return this.budgetNanos;
   }
 
+  async currentSpendNanos() {
+    if (this.failRead) throw new Error('not logged in');
+    return this.currentSpend;
+  }
+
   async writeCumulativeActualSpend(runSpendNanos: number) {
     if (this.failRead) throw new Error('not logged in');
     this.writes.push(runSpendNanos);
+  }
+
+  async writeSpendDetail(input: { attempts: Array<{ tier: string; costNanos: number }>; cumulativeRunSpendNanos: number }) {
+    if (this.failRead) throw new Error('not logged in');
+    this.detailWrites.push(input);
+    return { skippedTiers: [] };
   }
 
   status() {
@@ -606,10 +619,46 @@ describe('runRealTally', () => {
 
     expect(result.runState.budget).toMatchObject({ source: 'cfoai', limitNanos: usdToNanos(40) });
     expect(cfoai.writes).toEqual([result.ledger[0]!.estimatedCostNanos]);
+    expect(cfoai.detailWrites).toEqual([
+      {
+        cumulativeRunSpendNanos: result.ledger[0]!.estimatedCostNanos,
+        attempts: [{ tier: result.ledger[0]!.tier, costNanos: result.ledger[0]!.estimatedCostNanos }],
+      },
+    ]);
     const csv = readFileSync(join(result.outputDir, 'cfoai-spend-fallback.csv'), 'utf8');
     expect(csv).toContain('run_id,attempt_id,task_id');
     expect(csv).toContain(result.ledger[0]!.attemptId);
     expect(result.runState.integrations.cfoai).toEqual({ status: 'ok', detail: 'https://app.cfo.ai/s/table' });
+  });
+
+  it('respects the current month remaining budget from cfo.ai before starting work', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }', 'budget: { source: cfoai, usd: 40 }'));
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), false, usdToNanos(39.9));
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'cfoai-remaining'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        cfoai,
+      },
+    });
+
+    expect(result.runState.budget).toMatchObject({ source: 'cfoai', limitNanos: usdToNanos(40), spentNanos: 0 });
+    expect(result.runState.tasks[0]).toMatchObject({ status: 'skipped', statusReason: 'not started: no budget' });
+    expect(result.ledger).toHaveLength(0);
+    expect(cfoai.writes).toEqual([]);
+    expect(cfoai.detailWrites).toEqual([]);
   });
 
   it('falls back to tally.yaml budget and CSV-only accounting when cfo.ai is enabled but unavailable', async () => {
@@ -639,6 +688,7 @@ describe('runRealTally', () => {
 
     expect(result.runState.budget).toMatchObject({ source: 'config', limitNanos: usdToNanos(10) });
     expect(cfoai.writes).toEqual([]);
+    expect(cfoai.detailWrites).toEqual([]);
     expect(result.runState.integrations.cfoai).toMatchObject({ status: 'missing' });
     expect(readFileSync(join(result.outputDir, 'cfoai-spend-fallback.csv'), 'utf8')).toContain(result.ledger[0]!.attemptId);
   });

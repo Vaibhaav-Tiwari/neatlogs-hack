@@ -206,6 +206,11 @@ export interface TallyConfig {
       budgetRow?: string;
       spendRow?: string;
       remainingRow?: string;
+      spendDetailTable?: string;
+      spendDetailTableUrl?: string;
+      tierSpendRows?: Record<string, string>;
+      runSpendRow?: string;
+      cumulativeRunSpendRow?: string;
       tableUrl?: string;
       serverUrl?: string;
     };

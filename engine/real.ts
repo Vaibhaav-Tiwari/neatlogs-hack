@@ -63,7 +63,9 @@ export interface FinalUsagePort extends LiveUsagePort {
 
 export interface CfoaiBudgetPort extends BudgetPort {
   budgetLimitNanos(): Promise<number>;
+  currentSpendNanos?(): Promise<number>;
   writeCumulativeActualSpend(runSpendNanos: number): Promise<void>;
+  writeSpendDetail?(input: { attempts: Array<{ tier: string; costNanos: number }>; cumulativeRunSpendNanos: number }): Promise<{ skippedTiers: string[] }>;
   status(): IntegrationState;
   tableUrl?(): string | undefined;
 }
@@ -92,11 +94,12 @@ class LedgerBudget implements BudgetPort {
   constructor(
     private readonly limitNanos: number,
     private readonly ledger: Ledger,
+    private readonly committedBeforeRunNanos = 0,
   ) {}
 
   async remainingNanos(): Promise<number> {
     const spent = this.ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0);
-    return this.limitNanos - spent - this.reservedNanos;
+    return this.limitNanos - this.committedBeforeRunNanos - spent - this.reservedNanos;
   }
 }
 
@@ -480,15 +483,18 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const ledger = loadLedger(ledgerPath);
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
   let budgetSource: BudgetSource = 'config';
+  let committedBeforeRunNanos = 0;
   if (options.budgetUsd === undefined && config.budget.source === 'cfoai' && ports.cfoai) {
     try {
-      budgetLimitNanos = await ports.cfoai.budgetLimitNanos();
+      const [limit, currentSpend] = await Promise.all([ports.cfoai.budgetLimitNanos(), ports.cfoai.currentSpendNanos?.() ?? Promise.resolve(0)]);
+      budgetLimitNanos = limit;
+      committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
       budgetSource = 'cfoai';
     } catch {
       budgetSource = 'config';
     }
   }
-  const budget = new LedgerBudget(budgetLimitNanos, ledger);
+  const budget = new LedgerBudget(budgetLimitNanos, ledger, committedBeforeRunNanos);
   const recordSpend = async (row: LedgerRow) => {
     if (options.dryRun) return;
     const cumulative = ledgerSpend(ledger);
@@ -496,6 +502,10 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (!config.integrations.cfoai || !ports.cfoai) return;
     try {
       await ports.cfoai.writeCumulativeActualSpend(cumulative);
+      await ports.cfoai.writeSpendDetail?.({
+        attempts: ledger.map((attempt) => ({ tier: attempt.tier, costNanos: attempt.estimatedCostNanos })),
+        cumulativeRunSpendNanos: cumulative,
+      });
     } catch {
       // CSV fallback has already preserved the attempted spend for a later sync.
     }

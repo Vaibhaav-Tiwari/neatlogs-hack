@@ -33,8 +33,9 @@ class FakeCfoaiClient implements CfoaiMcpClient {
     }
     if (name === 'edit_table_blocks') {
       const update = args.update as { values: { rows: [string, number][] } };
-      const [row, value] = update.values.rows[0]!;
-      this.values.set(row, value);
+      for (const [row, value] of update.values.rows) {
+        this.values.set(row, value);
+      }
       return { structuredContent: { status: this.editStatus } };
     }
     throw new Error(`unexpected tool ${name}`);
@@ -84,6 +85,14 @@ describe('CfoaiBudgetAdapter', () => {
       budgetRow: 'Agent budget',
       spendRow: 'Agent spend',
       remainingRow: 'Budget remaining',
+      spendDetailTable: 'Tally spend detail',
+      tierSpendRows: {
+        cheap: 'Tier spend - cheap',
+        middle: 'Tier spend - middle',
+        top: 'Tier spend - top',
+      },
+      runSpendRow: 'Run spend - current',
+      cumulativeRunSpendRow: 'Run spend - cumulative',
       serverUrl: 'https://api.cfo.ai/mcp',
     });
     expect(cfoaiMonthColumn(now())).toBe('2026-10');
@@ -146,6 +155,70 @@ describe('CfoaiBudgetAdapter', () => {
         update: { target: 'Tally agent budget', values: { columns: ['2026-10'], rows: [['Agent spend', 7]] } },
       },
     ]);
+  });
+
+  it('writes tier and run spend detail, seeding prior Agent spend so tier rows sum to the budget table spend', async () => {
+    const client = new FakeCfoaiClient();
+    client.values.set('Tier spend - cheap', 0);
+    client.values.set('Tier spend - middle', 0);
+    client.values.set('Tier spend - top', 0);
+    client.values.set('Run spend - current', 0);
+    client.values.set('Run spend - cumulative', 0);
+    const adapter = new CfoaiBudgetAdapter({
+      client,
+      now,
+      config: {
+        orgId: '103210',
+        scenario: 'Main Scenario',
+        tableUrl: 'https://app.cfo.ai/s/budget',
+        spendDetailTableUrl: 'https://app.cfo.ai/s/detail',
+      },
+    });
+
+    await adapter.writeCumulativeActualSpend(usdToNanos(2));
+    await expect(
+      adapter.writeSpendDetail({
+        cumulativeRunSpendNanos: usdToNanos(2),
+        attempts: [
+          { tier: 'cheap', costNanos: usdToNanos(0.5) },
+          { tier: 'middle', costNanos: usdToNanos(1.5) },
+        ],
+      }),
+    ).resolves.toEqual({ skippedTiers: [] });
+
+    expect(client.values.get('Agent spend')).toBe(5);
+    expect(client.values.get('Tier spend - cheap')).toBe(3.5);
+    expect(client.values.get('Tier spend - middle')).toBe(1.5);
+    expect(client.values.get('Tier spend - top')).toBe(0);
+    expect(client.values.get('Run spend - current')).toBe(2);
+    expect(client.values.get('Run spend - cumulative')).toBe(5);
+    expect(adapter.status().detail).toContain('https://app.cfo.ai/s/detail');
+    expect(adapter.status().detail).toContain('Seeded $3.00 of prior Agent spend into Tier spend - cheap.');
+  });
+
+  it('skips unmapped tier spend detail without failing the run', async () => {
+    const client = new FakeCfoaiClient();
+    client.values.set('Agent spend', 0);
+    client.values.set('Tier spend - cheap', 0);
+    client.values.set('Run spend - current', 0);
+    client.values.set('Run spend - cumulative', 0);
+    const adapter = new CfoaiBudgetAdapter({
+      client,
+      now,
+      config: { tierSpendRows: { cheap: 'Tier spend - cheap' } },
+    });
+
+    await adapter.writeCumulativeActualSpend(usdToNanos(1));
+    await expect(
+      adapter.writeSpendDetail({
+        cumulativeRunSpendNanos: usdToNanos(1),
+        attempts: [
+          { tier: 'cheap', costNanos: usdToNanos(0.25) },
+          { tier: 'custom', costNanos: usdToNanos(0.75) },
+        ],
+      }),
+    ).resolves.toEqual({ skippedTiers: ['custom'] });
+    expect(adapter.status().detail).toContain('Skipped cfo.ai spend detail for unmapped tiers: custom.');
   });
 
   it('reports missing when the MCP connection or tools are unavailable', async () => {

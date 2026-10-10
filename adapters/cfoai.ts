@@ -21,6 +21,11 @@ export interface CfoaiBudgetConfig {
   budgetRow?: string;
   spendRow?: string;
   remainingRow?: string;
+  spendDetailTable?: string;
+  spendDetailTableUrl?: string;
+  tierSpendRows?: Record<string, string>;
+  runSpendRow?: string;
+  cumulativeRunSpendRow?: string;
   tableUrl?: string;
   serverUrl?: string;
 }
@@ -32,6 +37,11 @@ export interface NormalizedCfoaiBudgetConfig {
   budgetRow: string;
   spendRow: string;
   remainingRow: string;
+  spendDetailTable: string;
+  spendDetailTableUrl?: string;
+  tierSpendRows: Record<string, string>;
+  runSpendRow: string;
+  cumulativeRunSpendRow: string;
   tableUrl?: string;
   serverUrl: string;
 }
@@ -62,6 +72,15 @@ export interface CfoaiConnectionCheckOptions {
   client?: CfoaiMcpClient;
 }
 
+export interface CfoaiSpendDetailInput {
+  attempts: Array<{ tier: string; costNanos: number }>;
+  cumulativeRunSpendNanos: number;
+}
+
+export interface CfoaiSpendDetailResult {
+  skippedTiers: string[];
+}
+
 export function defaultCfoaiTokenPath(): string {
   return join(homedir(), '.tally', 'cfoai-oauth.json');
 }
@@ -74,6 +93,15 @@ export function normalizeCfoaiConfig(config: CfoaiBudgetConfig | undefined): Nor
     budgetRow: config?.budgetRow ?? 'Agent budget',
     spendRow: config?.spendRow ?? 'Agent spend',
     remainingRow: config?.remainingRow ?? 'Budget remaining',
+    spendDetailTable: config?.spendDetailTable ?? 'Tally spend detail',
+    spendDetailTableUrl: config?.spendDetailTableUrl,
+    tierSpendRows: config?.tierSpendRows ?? {
+      cheap: 'Tier spend - cheap',
+      middle: 'Tier spend - middle',
+      top: 'Tier spend - top',
+    },
+    runSpendRow: config?.runSpendRow ?? 'Run spend - current',
+    cumulativeRunSpendRow: config?.cumulativeRunSpendRow ?? 'Run spend - cumulative',
     tableUrl: config?.tableUrl,
     serverUrl: config?.serverUrl ?? CFOAI_SERVER_URL,
   };
@@ -81,6 +109,10 @@ export function normalizeCfoaiConfig(config: CfoaiBudgetConfig | undefined): Nor
 
 export function cfoaiMonthColumn(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatUsd(nanos: number): string {
+  return `$${nanosToUsd(nanos).toFixed(2)}`;
 }
 
 export function refreshTokenRequest(tokens: OAuthTokens | undefined, scope?: string): URLSearchParams | undefined {
@@ -236,6 +268,8 @@ export class CfoaiBudgetAdapter implements BudgetPort {
   private statusState: IntegrationState = { status: 'missing', detail: CFOAI_FIX_COMMAND };
   private toolsChecked = false;
   private runBaseSpendNanos: number | null = null;
+  private baseDetailSpendNanos: Map<string, number> | null = null;
+  private seededDetailGapNanos = 0;
   private readyPromise: Promise<void> | null = null;
 
   constructor(options: CfoaiBudgetAdapterOptions = {}) {
@@ -254,6 +288,10 @@ export class CfoaiBudgetAdapter implements BudgetPort {
 
   tableUrl(): string | undefined {
     return this.config.tableUrl;
+  }
+
+  spendDetailTableUrl(): string | undefined {
+    return this.config.spendDetailTableUrl;
   }
 
   async budgetLimitNanos(): Promise<number> {
@@ -297,6 +335,43 @@ export class CfoaiBudgetAdapter implements BudgetPort {
     }
   }
 
+  async writeSpendDetail(input: CfoaiSpendDetailInput): Promise<CfoaiSpendDetailResult> {
+    await this.ensureReady();
+    const runTotals = new Map<string, number>();
+    const skippedTiers = new Set<string>();
+    for (const attempt of input.attempts) {
+      const row = this.config.tierSpendRows[attempt.tier];
+      if (!row) {
+        skippedTiers.add(attempt.tier);
+        continue;
+      }
+      runTotals.set(row, (runTotals.get(row) ?? 0) + attempt.costNanos);
+    }
+    const mappedRows = [...new Set(Object.values(this.config.tierSpendRows))];
+    if (this.baseDetailSpendNanos === null) {
+      await this.loadBaseDetailSpend(mappedRows);
+    }
+    const updates = new Map<string, number>();
+    for (const row of mappedRows) {
+      updates.set(row, this.baseDetailSpendNanos!.get(row) ?? 0);
+    }
+    for (const [row, runSpend] of runTotals) {
+      updates.set(row, (updates.get(row) ?? 0) + runSpend);
+    }
+    updates.set(this.config.runSpendRow, input.cumulativeRunSpendNanos);
+    updates.set(this.config.cumulativeRunSpendRow, (this.runBaseSpendNanos ?? (await this.currentSpendNanos())) + input.cumulativeRunSpendNanos);
+
+    await this.writeRows(this.config.spendDetailTable, updates);
+    await this.verifyRows(this.config.spendDetailTable, updates);
+    await this.verifyAgentSpendMatchesTierRows(mappedRows, skippedTiers.size === 0);
+
+    const notes: string[] = [];
+    if (skippedTiers.size > 0) notes.push(`Skipped cfo.ai spend detail for unmapped tiers: ${[...skippedTiers].join(', ')}.`);
+    if (this.seededDetailGapNanos > 0) notes.push(`Seeded ${formatUsd(this.seededDetailGapNanos)} of prior Agent spend into ${mappedRows[0]}.`);
+    this.setOkStatus(notes.join(' ') || undefined);
+    return { skippedTiers: [...skippedTiers] };
+  }
+
   private async ensureReady(): Promise<void> {
     if (this.usable) return;
     if (this.readyPromise) return this.readyPromise;
@@ -321,7 +396,7 @@ export class CfoaiBudgetAdapter implements BudgetPort {
         this.toolsChecked = true;
       }
       this.usable = true;
-      this.statusState = { status: 'ok', detail: this.config.tableUrl ?? null };
+      this.setOkStatus();
     } catch (e) {
       this.statusState = { status: 'missing', detail: `${(e as Error).message}. ${CFOAI_FIX_COMMAND}` };
       throw e;
@@ -334,6 +409,60 @@ export class CfoaiBudgetAdapter implements BudgetPort {
       read: { target: this.config.table, rows: [row], columns: [this.monthColumn()] },
     });
     return extractUsd(result, row, this.monthColumn());
+  }
+
+  private async readUsdFrom(table: string, row: string): Promise<number> {
+    const result = await this.client.callTool('inspect_table_blocks', {
+      ...this.scopeArgs(),
+      read: { target: table, rows: [row], columns: [this.monthColumn()] },
+    });
+    return extractUsd(result, row, this.monthColumn());
+  }
+
+  private async loadBaseDetailSpend(mappedRows: string[]): Promise<void> {
+    const entries = await Promise.all(mappedRows.map(async (row) => [row, usdToNanos(await this.readUsdFrom(this.config.spendDetailTable, row))] as const));
+    const base = new Map(entries);
+    const tierSum = [...base.values()].reduce((sum, value) => sum + value, 0);
+    const agentSpend = this.runBaseSpendNanos ?? (await this.currentSpendNanos());
+    const gap = agentSpend - tierSum;
+    if (gap > 1 && mappedRows[0]) {
+      base.set(mappedRows[0], (base.get(mappedRows[0]) ?? 0) + gap);
+      this.seededDetailGapNanos = gap;
+    }
+    this.baseDetailSpendNanos = base;
+  }
+
+  private async writeRows(table: string, rows: Map<string, number>): Promise<void> {
+    const result = await this.client.callTool('edit_table_blocks', {
+      ...this.scopeArgs(),
+      update: {
+        target: table,
+        values: { columns: [this.monthColumn()], rows: [...rows].map(([row, nanos]) => [row, Number(nanosToUsd(nanos).toFixed(9))]) },
+      },
+    });
+    if (receiptStatus(result) !== 'applied') throw new Error(`cfo.ai did not apply the ${table} update`);
+  }
+
+  private async verifyRows(table: string, rows: Map<string, number>): Promise<void> {
+    for (const [row, nanos] of rows) {
+      const readBack = usdToNanos(await this.readUsdFrom(table, row));
+      if (Math.abs(readBack - nanos) > 1) throw new Error(`cfo.ai ${table} read-back did not match ${row}`);
+    }
+  }
+
+  private async verifyAgentSpendMatchesTierRows(mappedRows: string[], completeMapping: boolean): Promise<void> {
+    if (!completeMapping) return;
+    const [agentSpend, tierSpend] = await Promise.all([
+      this.currentSpendNanos(),
+      Promise.all(mappedRows.map((row) => this.readUsdFrom(this.config.spendDetailTable, row))),
+    ]);
+    const tierSum = tierSpend.reduce((sum, usd) => sum + usdToNanos(usd), 0);
+    if (Math.abs(agentSpend - tierSum) > 1) throw new Error('cfo.ai Agent spend does not equal the sum of tier spend rows');
+  }
+
+  private setOkStatus(note?: string): void {
+    const links = [this.config.tableUrl, this.config.spendDetailTableUrl].filter(Boolean).join(' ');
+    this.statusState = { status: 'ok', detail: [links || null, note].filter(Boolean).join(' ') || null };
   }
 
   private monthColumn(): string {
