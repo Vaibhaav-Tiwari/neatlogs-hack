@@ -101,6 +101,14 @@
             "budgetRow": { "type": "string", "minLength": 1 },
             "spendRow": { "type": "string", "minLength": 1 },
             "remainingRow": { "type": "string", "minLength": 1 },
+            "spendDetailTable": { "type": "string", "minLength": 1 },
+            "spendDetailTableUrl": { "type": "string", "format": "uri" },
+            "tierSpendRows": {
+              "type": "object",
+              "additionalProperties": { "type": "string", "minLength": 1 }
+            },
+            "runSpendRow": { "type": "string", "minLength": 1 },
+            "cumulativeRunSpendRow": { "type": "string", "minLength": 1 },
             "tableUrl": { "type": "string", "format": "uri" },
             "serverUrl": { "type": "string", "format": "uri" }
           }

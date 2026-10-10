@@ -51,6 +51,14 @@ budget:
     spendRow: Agent spend
     remainingRow: Budget remaining
     tableUrl: https://app.cfo.ai/s/p_AQKqpgYkMDBiYzMwNzQtZjA3OS00YjYwLWFlYTctM2FjYzYyMjgxMDQ5DWRlZmF1bHRfbGF5ZXI
+    spendDetailTable: Tally spend detail
+    spendDetailTableUrl: https://app.cfo.ai/s/p_AQKqpgYkZTc1ZjM5MWItYTMyZC00YjhhLWIwN2QtNWJiNjBkNzkxMzg4DWRlZmF1bHRfbGF5ZXI
+    tierSpendRows:
+      cheap: Tier spend - cheap
+      middle: Tier spend - middle
+      top: Tier spend - top
+    runSpendRow: Run spend - current
+    cumulativeRunSpendRow: Run spend - cumulative
 
 concurrency: 3
 
