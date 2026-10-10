@@ -1,0 +1,59 @@
+# Sample tally.yaml for the finished-run fixture.
+# The repository, test command and tiers below are examples; Tally reads all
+# of them from this file and assumes nothing about the target repository.
+version: 1
+
+repo:
+  path: .
+  slug: acme/payments-service
+  baseBranch: main
+
+test:
+  setupCommand: npm ci
+  command: npm test
+  timeoutSec: 900
+
+backlog:
+  source: github-issues
+  issueLabel: tally
+
+# Ordered from cheapest to strongest. Escalation moves one step right.
+# provider is who serves and bills the model (anthropic, openai, litellm, ...).
+# price is the published list price in USD per million tokens; check it
+# against the provider's pricing page before a real run.
+# ceilingFraction is the share of the size ceiling a tier may spend.
+tiers:
+  - name: cheap
+    harness: claude-code
+    provider: anthropic
+    model: claude-haiku-4-5-20251001
+    price: { inputUsdPerMTok: 1.00, cachedInputUsdPerMTok: 0.10, outputUsdPerMTok: 5.00 }
+    ceilingFraction: 0.2
+  - name: middle
+    harness: claude-code
+    provider: anthropic
+    model: claude-sonnet-5-5
+    price: { inputUsdPerMTok: 2.00, cachedInputUsdPerMTok: 0.20, outputUsdPerMTok: 10.00 }
+    ceilingFraction: 0.5
+  - name: top
+    harness: claude-code
+    provider: anthropic
+    model: claude-opus-5-5
+    price: { inputUsdPerMTok: 4.00, cachedInputUsdPerMTok: 0.20, outputUsdPerMTok: 20.00 }
+    ceilingFraction: 1.0
+
+# What the strongest tier may spend on one task of each size, in USD.
+ceilings:
+  bySizeUsd: { small: 1.50, medium: 4.00, large: 10.00 }
+
+budget:
+  source: config
+  usd: 40
+
+concurrency: 3
+
+integrations:
+  neatlogs: true
+  entire: true
+  cfoai: false
+  slack: false

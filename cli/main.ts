@@ -1,0 +1,145 @@
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+
+export const COMMANDS = ['run', 'demo', 'init', 'doctor'] as const;
+export type Command = (typeof COMMANDS)[number];
+
+export const VERSION = '0.1.0';
+
+export interface CliOptions {
+  /** Path to tally.yaml. */
+  config: string;
+  /** Simulated workers with scripted outcomes; spends nothing. */
+  dryRun: boolean;
+  /** Send every task to the strongest tier, for the before/after comparison. */
+  baseline: boolean;
+  /** Overrides the budget in tally.yaml. */
+  budgetUsd: number | undefined;
+  /** Run a single task by id or issue number. */
+  only: string | undefined;
+}
+
+export type ParsedCli =
+  | { kind: 'command'; command: Command; options: CliOptions }
+  | { kind: 'help' }
+  | { kind: 'version' }
+  | { kind: 'error'; message: string };
+
+export interface CliIO {
+  stdout: (line: string) => void;
+  stderr: (line: string) => void;
+}
+
+const USAGE = `tally: a CFO for a fleet of coding agents
+
+Usage: tally <command> [options]
+
+Commands:
+  run      Run the backlog against the budget in tally.yaml
+  demo     Run the full loop with simulated workers on a sample backlog
+  init     Set up tally.yaml for the current repository
+  doctor   Check that each integration is connected
+
+Options:
+  --config <path>   Path to tally.yaml (default: tally.yaml)
+  --dry-run         Simulate workers; spends nothing
+  --budget <usd>    Override the budget for this run
+  --only <task>     Run a single task
+  --baseline        Send every task to the strongest tier
+  -h, --help        Show this help
+  -v, --version     Show the version`;
+
+export function parseCli(argv: string[]): ParsedCli {
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: argv,
+      allowPositionals: true,
+      options: {
+        config: { type: 'string', default: 'tally.yaml' },
+        'dry-run': { type: 'boolean', default: false },
+        baseline: { type: 'boolean', default: false },
+        budget: { type: 'string' },
+        only: { type: 'string' },
+        help: { type: 'boolean', short: 'h', default: false },
+        version: { type: 'boolean', short: 'v', default: false },
+      },
+    });
+  } catch (e) {
+    return { kind: 'error', message: (e as Error).message };
+  }
+  const { values, positionals } = parsed;
+  if (values.help) return { kind: 'help' };
+  if (values.version) return { kind: 'version' };
+  const [name, ...extra] = positionals;
+  if (name === undefined) return { kind: 'help' };
+  if (!(COMMANDS as readonly string[]).includes(name)) {
+    return { kind: 'error', message: `unknown command "${name}"; expected one of ${COMMANDS.join(', ')}` };
+  }
+  if (extra.length > 0) return { kind: 'error', message: `unexpected argument "${extra[0]}"` };
+
+  let budgetUsd: number | undefined;
+  if (values.budget !== undefined) {
+    budgetUsd = Number(values.budget);
+    if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
+      return { kind: 'error', message: `--budget must be a positive number of USD, got "${values.budget}"` };
+    }
+  }
+  return {
+    kind: 'command',
+    command: name as Command,
+    options: {
+      config: values.config,
+      dryRun: values['dry-run'],
+      baseline: values.baseline,
+      budgetUsd,
+      only: values.only,
+    },
+  };
+}
+
+type Handler = (options: CliOptions, io: CliIO) => Promise<number>;
+
+const stub =
+  (command: Command): Handler =>
+  async (_options, io) => {
+    io.stdout(`tally ${command}: not implemented yet`);
+    return 0;
+  };
+
+const handlers: Record<Command, Handler> = {
+  run: stub('run'),
+  demo: stub('demo'),
+  init: stub('init'),
+  doctor: stub('doctor'),
+};
+
+const consoleIO: CliIO = {
+  stdout: (line) => console.log(line),
+  stderr: (line) => console.error(line),
+};
+
+/** Returns the process exit code. */
+export async function main(argv: string[], io: CliIO = consoleIO): Promise<number> {
+  const parsed = parseCli(argv);
+  switch (parsed.kind) {
+    case 'help':
+      io.stdout(USAGE);
+      return 0;
+    case 'version':
+      io.stdout(VERSION);
+      return 0;
+    case 'error':
+      io.stderr(`tally: ${parsed.message}`);
+      io.stderr('Run `tally --help` for usage.');
+      return 2;
+    case 'command':
+      return handlers[parsed.command](parsed.options, io);
+  }
+}
+
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  process.exitCode = await main(process.argv.slice(2));
+}

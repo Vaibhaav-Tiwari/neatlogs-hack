@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "runId": "run-20261011-0830",
+  "mode": "tally",
+  "dryRun": false,
+  "status": "finished",
+  "repo": "acme/payments-service",
+  "baseCommit": "538453d75384f20e5385904553862e7c5386ccb3",
+  "startedAt": "2026-10-11T03:00:00Z",
+  "updatedAt": "2026-10-11T03:49:00Z",
+  "endedAt": "2026-10-11T03:49:00Z",
+  "budget": {
+    "source": "config",
+    "limitNanos": 40000000000,
+    "spentNanos": 8225000000
+  },
+  "tasks": [
+    {
+      "taskId": "T1",
+      "title": "Reject negative amounts in refund validator",
+      "issueNumber": 12,
+      "issueUrl": "https://github.com/acme/payments-service/issues/12",
+      "size": "small",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "cheap",
+      "model": "claude-haiku-4-5-20251001",
+      "spentNanos": 130000000,
+      "escalated": false,
+      "prUrl": "https://github.com/acme/payments-service/pull/31"
+    },
+    {
+      "taskId": "T2",
+      "title": "Add currency code to receipt export",
+      "issueNumber": 13,
+      "issueUrl": "https://github.com/acme/payments-service/issues/13",
+      "size": "small",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "cheap",
+      "model": "claude-haiku-4-5-20251001",
+      "spentNanos": 185000000,
+      "escalated": false,
+      "prUrl": "https://github.com/acme/payments-service/pull/32"
+    },
+    {
+      "taskId": "T3",
+      "title": "Fix timezone in settlement date formatter",
+      "issueNumber": 14,
+      "issueUrl": "https://github.com/acme/payments-service/issues/14",
+      "size": "small",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "cheap",
+      "model": "claude-haiku-4-5-20251001",
+      "spentNanos": 100000000,
+      "escalated": false,
+      "prUrl": "https://github.com/acme/payments-service/pull/33"
+    },
+    {
+      "taskId": "T4",
+      "title": "Retry webhook delivery with backoff",
+      "issueNumber": 15,
+      "issueUrl": "https://github.com/acme/payments-service/issues/15",
+      "size": "medium",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "middle",
+      "model": "claude-sonnet-5-5",
+      "spentNanos": 880000000,
+      "escalated": false,
+      "prUrl": "https://github.com/acme/payments-service/pull/34"
+    },
+    {
+      "taskId": "T5",
+      "title": "Idempotency keys for the charge endpoint",
+      "issueNumber": 16,
+      "issueUrl": "https://github.com/acme/payments-service/issues/16",
+      "size": "medium",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 2,
+      "tier": "middle",
+      "model": "claude-sonnet-5-5",
+      "spentNanos": 1550000000,
+      "escalated": true,
+      "prUrl": "https://github.com/acme/payments-service/pull/35"
+    },
+    {
+      "taskId": "T6",
+      "title": "Paginate the transactions list API",
+      "issueNumber": 17,
+      "issueUrl": "https://github.com/acme/payments-service/issues/17",
+      "size": "medium",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "middle",
+      "model": "claude-sonnet-5-5",
+      "spentNanos": 1100000000,
+      "escalated": false,
+      "prUrl": "https://github.com/acme/payments-service/pull/36"
+    },
+    {
+      "taskId": "T7",
+      "title": "Move ledger writes into a single transaction",
+      "issueNumber": 18,
+      "issueUrl": "https://github.com/acme/payments-service/issues/18",
+      "size": "large",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "top",
+      "model": "claude-opus-5-5",
+      "spentNanos": 4280000000,
+      "escalated": false,
+      "prUrl": "https://github.com/acme/payments-service/pull/37"
+    }
+  ],
+  "integrations": {
+    "neatlogs": {
+      "status": "ok",
+      "detail": null
+    },
+    "entire": {
+      "status": "ok",
+      "detail": null
+    },
+    "cfoai": {
+      "status": "off",
+      "detail": "Budget read from tally.yaml."
+    },
+    "github": {
+      "status": "ok",
+      "detail": null
+    },
+    "slack": {
+      "status": "off",
+      "detail": null
+    }
+  }
+}
