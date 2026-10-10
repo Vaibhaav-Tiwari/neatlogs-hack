@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SizingSignals } from './ports.js';
 import { sizeFromSignals, sizeTask, specificity } from './sizer.js';
-import { FakeLlm, FakeSignals, task } from './testing/fakes.js';
+import { FakeLlm, FakeSignals, RecordingTrace, task } from './testing/fakes.js';
 
 const signals = (overrides: Partial<SizingSignals> = {}): SizingSignals => ({
   filesTouched: 1,
@@ -144,5 +144,17 @@ describe('sizeTask', () => {
     expect(prompt).toContain('Fix refund');
     expect(prompt).toContain('Files touched: 1');
     expect(prompt.length).toBeLessThan(6_000);
+  });
+
+  it('traces the sizing decision when a trace port is provided', async () => {
+    const trace = new RecordingTrace();
+    await sizeTask(task(), { signals: new FakeSignals(signals()), trace });
+    expect(trace.spans).toEqual([
+      {
+        name: 'tally.size',
+        attributes: { taskId: 'T1', size: 'small', confidence: 0.7, refinedBy: 'rules', signalsSource: 'entire-graph' },
+        error: null,
+      },
+    ]);
   });
 });

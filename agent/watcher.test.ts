@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { usdToNanos } from '../schema/money.js';
 import type { LiveUsage } from './ports.js';
-import { FakeSessions, FakeUsage, sampleConfig, tokens } from './testing/fakes.js';
+import { FakeSessions, FakeUsage, RecordingTrace, sampleConfig, tokens } from './testing/fakes.js';
 import { CeilingWatcher, checkCeiling, type WatchedAttempt } from './watcher.js';
 
 const config = sampleConfig();
@@ -86,6 +86,18 @@ describe('CeilingWatcher.poll', () => {
     const watcher = new CeilingWatcher({ usage: new FakeUsage([over]), sessions });
     expect((await watcher.poll(attempt({ ceilingNanos: null }))).action).toBe('continue');
     expect(sessions.stopped).toEqual([]);
+  });
+
+  it('traces a ceiling stop decision when a trace port is provided', async () => {
+    const trace = new RecordingTrace();
+    const sessions = new FakeSessions();
+    await new CeilingWatcher({ usage: new FakeUsage([over]), sessions, trace }).poll(attempt());
+    expect(trace.spans).toHaveLength(1);
+    expect(trace.spans[0]).toMatchObject({
+      name: 'tally.ceiling.poll',
+      attributes: { sessionId: 'sess-1', tier: 'bronze', action: 'stop', costNanos: usdToNanos(0.4), crossed: true },
+      error: null,
+    });
   });
 });
 

@@ -4,8 +4,9 @@
  */
 import { costNanos } from '../schema/money.js';
 import type { CostSource, Tier, TokenUsage } from '../schema/types.js';
-import type { LiveUsage, LiveUsagePort, SessionControlPort } from './ports.js';
+import type { LiveUsage, LiveUsagePort, SessionControlPort, TracePort } from './ports.js';
 import { usd } from './router.js';
+import { traceDecision } from './trace.js';
 
 export interface WatchedAttempt {
   sessionId: string;
@@ -55,28 +56,41 @@ export function checkCeiling(usage: LiveUsage | null, attempt: WatchedAttempt): 
 }
 
 export class CeilingWatcher {
-  constructor(private readonly ports: { usage: LiveUsagePort; sessions: SessionControlPort }) {}
+  constructor(private readonly ports: { usage: LiveUsagePort; sessions: SessionControlPort; trace?: TracePort }) {}
 
   /** Reads usage once and stops the session if it has crossed its ceiling. */
   async poll(attempt: WatchedAttempt): Promise<WatchVerdict> {
-    let usage: LiveUsage | null;
-    try {
-      usage = await this.ports.usage.usageFor(attempt.sessionId);
-    } catch {
-      return { ...checkCeiling(null, attempt), action: 'continue', reason: null, stopped: false, usageReadable: false };
-    }
-    const check = checkCeiling(usage, attempt);
-    if (!check.crossed || attempt.ceilingNanos === null) {
-      return { ...check, action: 'continue', reason: null, stopped: false, usageReadable: true };
-    }
-    const reason = `ceiling crossed: ${usd(check.costNanos)} spent against a ${usd(attempt.ceilingNanos)} ceiling`;
-    let stopped = true;
-    try {
-      await this.ports.sessions.stop(attempt.sessionId, reason);
-    } catch {
-      stopped = false;
-    }
-    return { ...check, action: 'stop', reason, stopped, usageReadable: true };
+    return traceDecision(
+      this.ports.trace,
+      'tally.ceiling.poll',
+      { sessionId: attempt.sessionId, tier: attempt.tier.name, ceilingNanos: attempt.ceilingNanos },
+      async (span) => {
+        let usage: LiveUsage | null;
+        try {
+          usage = await this.ports.usage.usageFor(attempt.sessionId);
+        } catch {
+          const verdict = { ...checkCeiling(null, attempt), action: 'continue' as const, reason: null, stopped: false, usageReadable: false };
+          span.set({ action: verdict.action, costNanos: verdict.costNanos, crossed: verdict.crossed, usageReadable: false });
+          return verdict;
+        }
+        const check = checkCeiling(usage, attempt);
+        if (!check.crossed || attempt.ceilingNanos === null) {
+          const verdict = { ...check, action: 'continue' as const, reason: null, stopped: false, usageReadable: true };
+          span.set({ action: verdict.action, costNanos: verdict.costNanos, crossed: verdict.crossed, usageReadable: true });
+          return verdict;
+        }
+        const reason = `ceiling crossed: ${usd(check.costNanos)} spent against a ${usd(attempt.ceilingNanos)} ceiling`;
+        let stopped = true;
+        try {
+          await this.ports.sessions.stop(attempt.sessionId, reason);
+        } catch {
+          stopped = false;
+        }
+        const verdict = { ...check, action: 'stop' as const, reason, stopped, usageReadable: true };
+        span.set({ action: verdict.action, costNanos: verdict.costNanos, crossed: verdict.crossed, stopped, reason });
+        return verdict;
+      },
+    );
   }
 
   /** Polls until the session has been stopped at its ceiling or the signal is aborted. */

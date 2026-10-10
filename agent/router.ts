@@ -11,8 +11,9 @@
 import { ceilingNanos, nanosToUsd } from '../schema/money.js';
 import type { TallyConfig, TaskSize, Tier } from '../schema/types.js';
 import { DEFAULT_PRIOR_WEIGHT, estimateFor, tierRank } from './history.js';
-import type { BudgetPort, PriceHistoryPort, TaskInput } from './ports.js';
+import type { BudgetPort, PriceHistoryPort, TaskInput, TracePort } from './ports.js';
 import type { SizeEstimate } from './sizer.js';
+import { traceDecision } from './trace.js';
 
 export interface RoutingOptions {
   /**
@@ -68,7 +69,7 @@ export interface RouteInput {
   task: TaskInput;
   estimate: SizeEstimate;
   config: TallyConfig;
-  ports: { history?: PriceHistoryPort; budget: BudgetPort };
+  ports: { history?: PriceHistoryPort; budget: BudgetPort; trace?: TracePort };
   options?: Partial<RoutingOptions>;
 }
 
@@ -95,7 +96,7 @@ interface Candidate {
   fits: boolean;
 }
 
-export async function routeTask(input: RouteInput): Promise<RouteDecision> {
+async function routeTaskCore(input: RouteInput): Promise<RouteDecision> {
   const { task, estimate, config } = input;
   const options = { ...DEFAULT_ROUTING, ...input.options };
   const { size, confidence } = estimate;
@@ -200,4 +201,22 @@ export async function routeTask(input: RouteInput): Promise<RouteDecision> {
         ? `Not started because only ${usd(remaining)} of budget is left and the smallest ceiling for this ${size} task is ${usd(smallest)}.`
         : `Not started because only ${usd(remaining)} of budget is left, and no tier that fits it is likely to finish this ${size} task.`,
   };
+}
+
+export async function routeTask(input: RouteInput): Promise<RouteDecision> {
+  return traceDecision(
+    input.ports.trace,
+    'tally.route',
+    { taskId: input.task.taskId, size: input.estimate.size, confidence: input.estimate.confidence },
+    async (span) => {
+      const decision = await routeTaskCore(input);
+      span.set({
+        action: decision.action,
+        tier: decision.action === 'start' ? decision.tier.name : null,
+        ceilingNanos: decision.action === 'start' ? decision.ceilingNanos : null,
+        reason: decision.reason,
+      });
+      return decision;
+    },
+  );
 }

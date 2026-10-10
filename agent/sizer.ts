@@ -5,7 +5,8 @@
  * cheaper on its own word.
  */
 import type { TaskSize } from '../schema/types.js';
-import type { LlmPort, SizingSignals, SizingSignalsPort, TaskInput } from './ports.js';
+import type { LlmPort, SizingSignals, SizingSignalsPort, TaskInput, TracePort } from './ports.js';
+import { traceDecision } from './trace.js';
 
 export interface SizeEstimate {
   size: TaskSize;
@@ -157,15 +158,24 @@ async function refine(task: TaskInput, rules: SizeEstimate, llm: LlmPort, model?
 /** Reads the signals, applies the rules, and refines with the LLM when one is given. */
 export async function sizeTask(
   task: TaskInput,
-  ports: { signals: SizingSignalsPort; llm?: LlmPort },
+  ports: { signals: SizingSignalsPort; llm?: LlmPort; trace?: TracePort },
   options: SizerOptions = {},
 ): Promise<SizeEstimate> {
-  let signals: SizingSignals | null;
-  try {
-    signals = await ports.signals.signalsFor(task);
-  } catch {
-    signals = null;
-  }
-  const rules = sizeFromSignals(task, signals);
-  return ports.llm ? refine(task, rules, ports.llm, options.llmModel) : rules;
+  return traceDecision(ports.trace, 'tally.size', { taskId: task.taskId }, async (span) => {
+    let signals: SizingSignals | null;
+    try {
+      signals = await ports.signals.signalsFor(task);
+    } catch {
+      signals = null;
+    }
+    const rules = sizeFromSignals(task, signals);
+    const estimate = ports.llm ? await refine(task, rules, ports.llm, options.llmModel) : rules;
+    span.set({
+      size: estimate.size,
+      confidence: estimate.confidence,
+      refinedBy: estimate.refinedBy,
+      signalsSource: estimate.signals?.source ?? null,
+    });
+    return estimate;
+  });
 }
