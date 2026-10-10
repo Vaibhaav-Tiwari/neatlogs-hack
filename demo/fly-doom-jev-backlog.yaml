@@ -1,6 +1,6 @@
-# Draft backlog for https://github.com/Vaibhaav-Tiwari/fly-doom-jev.
-# Do not file these as issues until the user approves them. The checks below
-# are based on a scratch clone at f99b54c, where `make test` passed.
+# Backlog for https://github.com/Vaibhaav-Tiwari/fly-doom-jev.
+# These tasks were filed publicly after human approval. The checks below are
+# based on the default branch at f99b54c, where `make test` passed.
 version: 1
 kind: tally-draft-backlog
 
@@ -14,8 +14,19 @@ test:
   command: make test
   notes: Fresh clone test result from lane A was 90 passed in 7.53s.
 
+# Ready tally.yaml snippet for reading this same backlog from GitHub issues:
+githubIssuesConfig:
+  repo:
+    slug: Vaibhaav-Tiwari/fly-doom-jev
+    baseBranch: main
+  backlog:
+    source: github-issues
+    issueLabel: tally
+
 tasks:
   - id: FDJ-1
+    issueNumber: 1
+    issueUrl: https://github.com/Vaibhaav-Tiwari/fly-doom-jev/issues/1
     title: Add replay loader coverage for malformed recording files
     size: small
     label: tally
@@ -28,6 +39,8 @@ tasks:
     passCheck: .venv/bin/python -m pytest tests/unit/test_recording.py -q
 
   - id: FDJ-2
+    issueNumber: 2
+    issueUrl: https://github.com/Vaibhaav-Tiwari/fly-doom-jev/issues/2
     title: Include goal fields in encoded state tests
     size: small
     label: tally
@@ -39,6 +52,8 @@ tasks:
     passCheck: .venv/bin/python -m pytest tests/unit/test_state_encoder.py -q
 
   - id: FDJ-3
+    issueNumber: 3
+    issueUrl: https://github.com/Vaibhaav-Tiwari/fly-doom-jev/issues/3
     title: Test POST /new rejects unknown live scenarios
     size: small
     label: tally
@@ -50,6 +65,8 @@ tasks:
     passCheck: .venv/bin/python -m pytest tests/unit/test_jev_live.py -q
 
   - id: FDJ-4
+    issueNumber: 4
+    issueUrl: https://github.com/Vaibhaav-Tiwari/fly-doom-jev/issues/4
     title: Preserve recording summary when both summary and episode_end rows exist
     size: medium
     label: tally
@@ -61,6 +78,8 @@ tasks:
     passCheck: .venv/bin/python -m pytest tests/unit/test_recording.py tests/integration/test_closed_loop.py -q
 
   - id: FDJ-5
+    issueNumber: 5
+    issueUrl: https://github.com/Vaibhaav-Tiwari/fly-doom-jev/issues/5
     title: Add action-weighting regression for missing MOVEMENT_INTENT metadata
     size: medium
     label: tally
@@ -72,6 +91,8 @@ tasks:
     passCheck: .venv/bin/python -m pytest tests/unit/test_weighting.py tests/unit/test_jev.py -q
 
   - id: FDJ-6
+    issueNumber: 6
+    issueUrl: https://github.com/Vaibhaav-Tiwari/fly-doom-jev/issues/6
     title: Make plasticity checkpoint errors actionable
     size: medium
     label: tally
@@ -84,6 +105,8 @@ tasks:
     passCheck: .venv/bin/python -m pytest tests/unit/test_plasticity.py -q
 
   - id: FDJ-7
+    issueNumber: 7
+    issueUrl: https://github.com/Vaibhaav-Tiwari/fly-doom-jev/issues/7
     title: Add deterministic featured-recording generation for the static showcase
     size: medium
     difficultyNote: looks medium but is hard

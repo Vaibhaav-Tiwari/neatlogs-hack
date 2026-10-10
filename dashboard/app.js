@@ -15,6 +15,7 @@ const config = {
   data: asFolder(query.get('data') ?? defaults.data ?? './'),
   baseline: query.get('baseline') ?? defaults.baseline ?? null,
   intervalMs: Math.max(250, Number(query.get('interval') ?? defaults.intervalMs ?? 2000) || 2000),
+  aoProject: query.get('aoProject') ?? defaults.aoProject ?? null,
   sample: defaults.sample ?? null,
   // ?demo shows the checked-in sample. ?replay=60 plays the chosen run over that many seconds.
   useSample: wantsDemo || (wantsReplay && !hasExplicitData),
@@ -27,7 +28,7 @@ if (config.baseline) config.baseline = asFolder(config.baseline);
 const esc = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-/** Only http(s) links are rendered; anything else in the data is shown as plain text. */
+/** Only http(s) data links are rendered; anything else in the data is shown as plain text. */
 const safeUrl = (url) => (typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null);
 
 function usd(nanos) {
@@ -51,6 +52,24 @@ const link = (url, text) => {
   const href = safeUrl(url);
   return href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(text)}</a>` : '';
 };
+
+const idEvidence = (label, value) =>
+  value ? `<span class="evidence-id">${esc(label)} <code tabindex="0" title="Select to copy">${esc(value)}</code></span>` : '';
+
+function aoSessionEvidence(sessionId) {
+  if (!sessionId) return '';
+  if (!config.aoProject) return idEvidence('AO session', sessionId);
+  const href = `ao://sessions/${encodeURIComponent(config.aoProject)}/${encodeURIComponent(sessionId)}`;
+  return `<a href="${esc(href)}">AO session</a>`;
+}
+
+function traceEvidence(row) {
+  return link(row.traceUrl, 'neatlogs trace') || idEvidence('trace', row.traceId);
+}
+
+function checkpointEvidence(row) {
+  return link(row.checkpointUrl, 'Entire checkpoint') || idEvidence('checkpoint', row.checkpointId);
+}
 
 const isRunning = (row) => row.result === 'running' || (!row.endedAt && !['passed', 'failed', 'stopped', 'error'].includes(row.result));
 
@@ -333,7 +352,7 @@ function drawLedger(run, ledger) {
       const kind = running ? 'running' : row.result;
       const groupStart = !seenTasks.has(row.taskId);
       seenTasks.add(row.taskId);
-      const links = [link(row.prUrl, 'PR'), link(row.traceUrl, 'trace'), link(row.checkpointUrl, 'checkpoint')].filter(Boolean);
+      const links = [link(row.prUrl, 'PR'), aoSessionEvidence(row.sessionId), checkpointEvidence(row), traceEvidence(row)].filter(Boolean);
       const tokenSplit = `${count(row.tokens.uncachedInput)} in, ${count(row.tokens.cachedInput)} cached, ${count(row.tokens.output)} out`;
       return `<tr class="a-${esc(kind)} ${groupStart ? 'group-start' : ''}">
         <td class="fig">${esc(row.taskId)}/${row.attempt}</td>
