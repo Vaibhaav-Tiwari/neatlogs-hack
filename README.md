@@ -1,5 +1,12 @@
 # Tally
 
+Export a static dashboard snapshot with `tally publish --out site`, or choose
+recorded folders with `tally publish --out site --runs run-id-1,run-id-2`.
+The default includes real runs only. The command reads `.tally/runs`, scans
+the exported files for sensitive content, and prints their sizes. Serve the
+output directory on a static HTTP host, including under a sub-path. This
+creates local files; it does not deploy them.
+
 A CFO for a fleet of coding agents. Give it a backlog and a budget. It sizes
 each task, sends it to the cheapest model likely to finish it, stops any task
 that overruns its spend ceiling, hands failed work to a stronger model, and
@@ -68,7 +75,7 @@ npm test
 | `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`, `--plan`, `--dashboard`/`--open`. |
 | `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to light up read-only integrations while workers stay fake. |
 | `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
-| `tally init` | Detect the test command, ask for a budget and issue label, and write `tally.yaml`. |
+| `tally init` | Detect test/setup commands, ask budget and integration preferences, then display all proposed files and AO project changes before a final default-No confirmation. `--dry-run` previews without changes; `--yes` applies detected defaults without prompts. Scoped worker allow-list enforcement is not yet installed. |
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 
 ## Layout
@@ -89,8 +96,12 @@ With `integrations.entire: true`, enable Entire in the target repository and
 trust its Codex hooks through `/hooks` before starting workers. Tally records
 the task commit's `Entire-Checkpoint` trailer and its native `entireSessionId`
 separately from the AO `sessionId`. Logs-only checkpoints retain conversation
-context; escalation uses a generated summary when available and otherwise
-describes the recorded files without claiming an AI summary was generated.
+context; escalation defaults to a metadata-only handoff containing the
+checkpoint/session IDs, branch, recorded and changed files, attempt verdict,
+and task text. It does not generate a summary or export a transcript.
+`entire.generatedSummaries: true` explicitly opts into Entire's summary
+provider (`checkpoint explain --generate`), which may export session content;
+this setting is off by default and requires the user's approval.
 When Tally publishes a verified branch, it also pushes the checkpoint refs
 named by its new commits to `origin` and to an `entire` remote when configured.
 Checkpoint upload failures are reported as publishing failures. Dry runs do

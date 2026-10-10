@@ -12,8 +12,9 @@ import { loginCfoai } from '../adapters/cfoai.js';
 import { CrustDataError, runCrustDataMarketSearch } from '../adapters/crustdata.js';
 import { nanosToUsd } from '../schema/index.js';
 import { startDashboardServer } from './dashboard-server.js';
+import { publishSite } from './publish.js';
 
-export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -37,6 +38,7 @@ export interface CliOptions {
   plan: boolean;
   /** Use live read-only integrations for `tally demo`. */
   live: boolean;
+  yes?: boolean;
   /** Integration to authenticate for `tally login`. */
   loginTarget: 'cfoai' | undefined;
   /** Directory for `tally market` output. */
@@ -45,6 +47,8 @@ export interface CliOptions {
   limit: number | undefined;
   /** Keyword for `tally market`. */
   keyword: string | undefined;
+  out?: string;
+  runs?: string[];
 }
 
 export type ParsedCli =
@@ -71,6 +75,7 @@ Commands:
   doctor   Check that each integration is connected
   login    Connect an integration, e.g. tally login cfoai
   market   Search CrustData for companies adopting coding agents
+  publish  Write a static dashboard bundle (does not deploy)
 
 Options:
   --config <path>   Path to tally.yaml (default: tally.yaml)
@@ -83,9 +88,12 @@ Options:
   --port <number>   Dashboard port (default: 5177; use 0 for any free port)
   --plan            Size and route tasks, but do not spawn workers
   --live            For demo: use live read-only integrations with fake workers
+  --yes             For init: approve the final change summary without prompting
   --output <dir>    Output directory for tally market (default: .tally/market/latest)
   --limit <number>  Result limit for tally market (default: 10)
   --keyword <text>  CrustData keyword for tally market (default: AI coding)
+  --out <dir>       New directory for tally publish (required)
+  --runs <ids>      Comma-separated run folder ids (default: all real runs)
   -h, --help        Show this help
   -v, --version     Show the version`;
 
@@ -106,9 +114,12 @@ export function parseCli(argv: string[]): ParsedCli {
         port: { type: 'string' },
         plan: { type: 'boolean', default: false },
         live: { type: 'boolean', default: false },
+        yes: { type: 'boolean', default: false },
         output: { type: 'string' },
         limit: { type: 'string' },
         keyword: { type: 'string' },
+        out: { type: 'string' },
+        runs: { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
         version: { type: 'boolean', short: 'v', default: false },
       },
@@ -165,10 +176,13 @@ export function parseCli(argv: string[]): ParsedCli {
       port,
       plan: values.plan,
       live: values.live,
+      ...(values.yes ? { yes: true } : {}),
       loginTarget: name === 'login' ? 'cfoai' : undefined,
       output: values.output,
       limit,
       keyword: values.keyword,
+      ...(values.out !== undefined ? { out: values.out } : {}),
+      ...(values.runs !== undefined ? { runs: values.runs.split(',') } : {}),
     },
   };
 }
@@ -217,7 +231,11 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
 
 async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
-    const result = await runInit({ configPath: options.config });
+    const result = await runInit({ configPath: options.config, yes: options.yes, dryRun: options.dryRun, print: io.stdout });
+    if (!result.applied) {
+      io.stdout(options.dryRun ? 'Dry run: no changes made.' : 'Init cancelled: no changes made.');
+      return 0;
+    }
     io.stdout(`wrote ${result.configPath}`);
     io.stdout(`repo project ${result.projectId}`);
     io.stdout(`test ${result.testCommand}`);
@@ -318,6 +336,18 @@ function reportError(prefix: string, error: unknown, io: CliIO): number {
 }
 
 const handlers: Record<Command, Handler> = {
+  publish: async (options, io) => {
+    try {
+      if (!options.out) throw new Error('publish requires --out <dir>');
+      const result = publishSite({ out: options.out, runs: options.runs });
+      for (const file of result.files) io.stdout(`${file.path}: ${file.bytes} bytes`);
+      io.stdout(`bundle: ${result.files.length} files, ${result.totalBytes} bytes`);
+      return 0;
+    } catch (error) {
+      io.stderr(`tally publish: ${(error as Error).message}`);
+      return 2;
+    }
+  },
   run: runCommand,
   demo: demoCommand,
   dashboard: dashboardCommand,
