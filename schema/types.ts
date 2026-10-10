@@ -78,6 +78,9 @@ export interface LedgerRow {
   /** Neatlogs trace id for the routing or escalation decision that created this attempt. */
   traceId: string | null;
   traceUrl: string | null;
+  /** Verified worker-session trace, distinct from the CFO decision trace. */
+  workerTraceId?: string | null;
+  workerTraceUrl?: string | null;
   checkpointId: string | null;
   checkpointUrl: string | null;
   /** The CFO agent's one-sentence reason for choosing this tier. */

@@ -23,7 +23,7 @@ async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
 
 describe('parseCli', () => {
   it('parses each command', () => {
-    for (const command of COMMANDS.filter((command) => command !== 'login')) {
+    for (const command of COMMANDS.filter((command) => command !== 'login' && command !== 'traces')) {
       expect(parseCli([command])).toMatchObject({ kind: 'command', command });
     }
   });
@@ -48,6 +48,14 @@ describe('parseCli', () => {
         keyword: undefined,
       },
     });
+  });
+
+  it('requires a run-scoped trace drain and rejects unsafe run ids', () => {
+    expect(parseCli(['traces', 'drain', '--run', 'run-1', '--output', '/runs/run-1'])).toMatchObject({ kind: 'command', command: 'traces', options: { runId: 'run-1', output: '/runs/run-1' } });
+    expect(parseCli(['traces'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['traces', 'drain'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['traces', 'drain', '--run', '../latest'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['traces', 'drain', '--run', 'run-1', '--dry-run'])).toMatchObject({ kind: 'error' });
   });
 
   it('defaults the config path and leaves budget unset', () => {

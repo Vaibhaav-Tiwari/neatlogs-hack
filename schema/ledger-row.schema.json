@@ -73,6 +73,8 @@
     "prUrl": { "type": ["string", "null"], "format": "uri" },
     "traceId": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{32}$" },
     "traceUrl": { "type": ["string", "null"], "format": "uri" },
+    "workerTraceId": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{32}$" },
+    "workerTraceUrl": { "type": ["string", "null"], "format": "uri" },
     "checkpointId": { "type": ["string", "null"] },
     "checkpointUrl": { "type": ["string", "null"], "format": "uri" },
     "decision": { "type": "string", "minLength": 1 },

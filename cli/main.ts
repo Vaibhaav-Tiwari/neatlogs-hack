@@ -9,13 +9,14 @@ import { runUninstall } from '../engine/uninstall.js';
 import { runExperiment } from '../engine/experiment.js';
 import { planTally, readPlanBudget } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
+import { recoverRunTraces } from '../engine/trace-recovery.js';
 import { loginCfoai } from '../adapters/cfoai.js';
 import { CrustDataError, runCrustDataMarketSearch } from '../adapters/crustdata.js';
 import { formatUsd } from '../schema/index.js';
 import { startDashboardServer } from './dashboard-server.js';
 import { publishSite } from './publish.js';
 
-export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -51,6 +52,7 @@ export interface CliOptions {
   keyword: string | undefined;
   out?: string;
   runs?: string[];
+  runId?: string;
 }
 
 export type ParsedCli =
@@ -79,6 +81,7 @@ Commands:
   login    Connect an integration, e.g. tally login cfoai
   market   Search CrustData for companies adopting coding agents
   publish  Write a static dashboard bundle (does not deploy)
+  traces drain --run <id> Drain and read-back verify a finished run's worker traces
 
 Options:
   --repeats <N>     Repeats per experiment mode (default: 2)
@@ -98,6 +101,7 @@ Options:
   --keyword <text>  CrustData keyword for tally market (default: AI coding)
   --out <dir>       New directory for tally publish (required)
   --runs <ids>      Comma-separated run folder ids (default: all real runs)
+  --run <id>        Run id for traces drain; --output overrides its run directory
   -h, --help        Show this help
   -v, --version     Show the version`;
 
@@ -125,6 +129,7 @@ export function parseCli(argv: string[]): ParsedCli {
         repeats: { type: 'string' },
         out: { type: 'string' },
         runs: { type: 'string' },
+        run: { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
         version: { type: 'boolean', short: 'v', default: false },
       },
@@ -143,6 +148,10 @@ export function parseCli(argv: string[]): ParsedCli {
   if (name === 'login') {
     if (extra[0] !== 'cfoai') return { kind: 'error', message: 'login expects an integration: cfoai' };
     if (extra.length > 1) return { kind: 'error', message: `unexpected argument "${extra[1]}"` };
+  } else if (name === 'traces') {
+    if (extra.length !== 1 || extra[0] !== 'drain' || !values.run) return { kind: 'error', message: 'traces expects drain --run <id>' };
+    if (!/^[a-zA-Z0-9_-]+$/.test(values.run)) return { kind: 'error', message: 'Invalid run id' };
+    if (values['dry-run'] || values.plan) return { kind: 'error', message: 'traces drain verifies real delivery; --dry-run and --plan are not supported' };
   } else if (extra.length > 0) {
     return { kind: 'error', message: `unexpected argument "${extra[0]}"` };
   }
@@ -194,6 +203,7 @@ export function parseCli(argv: string[]): ParsedCli {
       keyword: values.keyword,
       ...(values.out !== undefined ? { out: values.out } : {}),
       ...(values.runs !== undefined ? { runs: values.runs.split(',') } : {}),
+      ...(values.run !== undefined ? { runId: values.run } : {}),
     },
   };
 }
@@ -347,6 +357,17 @@ function reportError(prefix: string, error: unknown, io: CliIO): number {
 }
 
 const handlers: Record<Command, Handler> = {
+  traces: async (options, io) => {
+    try {
+      const result = await recoverRunTraces({ runId: options.runId!, outputDir: options.output });
+      io.stdout(`neatlogs: ${result.before.status} -> ${result.after.status}`);
+      io.stdout(result.after.detail ?? '');
+      return 0;
+    } catch (error) {
+      io.stderr(`tally traces drain: ${error instanceof Error ? error.message : 'Trace recovery failed'}`);
+      return 2;
+    }
+  },
   experiment: async (options, io) => {
     try {
       if (options.plan || options.baseline || options.live) throw new RunError(['experiment runs both modes; --plan/--baseline/--live are not supported here. Use tally run --plan to preview a mode.']);

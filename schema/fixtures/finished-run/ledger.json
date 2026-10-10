@@ -28,6 +28,8 @@
     "handoff": "none",
     "prUrl": "https://github.com/acme/payments-service/pull/31",
     "traceUrl": null,
+    "workerTraceId": null,
+    "workerTraceUrl": null,
     "checkpointId": "248e067d248e",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/248e067d248e",
     "decision": "Small change in one file with an existing test file beside it, so the cheap tier is expected to finish under its $0.30 ceiling.",
