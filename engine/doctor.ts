@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadEnv } from './env.js';
 
 const execFileAsync = promisify(execFile);
@@ -18,6 +19,7 @@ export type DoctorRunner = (file: string, args: string[]) => Promise<{ stdout: s
 export interface DoctorOptions {
   runner?: DoctorRunner;
   env?: Record<string, string>;
+  cfoaiCheck?: typeof checkCfoaiConnection;
 }
 
 function defaultRunner(file: string, args: string[]) {
@@ -38,6 +40,7 @@ async function commandLine(product: string, runner: DoctorRunner, file: string, 
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine[]> {
   const runner = options.runner ?? defaultRunner;
   const env = options.env ?? loadEnv();
+  const cfoaiCheck = options.cfoaiCheck ?? checkCfoaiConnection;
   const lines: DoctorLine[] = [];
   lines.push(await commandLine('AO daemon', runner, 'ao', ['status'], 'ao start'));
   lines.push(await commandLine('GitHub CLI', runner, 'gh', ['auth', 'status'], 'gh auth login'));
@@ -53,27 +56,12 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
           fix: "mkdir -p ~/.tally && printf 'NEATLOGS_API_KEY=...\\n' >> ~/.tally/.env",
         },
   );
-  try {
-    const { stdout } = await runner('claude', ['mcp', 'list']);
-    const connected = /\bcfoai\b/i.test(stdout);
-    lines.push(
-      connected
-        ? { product: 'cfo.ai', status: 'connected', detail: 'cfoai MCP is listed', fix: null }
-        : {
-            product: 'cfo.ai',
-            status: 'missing',
-            detail: 'cfoai MCP is not listed',
-            fix: 'claude mcp add --scope user --transport http cfoai https://api.cfo.ai/mcp',
-          },
-    );
-  } catch (e) {
-    const code = (e as { code?: unknown }).code;
-    lines.push({
-      product: 'cfo.ai',
-      status: code === 'ENOENT' ? 'missing' : 'broken',
-      detail: code === 'ENOENT' ? 'claude not found' : 'claude mcp list failed',
-      fix: 'claude mcp add --scope user --transport http cfoai https://api.cfo.ai/mcp',
-    });
-  }
+  const cfoai = await cfoaiCheck();
+  lines.push({
+    product: 'cfo.ai',
+    status: cfoai.status === 'ok' ? 'connected' : 'missing',
+    detail: cfoai.detail ?? (cfoai.status === 'ok' ? 'Tally cached token works' : 'Tally cfo.ai token is missing or unusable'),
+    fix: cfoai.status === 'ok' ? null : 'tally login cfoai',
+  });
   return lines;
 }

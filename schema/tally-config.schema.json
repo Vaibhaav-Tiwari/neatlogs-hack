@@ -92,8 +92,16 @@
         "cfoai": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["scenario"],
-          "properties": { "scenario": { "type": "string", "minLength": 1 } }
+          "properties": {
+            "orgId": { "type": "string", "minLength": 1 },
+            "scenario": { "type": "string", "minLength": 1 },
+            "table": { "type": "string", "minLength": 1 },
+            "budgetRow": { "type": "string", "minLength": 1 },
+            "spendRow": { "type": "string", "minLength": 1 },
+            "remainingRow": { "type": "string", "minLength": 1 },
+            "tableUrl": { "type": "string", "format": "uri" },
+            "serverUrl": { "type": "string", "format": "uri" }
+          }
         }
       }
     },

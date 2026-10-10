@@ -18,6 +18,7 @@
     "tally": "tsx cli/main.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "neatlogs": "^1.1.28",

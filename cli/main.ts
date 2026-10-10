@@ -6,10 +6,11 @@ import { ConfigError } from '../engine/config.js';
 import { runDoctor } from '../engine/doctor.js';
 import { planTally } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
+import { loginCfoai } from '../adapters/cfoai.js';
 import { nanosToUsd } from '../schema/index.js';
 import { startDashboardServer } from './dashboard-server.js';
 
-export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'doctor'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'doctor', 'login'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -31,6 +32,8 @@ export interface CliOptions {
   port: number | undefined;
   /** Print route decisions without spawning workers. */
   plan: boolean;
+  /** Integration to authenticate for `tally login`. */
+  loginTarget: 'cfoai' | undefined;
 }
 
 export type ParsedCli =
@@ -54,6 +57,7 @@ Commands:
   dashboard Start the local dashboard server
   init     Set up tally.yaml for the current repository
   doctor   Check that each integration is connected
+  login    Connect an integration, e.g. tally login cfoai
 
 Options:
   --config <path>   Path to tally.yaml (default: tally.yaml)
@@ -99,7 +103,12 @@ export function parseCli(argv: string[]): ParsedCli {
   if (!(COMMANDS as readonly string[]).includes(name)) {
     return { kind: 'error', message: `unknown command "${name}"; expected one of ${COMMANDS.join(', ')}` };
   }
-  if (extra.length > 0) return { kind: 'error', message: `unexpected argument "${extra[0]}"` };
+  if (name === 'login') {
+    if (extra[0] !== 'cfoai') return { kind: 'error', message: 'login expects an integration: cfoai' };
+    if (extra.length > 1) return { kind: 'error', message: `unexpected argument "${extra[1]}"` };
+  } else if (extra.length > 0) {
+    return { kind: 'error', message: `unexpected argument "${extra[0]}"` };
+  }
 
   let budgetUsd: number | undefined;
   if (values.budget !== undefined) {
@@ -127,6 +136,7 @@ export function parseCli(argv: string[]): ParsedCli {
       dashboard: values.dashboard || values.open,
       port,
       plan: values.plan,
+      loginTarget: name === 'login' ? 'cfoai' : undefined,
     },
   };
 }
@@ -191,6 +201,18 @@ async function demoCommand(_options: CliOptions, io: CliIO): Promise<number> {
   }
 }
 
+async function loginCommand(options: CliOptions, io: CliIO): Promise<number> {
+  if (options.loginTarget !== 'cfoai') return reportError('tally login', new RunError(['login expects an integration: cfoai']), io);
+  try {
+    const result = await loginCfoai();
+    io.stdout(`cfo.ai connected; tokens cached at ${result.tokenPath}`);
+    return 0;
+  } catch (e) {
+    io.stderr(`tally login cfoai: ${(e as Error).message}`);
+    return 2;
+  }
+}
+
 async function dashboardCommand(options: CliOptions, io: CliIO): Promise<number> {
   const dashboard = await startDashboardServer({ port: options.port });
   io.stdout(`dashboard ${dashboard.url}`);
@@ -221,6 +243,7 @@ const handlers: Record<Command, Handler> = {
   dashboard: dashboardCommand,
   init: stub('init'),
   doctor: doctorCommand,
+  login: loginCommand,
 };
 
 const consoleIO: CliIO = {

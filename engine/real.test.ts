@@ -1,12 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SizingSignalsPort, LiveUsagePort, SessionControlPort } from '../agent/ports.js';
-import { validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
+import { usdToNanos, validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
-import { runRealTally, type WorkerPort, type WorkerStartInput } from './real.js';
+import { runRealTally, type CfoaiBudgetPort, type WorkerPort, type WorkerStartInput } from './real.js';
 
 const fixedNow = () => new Date('2026-10-11T03:00:00.000Z');
 
@@ -101,6 +101,34 @@ class SequenceVerifier implements VerifierPort {
     const result = this.results[Math.min(this.calls, this.results.length - 1)]!;
     this.calls += 1;
     return result;
+  }
+}
+
+class FakeCfoaiBudget implements CfoaiBudgetPort {
+  writes: number[] = [];
+  constructor(
+    private readonly budgetNanos = usdToNanos(40),
+    private readonly failRead = false,
+  ) {}
+
+  async remainingNanos() {
+    return this.budgetNanos;
+  }
+
+  async budgetLimitNanos() {
+    if (this.failRead) throw new Error('not logged in');
+    return this.budgetNanos;
+  }
+
+  async writeCumulativeActualSpend(runSpendNanos: number) {
+    if (this.failRead) throw new Error('not logged in');
+    this.writes.push(runSpendNanos);
+  }
+
+  status() {
+    return this.failRead
+      ? { status: 'missing' as const, detail: 'not logged in. Run `tally login cfoai` to connect cfo.ai.' }
+      : { status: 'ok' as const, detail: 'https://app.cfo.ai/s/table' };
   }
 }
 
@@ -295,5 +323,99 @@ describe('runRealTally', () => {
 
     expect(result.runState.integrations.entire).toMatchObject({ status: 'missing' });
     expect(result.runState.integrations.entire.detail).toContain('entire enable');
+  });
+
+  it('reads the run budget from cfo.ai, writes cumulative real spend and keeps a CSV fallback', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    writeFileSync(
+      configPath,
+      readFileSync(configPath, 'utf8').replace(
+        'budget: { source: config, usd: 40 }',
+        'budget: { source: cfoai, usd: 10, cfoai: { orgId: "103210", scenario: "Main Scenario", table: "Tally agent budget", budgetRow: "Agent budget", spendRow: "Agent spend", tableUrl: "https://app.cfo.ai/s/table" } }',
+      ),
+    );
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40));
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'cfoai'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        cfoai,
+      },
+    });
+
+    expect(result.runState.budget).toMatchObject({ source: 'cfoai', limitNanos: usdToNanos(40) });
+    expect(cfoai.writes).toEqual([result.ledger[0]!.estimatedCostNanos]);
+    const csv = readFileSync(join(result.outputDir, 'cfoai-spend-fallback.csv'), 'utf8');
+    expect(csv).toContain('run_id,attempt_id,task_id');
+    expect(csv).toContain(result.ledger[0]!.attemptId);
+    expect(result.runState.integrations.cfoai).toEqual({ status: 'ok', detail: 'https://app.cfo.ai/s/table' });
+  });
+
+  it('falls back to tally.yaml budget and CSV-only accounting when cfo.ai is enabled but unavailable', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }', 'budget: { source: cfoai, usd: 10 }'));
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), true);
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'cfoai-missing'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        cfoai,
+      },
+    });
+
+    expect(result.runState.budget).toMatchObject({ source: 'config', limitNanos: usdToNanos(10) });
+    expect(cfoai.writes).toEqual([]);
+    expect(result.runState.integrations.cfoai).toMatchObject({ status: 'missing' });
+    expect(readFileSync(join(result.outputDir, 'cfoai-spend-fallback.csv'), 'utf8')).toContain(result.ledger[0]!.attemptId);
+  });
+
+  it('never writes simulated dry-run spend to cfo.ai', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }', 'budget: { source: cfoai, usd: 10 }'));
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40));
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: true,
+      baseline: false,
+      outputDir: join(dir, 'cfoai-dry'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        cfoai,
+      },
+    });
+
+    expect(cfoai.writes).toEqual([]);
+    expect(existsSync(join(result.outputDir, 'cfoai-spend-fallback.csv'))).toBe(false);
+    expect(result.runState.budget).toMatchObject({ source: 'config', limitNanos: usdToNanos(10) });
   });
 });
