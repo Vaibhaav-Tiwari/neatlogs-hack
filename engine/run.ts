@@ -17,6 +17,7 @@ import type {
 } from '../schema/index.js';
 import { loadConfig } from './config.js';
 import { type BacklogTask, loadFileBacklog } from './backlog.js';
+import { runRealTally, type RealRunOptions } from './real.js';
 
 export interface RunOptions {
   configPath: string;
@@ -132,8 +133,8 @@ function assertValid(runState: RunState, ledger: Ledger): void {
   if (errors.length > 0) throw new RunError(errors);
 }
 
-export async function runTally(options: RunOptions): Promise<RunResult> {
-  if (!options.dryRun) throw new RunError(['real worker execution is not implemented yet; pass --dry-run']);
+export async function runTally(options: RunOptions | RealRunOptions): Promise<RunResult> {
+  if (!options.dryRun) return runRealTally(options as RealRunOptions);
   const config = loadConfig(options.configPath);
   const mode: RunMode = options.baseline ? 'baseline' : 'tally';
   const now = options.now ?? (() => new Date());
