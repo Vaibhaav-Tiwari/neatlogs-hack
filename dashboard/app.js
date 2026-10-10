@@ -26,7 +26,8 @@ const config = {
   replaySec: wantsReplay ? Math.max(5, Number(query.get('replay')) || 60) : null,
 };
 if (config.baseline) config.baseline = asFolder(config.baseline);
-let activeData = asFolder(query.get('run') ? `/runs/${query.get('run')}/` : config.data);
+const runsRoot = asFolder(defaults.runsRoot ?? '/runs/');
+let activeData = asFolder(query.get('run') ? `${runsRoot}${encodeURIComponent(query.get('run'))}/` : config.data);
 
 // ---------- formatting ----------
 
@@ -99,10 +100,10 @@ async function readRunState(folder) {
 }
 
 function runOptionFrom(value) {
-  if (typeof value === 'string') return { id: value, path: `/runs/${value}/`, label: value };
+  if (typeof value === 'string') return { id: value, path: `${runsRoot}${encodeURIComponent(value)}/`, label: value };
   if (!value || typeof value !== 'object') return null;
   const id = value.id ?? value.runId ?? value.name;
-  const path = value.path ?? value.url ?? (id ? `/runs/${id}/` : null);
+  const path = value.path ?? value.url ?? (id ? `${runsRoot}${encodeURIComponent(id)}/` : null);
   if (typeof id !== 'string' || typeof path !== 'string') return null;
   return {
     id,

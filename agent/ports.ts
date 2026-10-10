@@ -7,7 +7,7 @@
  * fail; the agent treats a thrown error or a null as "not available" and
  * falls back to a safe default instead of failing the run.
  */
-import type { AttemptResult, CostSource, Handoff, TaskSize, TokenUsage } from '../schema/types.js';
+import type { AttemptResult, CostSource, Handoff, TaskImpact, TaskSize, TokenUsage } from '../schema/types.js';
 
 /** The part of a backlog item the agent reads. */
 export interface TaskInput {
@@ -18,7 +18,7 @@ export interface TaskInput {
 }
 
 /** Where the sizing numbers came from, weakest last. */
-export type SignalSource = 'entire-graph' | 'code-search' | 'none';
+export type SignalSource = TaskImpact['source'];
 
 export interface SizingSignals {
   /** Files the change is expected to touch. */
@@ -28,6 +28,7 @@ export interface SizingSignals {
   /** Whether tests already exist for the touched area. */
   testsPresent: boolean;
   source: SignalSource;
+  impact?: TaskImpact;
 }
 
 export interface SizingSignalsPort {
@@ -117,6 +118,10 @@ export interface HandoffContext {
   branch?: string | null;
   checkoutPath?: string | null;
   checkpointId?: string | null;
+  task?: TaskInput;
+  result?: AttemptResult;
+  resultReason?: string | null;
+  changedFiles?: string[];
 }
 
 export interface HandoffPort {

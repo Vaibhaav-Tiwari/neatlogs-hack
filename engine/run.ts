@@ -18,6 +18,8 @@ export interface RunOptions {
   latestRunDir?: string;
   now?: () => Date;
   preflightRunner?: PreflightRunner;
+  /** Experiment pin: reject a different resolved repository base before starting workers. */
+  requiredBaseCommit?: string;
 }
 
 export interface RunResult {

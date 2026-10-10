@@ -58,6 +58,8 @@ export interface LedgerRow {
   /** Native Entire/Codex session id, separate from the AO worker session. */
   entireSessionId?: string | null;
   branch: string | null;
+  /** Effective comparison base at attempt start, including an inherited failed branch. */
+  baseCommit?: string | null;
   tokens: TokenUsage;
   estimatedCostNanos: number;
   costSource: CostSource;
@@ -99,6 +101,15 @@ export interface IntegrationState {
   detail: string | null;
 }
 
+export interface TaskImpact {
+  source: 'entire-graph' | 'code-search' | 'scripted' | 'none';
+  query: string;
+  nodes: Array<{ id: string; kind: 'target' | 'caller' | 'coChange' | 'test'; symbol?: string; weight?: number }>;
+  edges: Array<{ from: string; to: string; kind: 'calls' | 'changesWith' | 'tests' }>;
+  totals: { filesTouched: number; dependents: number; testsPresent: boolean; nodes: number; edges: number };
+  truncated: boolean;
+}
+
 export interface TaskState {
   taskId: string;
   title: string;
@@ -106,6 +117,8 @@ export interface TaskState {
   issueUrl: string | null;
   /** null until the sizer has run. */
   size: TaskSize | null;
+  impact?: TaskImpact;
+  changedFiles?: string[];
   status: TaskStatus;
   /** Why a task is failed or skipped, e.g. "not started: no budget". */
   statusReason: string | null;
@@ -134,6 +147,9 @@ export interface RunState {
   endedAt: string | null;
   budget: {
     source: BudgetSource;
+    /** Origin of this run's effective limit, distinct from spend accounting. */
+    limitSource?: BudgetSource | 'cli';
+    systemOfRecord?: 'ledger' | 'cfoai';
     limitNanos: number;
     /** Always the sum of estimatedCostNanos over this run's ledger rows. */
     spentNanos: number;
@@ -220,5 +236,9 @@ export interface TallyConfig {
     };
   };
   concurrency?: number;
+  entire?: {
+    /** Off by default: generation may export session content to Entire's summary provider. */
+    generatedSummaries?: boolean;
+  };
   integrations: Record<'neatlogs' | 'entire' | 'cfoai' | 'slack', boolean>;
 }

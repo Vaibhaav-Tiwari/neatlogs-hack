@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { AttemptResult, Handoff, TaskSize, TallyConfig, TokenUsage } from '../schema/index.js';
+import { validateTaskImpact, type AttemptResult, type Handoff, type TaskImpact, type TaskSize, type TallyConfig, type TokenUsage } from '../schema/index.js';
 
 export interface ScriptedAttempt {
   tier?: string;
@@ -25,6 +25,7 @@ export interface BacklogTask {
   scriptedAttempts?: ScriptedAttempt[];
   /** Deliberate first-attempt ceiling for demos; escalation uses normal tier ceilings. */
   firstAttemptCeilingUsd?: number;
+  impact?: TaskImpact;
 }
 
 export class BacklogError extends Error {
@@ -155,6 +156,10 @@ function normaliseTask(value: unknown, index: number, problems: string[]): Backl
   if (override !== undefined && (typeof override !== 'number' || !Number.isFinite(override) || override <= 0)) {
     problems.push(`${prefix}.firstAttemptCeilingUsd must be a positive finite number`);
   }
+  if (task.impact !== undefined) {
+    const result = validateTaskImpact(task.impact);
+    if (!result.ok) problems.push(...result.errors.map((error) => `${prefix}.impact ${error}`));
+  }
   return {
     taskId,
     title,
@@ -165,6 +170,7 @@ function normaliseTask(value: unknown, index: number, problems: string[]): Backl
     outcomes,
     ...(typeof override === 'number' ? { firstAttemptCeilingUsd: override } : {}),
     scriptedAttempts: parseScriptedAttempts(task, outcomes, problems, prefix),
+    ...(task.impact !== undefined ? { impact: task.impact as TaskImpact } : {}),
   };
 }
 

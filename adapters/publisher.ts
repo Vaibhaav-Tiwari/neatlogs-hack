@@ -11,6 +11,7 @@ export interface WorkerBranchInput {
   checkoutPath: string;
   branch: string;
   config: TallyConfig;
+  baseCommit?: string | null;
 }
 
 export interface PublishPrInput extends WorkerBranchInput {
@@ -45,7 +46,8 @@ export class GitHubPublisher implements PublishPort {
   constructor(private readonly command: PublishCommand = defaultCommand) {}
 
   async changedFiles(input: WorkerBranchInput): Promise<string[]> {
-    const { stdout } = await this.command('git', ['diff', '--name-only', '-z', `origin/${input.config.repo.baseBranch}...HEAD`], { cwd: input.checkoutPath });
+    const base = input.baseCommit ?? `origin/${input.config.repo.baseBranch}`;
+    const { stdout } = await this.command('git', ['diff', '--name-only', '-z', '--end-of-options', base, input.branch, '--'], { cwd: input.checkoutPath });
     return stdout.split('\0').filter(Boolean);
   }
 

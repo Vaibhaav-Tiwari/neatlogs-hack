@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
@@ -7,6 +7,35 @@ import { defaultCommand, runInit, type InitCommandRunner } from './init.js';
 import { installRecordPath } from './install-record.js';
 
 describe('runInit', () => {
+  it.each(['decline', 'dry-run', 'yes'] as const)('shows the full summary before mutation: %s', async (mode) => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-consent-'));
+    writeFileSync(join(repo, 'Makefile'), 'setup:\n\ttrue\ntest:\n\ttrue\n');
+    const printed: string[] = [];
+    const mutations: string[] = [];
+    let confirmations = 0;
+    const command: InitCommandRunner = async (file, args) => {
+      if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
+      if (args[0] === 'agent') return { stdout: '[]', stderr: '' };
+      if (args[1] === 'get') return { stdout: JSON.stringify({ project: { config: { postCreate: ['echo preserved'], worker: { agentConfig: { permissions: 'default' } } } } }), stderr: '' };
+      expect(printed.join('\n')).toContain('Requested worker rules (not yet enforced)');
+      expect(printed.join('\n')).toContain('git add and git commit');
+      expect(printed.join('\n')).toContain('["echo preserved","make setup"]');
+      mutations.push(args[1]!);
+      return { stdout: '{}', stderr: '' };
+    };
+    const doctor = vi.fn(async () => []);
+    const result = await runInit({ cwd: repo, command, print: (line) => printed.push(line), doctor, yes: mode === 'yes', dryRun: mode === 'dry-run',
+      readLine: async (question, fallback) => {
+        if (question === 'Apply these changes? y/N') { confirmations += 1; expect(fallback).toBe('N'); return ''; }
+        return fallback ?? '';
+      } });
+    expect(result.applied).toBe(mode === 'yes');
+    expect(confirmations).toBe(mode === 'decline' ? 1 : 0);
+    expect(existsSync(join(repo, 'tally.yaml'))).toBe(mode === 'yes');
+    expect(existsSync(installRecordPath(join(repo, 'tally.yaml')))).toBe(mode === 'yes');
+    expect(mutations).toEqual(mode === 'yes' ? ['set-config'] : []);
+    expect(doctor).toHaveBeenCalledTimes(mode === 'yes' ? 1 : 0);
+  });
   it('preserves fields absent from the AO CLI config mirror through the daemon API', async () => {
     const requests: Array<{ url: string; body?: string }> = [];
     const config = { worker: { agentConfig: { effort: 'high', permissions: 'default' } }, env: { KEEP: 'value' } };
@@ -46,11 +75,12 @@ describe('runInit', () => {
       throw new Error(`unexpected command: ${joined}`);
     };
     let prompt = 0;
-    const answers = ['12.5', 'bug', 'y', 'y', 'n'];
+    const answers = ['12.5', 'bug', 'y', 'y', 'n', 'y'];
 
     const result = await runInit({
       cwd: repo,
       command,
+      print: () => {},
       readLine: async () => answers[prompt++]!,
       doctor: async () => [{ product: 'AO daemon', status: 'connected', detail: 'ok', fix: null }],
     });

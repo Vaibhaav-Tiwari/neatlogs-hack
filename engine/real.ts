@@ -72,6 +72,7 @@ export interface FinalUsagePort extends LiveUsagePort {
 
 export interface WorktreePort {
   checkoutPathFor(repoPath: string, branch: string): Promise<string | null>;
+  commitFor?(repoPath: string, branch: string): Promise<string | null>;
 }
 
 export interface CfoaiBudgetPort extends BudgetPort {
@@ -105,6 +106,10 @@ export interface RealRunOptions extends RunOptions {
 }
 
 export class GitWorktreeResolver implements WorktreePort {
+  async commitFor(repoPath: string, branch: string): Promise<string | null> {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--verify', '--end-of-options', `${branch}^{commit}`], { cwd: repoPath });
+    return stdout.trim();
+  }
   async checkoutPathFor(repoPath: string, branch: string): Promise<string | null> {
     const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
     let worktree: string | null = null;
@@ -157,7 +162,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
       : undefined;
   const entireCheckpoints =
     config.integrations.entire && (!hasPort(overrides, 'handoff') || !hasPort(overrides, 'checkpoints'))
-      ? new EntireCheckpointAdapter({ repoPath })
+      ? new EntireCheckpointAdapter({ repoPath, generatedSummaries: config.entire?.generatedSummaries })
       : undefined;
   const handoff = overrides.handoff ?? entireCheckpoints;
   const checkpoints = overrides.checkpoints ?? entireCheckpoints;
@@ -393,8 +398,14 @@ async function runAttempt(input: {
   ports: RealRunPorts;
   now: () => Date;
   dryRun: boolean;
+  baseCommit?: string | null;
+  requiredBaseCommit?: string;
+  continueBranch?: string | null;
+  onChangedFiles?: (files: string[]) => void;
 }): Promise<LedgerRow> {
   const startedAt = input.now().toISOString();
+  const repoPath = resolve(dirname(input.configPath), input.config.repo.path);
+  const attemptBase = input.requiredBaseCommit ?? (input.dryRun ? null : await input.ports.worktrees.commitFor?.(repoPath, input.continueBranch ?? input.config.repo.baseBranch).catch(() => null) ?? input.baseCommit ?? null);
   const started = await input.ports.worker.start({
     task: input.task,
     attempt: input.attempt,
@@ -407,6 +418,7 @@ async function runAttempt(input: {
     prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary, input.runId, input.attempt),
     aoProject: input.config.repo.aoProject,
   });
+  let stopped = false;
   const watcher = new CeilingWatcher({ usage: input.ports.usage, sessions: input.ports.sessions, trace: input.ports.trace });
   const abort = new AbortController();
   const watched = watcher.watch(
@@ -414,10 +426,8 @@ async function runAttempt(input: {
     { signal: abort.signal, intervalMs: input.dryRun ? 1 : 5000 },
   );
   const worker = input.ports.worker.wait(started.sessionId, { timeoutMs: input.config.test.timeoutSec ? input.config.test.timeoutSec * 1000 : undefined });
-  const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
-
-  let result: AttemptResult;
-  let resultReason: string | null;
+  let result: AttemptResult = 'error';
+  let resultReason: string | null = null;
   let workerResult: WorkerResult | null = null;
   let tokens: TokenUsage | null = null;
   let estimatedCostNanos = 0;
@@ -429,8 +439,12 @@ async function runAttempt(input: {
   let entireSessionId: string | null = null;
   let resolvedCheckoutPath: string | null = null;
 
+  try {
+  const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
   if (first.kind === 'watch' && first.verdict.action === 'stop') {
+    stopped = first.verdict.stopped;
     abort.abort();
+    if (!input.dryRun) workerResult = await worker;
     result = 'stopped';
     resultReason = first.verdict.reason;
     tokens = first.verdict.tokens;
@@ -439,12 +453,6 @@ async function runAttempt(input: {
   } else {
     abort.abort();
     workerResult = first.kind === 'worker' ? first.result : await worker;
-    const usagePort = input.ports.usage as FinalUsagePort;
-    const usage = usagePort.settledUsageFor ? await usagePort.settledUsageFor(started.sessionId) : await usagePort.usageFor(started.sessionId);
-    const check = checkCeiling(usage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
-    tokens = check.tokens;
-    estimatedCostNanos = check.costNanos;
-    costSource = input.dryRun ? 'simulated' : check.costSource;
     if (workerResult.status === 'needs_input' || workerResult.status === 'timeout') {
       result = 'error';
       resultReason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
@@ -471,7 +479,7 @@ async function runAttempt(input: {
         result = verification.passed ? 'passed' : 'failed';
         resultReason = verification.reason;
         if (verification.passed && !input.dryRun) {
-          scopeWarnings = outOfScopeFiles(input.task, await input.ports.publisher.changedFiles({ checkoutPath: checkoutPath!, branch: branch!, config: input.config }));
+          scopeWarnings = outOfScopeFiles(input.task, await input.ports.publisher.changedFiles({ checkoutPath: checkoutPath!, branch: branch!, config: input.config, baseCommit: attemptBase }));
           if (scopeWarnings.length && input.config.repo.blockOutOfScopeChanges) {
             result = 'error';
             resultReason = `out-of-scope changes: ${scopeWarnings.join(', ')}`;
@@ -517,6 +525,36 @@ async function runAttempt(input: {
       checkpointUrl = null;
     }
   }
+  } catch (error) {
+    result = 'error';
+    resultReason = error instanceof Error ? error.message : String(error);
+  } finally {
+    abort.abort();
+    if (!stopped) {
+      try {
+        await input.ports.sessions.stop(started.sessionId, `Tally attempt finished: ${result}`);
+      } catch (error) {
+        throw new Error(`could not close worker ${started.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    await watched;
+  }
+  const usagePort = input.ports.usage as FinalUsagePort;
+  const finalUsage = usagePort.settledUsageFor ? await usagePort.settledUsageFor(started.sessionId) : await usagePort.usageFor(started.sessionId);
+  if (finalUsage) {
+    const finalCheck = checkCeiling(finalUsage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
+    tokens = finalCheck.tokens;
+    estimatedCostNanos = finalCheck.costNanos;
+    costSource = input.dryRun ? 'simulated' : finalCheck.costSource;
+  }
+
+  if (!input.dryRun && workerResult?.branch && input.onChangedFiles) {
+    const checkoutPath = resolvedCheckoutPath ?? workerResult.checkoutPath ?? started.checkoutPath ?? await input.ports.worktrees.checkoutPathFor(repoPath, workerResult.branch).catch(() => null);
+    if (checkoutPath) {
+      const files = await input.ports.publisher.changedFiles({ checkoutPath, branch: workerResult.branch, config: input.config, baseCommit: attemptBase }).catch(() => null);
+      if (files) input.onChangedFiles(files);
+    }
+  }
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -532,6 +570,7 @@ async function runAttempt(input: {
     sessionId: started.sessionId,
     entireSessionId,
     branch: input.dryRun ? null : (workerResult?.branch ?? started.branch),
+    baseCommit: attemptBase,
     tokens: tokens ?? zeroTokens(),
     estimatedCostNanos,
     costSource,
@@ -614,12 +653,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
   let budgetSource: BudgetSource = 'config';
   let committedBeforeRunNanos = 0;
-  if (options.budgetUsd === undefined && config.budget.source === 'cfoai' && ports.cfoai) {
+  if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
     try {
       const [limit, currentSpend] = await Promise.all([ports.cfoai.budgetLimitNanos(), ports.cfoai.currentSpendNanos?.() ?? Promise.resolve(0)]);
-      budgetLimitNanos = limit;
-      committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
-      budgetSource = 'cfoai';
+      if (options.budgetUsd === undefined && config.budget.source === 'cfoai') {
+        budgetLimitNanos = limit;
+        committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
+        budgetSource = 'cfoai';
+      }
     } catch {
       budgetSource = 'config';
     }
@@ -644,7 +685,28 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (options.only === undefined) return true;
     return task.taskId === options.only || String(task.issueNumber) === options.only;
   });
-  const taskStates = tasks.map(initialTaskState);
+  const savedRun = existsSync(resolve(outputDir, 'run.json')) ? JSON.parse(readFileSync(resolve(outputDir, 'run.json'), 'utf8')) as RunState : null;
+  const resolvedBase = options.requiredBaseCommit !== undefined || (!savedRun?.baseCommit && !options.dryRun)
+    ? await ports.worktrees.commitFor?.(resolve(dirname(options.configPath), config.repo.path), config.repo.baseBranch).catch(() => null) ?? null
+    : null;
+  if (options.requiredBaseCommit !== undefined) {
+    if (resolvedBase !== options.requiredBaseCommit) {
+      throw new Error(`Required base commit ${options.requiredBaseCommit} does not match resolved ${config.repo.baseBranch} base ${resolvedBase ?? '(unavailable)'}; no workers were started.`);
+    }
+    if (savedRun?.baseCommit && savedRun.baseCommit !== options.requiredBaseCommit) {
+      throw new Error(`Saved run base ${savedRun.baseCommit} does not match required base commit ${options.requiredBaseCommit}; no workers were started.`);
+    }
+  }
+  const baseCommit = options.requiredBaseCommit ?? savedRun?.baseCommit ?? resolvedBase;
+  const taskStates = tasks.map((task) => {
+    const saved = savedRun?.tasks.find((state) => state.taskId === task.taskId);
+    return { ...initialTaskState(task), ...(saved?.impact ? { impact: saved.impact } : {}), ...(saved?.changedFiles ? { changedFiles: saved.changedFiles } : {}) };
+  });
+  const changedFor = (index: number) => (files: string[]) => {
+    const state = taskStates[index]!;
+    state.changedFiles = [...new Set([...(state.changedFiles ?? []), ...files])].sort();
+    writeCurrent('running', null);
+  };
   const writeCurrent = (status: RunState['status'], endedAt: string | null): RunState => {
     const updatedAt = now().toISOString();
     const runState: RunState = {
@@ -654,12 +716,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       dryRun: options.dryRun,
       status,
       repo: repoName(config),
-      baseCommit: null,
+      baseCommit,
       startedAt: started.toISOString(),
       updatedAt,
       endedAt,
       budget: {
         source: budgetSource,
+        limitSource: options.budgetUsd === undefined ? budgetSource : 'cli',
+        systemOfRecord: config.integrations.cfoai && ports.cfoai ? 'cfoai' : 'ledger',
         limitNanos: budgetLimitNanos,
         spentNanos: ledgerSpend(ledger),
       },
@@ -695,7 +759,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             sessionId: interrupted.sessionId,
             branch: interrupted.branch,
             checkpointId: interrupted.checkpointId,
+            resultReason: interrupted.resultReason,
           },
+          task,
           config,
           ports: { budget, handoff: ports.handoff, trace: ports.trace },
           traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
@@ -723,6 +789,10 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             ports,
             now,
             dryRun: options.dryRun,
+            baseCommit,
+            requiredBaseCommit: options.requiredBaseCommit,
+            continueBranch: escalation.handoffBranch,
+            onChangedFiles: changedFor(index),
           });
           ledger.push(latest);
           await recordHistory({ ports, row: latest, dryRun: options.dryRun });
@@ -746,6 +816,13 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       }
     }
     task.size = estimate.size;
+    const state = taskStates[index]!;
+    state.size = estimate.size;
+    state.impact ??= structuredClone(estimate.signals?.impact ?? {
+      source: estimate.signals?.source ?? 'none', query: `${task.title}\n${task.body}`.trim(), nodes: [], edges: [],
+      totals: { filesTouched: estimate.signals?.filesTouched ?? 0, dependents: estimate.signals?.dependents ?? 0, testsPresent: estimate.signals?.testsPresent ?? false, nodes: 0, edges: 0 }, truncated: false,
+    });
+    writeCurrent('running', null);
     const route = options.baseline
       ? await routeBaseline({
           task: taskInput,
@@ -762,8 +839,6 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           traceAttributes: { sessionId: runId, taskId: task.taskId, attempt: 1 },
         });
     const routeTraceId = lastTraceId(ports.trace);
-    const state = taskStates[index]!;
-    state.size = estimate.size;
     if (route.action === 'skip') {
       state.status = 'skipped';
       state.statusReason = route.statusReason;
@@ -786,6 +861,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       ports,
       now,
       dryRun: options.dryRun,
+      baseCommit,
+      requiredBaseCommit: options.requiredBaseCommit,
+      onChangedFiles: changedFor(index),
     });
     ledger.push(first);
     await recordHistory({ ports, row: first, dryRun: options.dryRun });
@@ -803,7 +881,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           sessionId: first.sessionId,
           branch: first.branch,
           checkpointId: first.checkpointId,
+          resultReason: first.resultReason,
         },
+        task,
         config,
         ports: { budget, handoff: ports.handoff, trace: ports.trace },
         traceAttributes: { sessionId: runId, taskId: first.taskId, attempt: 2 },
@@ -831,6 +911,10 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           ports,
           now,
           dryRun: options.dryRun,
+          baseCommit,
+          requiredBaseCommit: options.requiredBaseCommit,
+          continueBranch: escalation.handoffBranch,
+          onChangedFiles: changedFor(index),
         });
         ledger.push(latest);
         await recordHistory({ ports, row: latest, dryRun: options.dryRun });

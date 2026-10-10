@@ -15,6 +15,7 @@ export interface EntireCheckpointOptions {
   repoPath: string;
   command?: CommandRunner;
   summaryTimeoutSec?: number;
+  generatedSummaries?: boolean;
 }
 
 interface PendingCheckpoint {
@@ -44,6 +45,11 @@ interface ExplainEnvelope {
   html_url?: unknown;
   files_touched?: unknown;
   sessions?: Array<{ session_id?: unknown }>;
+}
+
+interface ResolvedCheckpoint extends CheckpointInfo {
+  branch: string | null;
+  filesTouched: string[];
 }
 
 function defaultCommand(file: string, args: string[], options?: { cwd?: string }): Promise<CommandResult> {
@@ -93,11 +99,13 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
   private readonly command: CommandRunner;
   private readonly repoPath: string;
   private readonly summaryTimeoutSec: number;
+  private readonly generatedSummaries: boolean;
 
   constructor(options: EntireCheckpointOptions) {
     this.command = options.command ?? defaultCommand;
     this.repoPath = options.repoPath;
     this.summaryTimeoutSec = options.summaryTimeoutSec ?? 45;
+    this.generatedSummaries = options.generatedSummaries === true;
   }
 
   async checkpointFor(context: HandoffContext & { sessionId: string }): Promise<CheckpointInfo | null> {
@@ -108,30 +116,34 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
   async summaryFor(sessionId: string, context: HandoffContext = {}): Promise<HandoffSummary | null> {
     const found = await this.findCheckpoint({ ...context, sessionId });
     if (!found) return null;
-    const generated = await this.command(
+    const generated = this.generatedSummaries ? await this.command(
       'entire',
       ['checkpoint', 'explain', found.checkpointId, '--generate', '--summary-timeout-seconds', String(this.summaryTimeoutSec), '--no-pager'],
       { cwd: context.checkoutPath ?? this.repoPath },
-    ).catch(() => null);
-    const fallback = generated
-      ? null
-      : await this.command('entire', ['checkpoint', 'explain', found.checkpointId, '--short', '--no-pager'], { cwd: context.checkoutPath ?? this.repoPath }).catch(
-          () => null,
-        );
-    let summary = trimSummary(generated?.stdout ?? fallback?.stdout ?? '');
+    ).catch(() => null) : null;
+    let summary = trimSummary(generated?.stdout ?? '');
     if (!summary || /not generated yet|run .*checkpoint explain.*--generate/i.test(summary)) {
-      const metadata = await this.command('entire', ['checkpoint', 'explain', found.checkpointId, '--json', '--no-pager'], {
+      const branch = context.branch ?? found.branch;
+      const diff = context.changedFiles ? null : await this.command('git', ['show', '--format=', '--name-only', '-z', '--end-of-options', branch ?? 'HEAD', '--'], {
         cwd: context.checkoutPath ?? this.repoPath,
       }).catch(() => null);
-      const parsed = metadata ? parseJson<ExplainEnvelope>(metadata.stdout) : null;
-      const files = Array.isArray(parsed?.files_touched) ? parsed.files_touched.filter((file): file is string => typeof file === 'string') : [];
-      summary = files.length ? `Checkpoint ${found.checkpointId} on branch ${found.branch ?? context.branch ?? '(unknown)'} records changes to ${files.join(', ')}; inspect those changes and rerun the failed tests before continuing.` : '';
+      const changedFiles = context.changedFiles ?? (diff ? diff.stdout.split('\0').filter(Boolean) : null);
+      summary = [
+        'Metadata-only handoff; no generated summary or transcript export was requested.',
+        `Checkpoint: ${found.checkpointId}; native session: ${found.entireSessionId ?? '(unknown)'}.`,
+        `Branch: ${branch ?? '(unknown)'}.`,
+        `Checkpoint files: ${found.filesTouched.length ? found.filesTouched.join(', ') : '(unavailable)'}.`,
+        `Changed files: ${changedFiles === null ? '(unavailable)' : changedFiles.length ? changedFiles.join(', ') : '(none)'}.`,
+        `Attempt verdict: ${context.result ?? '(unknown)'}${context.resultReason ? ` - ${context.resultReason}` : ''}.`,
+        ...(context.task ? [`Task ${context.task.taskId}: ${context.task.title}`, context.task.body] : []),
+        'Inspect the branch changes and rerun the failed tests before continuing.',
+      ].join('\n');
     }
     if (!summary) return null;
     return {
       type: 'entire-handoff',
       summary,
-      branch: found.branch ?? context.branch ?? null,
+      branch: context.branch ?? found.branch ?? null,
       checkpointId: found.checkpointId,
       checkpointUrl: found.checkpointUrl,
       summaryCostNanos: 0,
@@ -139,7 +151,7 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
     };
   }
 
-  private async findCheckpoint(context: HandoffContext & { sessionId: string }): Promise<(CheckpointInfo & { branch: string | null }) | null> {
+  private async findCheckpoint(context: HandoffContext & { sessionId: string }): Promise<ResolvedCheckpoint | null> {
     if (context.checkpointId) return this.explain(context.checkpointId, context);
     // AO session ids differ from Codex session ids; the task commit is authoritative.
     if (context.branch || context.checkoutPath) {
@@ -174,7 +186,7 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
     return parseJson<PendingCheckpoint[]>(result?.stdout ?? '') ?? [];
   }
 
-  private async explain(id: string, context: HandoffContext): Promise<(CheckpointInfo & { branch: string | null }) | null> {
+  private async explain(id: string, context: HandoffContext): Promise<ResolvedCheckpoint | null> {
     const result = await this.command('entire', ['checkpoint', 'explain', id, '--json', '--no-pager'], { cwd: context.checkoutPath ?? this.repoPath }).catch(
       () => null,
     );
@@ -185,6 +197,7 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
       checkpointUrl: parsed ? checkpointUrl(parsed) : null,
       branch: text(parsed?.branch) ?? context.branch ?? null,
       entireSessionId: text(parsed?.sessions?.[parsed.sessions.length - 1]?.session_id),
+      filesTouched: Array.isArray(parsed?.files_touched) ? parsed.files_touched.filter((file): file is string => typeof file === 'string') : [],
     };
   }
 }

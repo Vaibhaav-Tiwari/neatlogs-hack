@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
-import { usdToNanos, validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
+import { usdToNanos, validateLedger, validateRunState, type TaskImpact, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
 import { runRealTally, type CfoaiBudgetPort, type WorkerPort, type WorkerResult, type WorkerStartInput, type WorktreePort } from './real.js';
@@ -295,6 +295,86 @@ describe('runRealTally', () => {
     expect(worker.starts.map((start) => start.ceilingNanos)).toEqual([usdToNanos(0.001), usdToNanos(0.5)]);
     expect(worker.starts[1]?.prompt).toContain('Partial implementation: continue calc.ts.');
   });
+  it('records CLI limit provenance separately from live cfo.ai accounting', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), false, usdToNanos(10));
+    let reads = 0;
+    cfoai.budgetLimitNanos = async () => { reads += 1; return usdToNanos(40); };
+    const result = await runRealTally({ configPath, budgetUsd: 1, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker, cfoai } });
+    expect(result.runState.budget).toMatchObject({ limitSource: 'cli', systemOfRecord: 'cfoai', limitNanos: usdToNanos(1) });
+    expect(reads).toBe(1);
+    expect(worker.starts).toHaveLength(1);
+    expect(cfoai.writes).toEqual([result.runState.budget.spentNanos]);
+  });
+  it('persists frozen impact before spawning and diffs against the recorded attempt base', async () => {
+    const { dir, configPath } = fixture();
+    const outputDir = join(dir, 'impact');
+    const impact: TaskImpact = { source: 'entire-graph', query: 'calc', nodes: [{ id: 'calc.ts', kind: 'target', weight: 10 }], edges: [],
+      totals: { filesTouched: 1, dependents: 0, testsPresent: true, nodes: 1, edges: 0 }, truncated: false };
+    let commitReads = 0;
+    let diffBase: string | null | undefined;
+    class ImpactWorker extends FakeWorker {
+      async start(input: WorkerStartInput) {
+        const snapshot = JSON.parse(readFileSync(join(outputDir, 'run.json'), 'utf8'));
+        expect(snapshot.tasks[0].impact).toEqual(impact);
+        impact.nodes[0]!.id = 'mutated.ts';
+        return super.start(input);
+      }
+      async changedFiles(input?: { baseCommit?: string | null }) {
+        diffBase = input?.baseCommit;
+        return ['calc.ts', 'tests/calc.test.ts'];
+      }
+    }
+    const worker = new ImpactWorker();
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir, latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals: { async signalsFor() { return { ...impact.totals, source: 'entire-graph', impact }; } },
+        worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker,
+        worktrees: { async checkoutPathFor() { return '/worker'; }, async commitFor() { return ++commitReads === 1 ? 'run-base' : 'attempt-base'; } } } });
+    expect(result.runState.baseCommit).toBe('run-base');
+    expect(result.ledger[0]!.baseCommit).toBe('attempt-base');
+    expect(diffBase).toBe('attempt-base');
+    expect(result.runState.tasks[0]!.impact!.nodes[0]!.id).toBe('calc.ts');
+    expect(result.runState.tasks[0]!.changedFiles).toEqual(['calc.ts', 'tests/calc.test.ts']);
+    expect(validateRunState(result.runState).ok).toBe(true);
+    const resumed = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir, latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals: { async signalsFor() { throw new Error('must not resize completed task'); } },
+        worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker } });
+    expect(resumed.runState.tasks[0]!.impact).toEqual(result.runState.tasks[0]!.impact);
+    expect(resumed.runState.tasks[0]!.changedFiles).toEqual(result.runState.tasks[0]!.changedFiles);
+    expect(resumed.runState.baseCommit).toBe('run-base');
+  });
+
+  it('uses the experiment base pin for run, attempts and actual-file diffs', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const diffs: Array<string | null | undefined> = [];
+    let baseReads = 0;
+    worker.changedFiles = async (input?: { baseCommit?: string | null }) => { diffs.push(input?.baseCommit); return ['calc.ts']; };
+    const result = await runRealTally({ configPath, requiredBaseCommit: 'experiment-pin', dryRun: false, baseline: false,
+      outputDir: join(dir, 'pinned'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: false, reason: 'test failed' }, { passed: true, reason: null }]),
+        handoff: { summaryFor: async () => ({ type: 'entire-handoff', summary: 'Continue calc.', branch: 'failed-branch' }) },
+        worktrees: { checkoutPathFor: async () => dir, commitFor: async () => { baseReads += 1; return baseReads === 1 ? 'experiment-pin' : 'later-base'; } } } });
+    expect(result.runState.baseCommit).toBe('experiment-pin');
+    expect(result.ledger.map((row) => row.baseCommit)).toEqual(['experiment-pin', 'experiment-pin']);
+    expect(diffs.length).toBeGreaterThan(0);
+    expect(diffs.every((base) => base === 'experiment-pin')).toBe(true);
+    expect(result.runState.tasks[0]!.changedFiles).toEqual(['calc.ts']);
+    expect(baseReads).toBe(1);
+  });
+
+  it.each(['different-base', null])('rejects the experiment pin before spawning when the base resolves to %s', async (resolved) => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    await expect(runRealTally({ configPath, requiredBaseCommit: 'experiment-pin', dryRun: false, baseline: false,
+      outputDir: join(dir, 'mismatch'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([]), worktrees: { checkoutPathFor: async () => dir, commitFor: async () => resolved } } })).rejects.toThrow(/Required base commit experiment-pin does not match resolved main base/);
+    expect(worker.starts).toEqual([]);
+  });
   it.each([false, true])('records scope warnings and only blocks when configured: %s', async (block) => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('aoProject: "payments"', `aoProject: "payments", blockOutOfScopeChanges: ${block}`));
@@ -307,6 +387,22 @@ describe('runRealTally', () => {
     expect(worker.published).toHaveLength(block ? 0 : 1);
     expect(worker.starts).toHaveLength(1);
     expect(worker.starts[0]?.prompt).toContain('If a check outside your task fails, report it; do not fix it.');
+  });
+  it.each(['passed', 'verification-error', 'publish-error', 'needs-input'] as const)('closes the worker on %s and records usage after closure', async (scenario) => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const settled = { uncachedInput: 1200, cachedInput: 2000, output: 400, total: 3600 };
+    worker.settledUsageFor = async () => ({ tokens: worker.stopped.length ? settled : tokens, estimatedCostNanos: 123 });
+    if (scenario === 'publish-error') worker.publishPr = async () => { throw new Error('push refused'); };
+    if (scenario === 'needs-input') worker.wait = async () => ({ status: 'needs_input', checkoutPath: '/tmp/worker', branch: 'task', prUrl: null, resultReason: 'worker asked for input' });
+    const verifier: VerifierPort = { verify: async () => {
+      if (scenario === 'verification-error') throw new Error('verifier unavailable');
+      return { passed: true, reason: null };
+    } };
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier, publisher: worker, usage: worker, sessions: worker } });
+    expect(worker.stopped).toEqual(worker.starts.map((_, i) => `session-${i + 1}`));
+    expect(result.ledger.every((row) => row.tokens.total === settled.total)).toBe(true);
   });
   it('sizes, routes, spawns, verifies, escalates once and writes valid output', async () => {
     const { dir, configPath } = fixture();
@@ -1017,6 +1113,7 @@ describe('runRealTally', () => {
         sessions: worker,
         publisher: worker,
         trace: new FakeTrace(),
+        history: { lookup: async () => null, record: async () => {} },
       },
     });
 
@@ -1072,6 +1169,7 @@ describe('runRealTally', () => {
         sessions: worker,
         publisher: worker,
         trace: new FakeTrace(),
+        history: { lookup: async () => null, record: async () => {} },
         cfoai,
       },
     });

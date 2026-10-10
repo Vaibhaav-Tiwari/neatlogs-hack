@@ -23,6 +23,12 @@ const ledger = JSON.parse(fixture('finished-run/ledger.json')) as LedgerRow[];
 const run = JSON.parse(fixture('finished-run/run.json')) as RunState;
 const config = parseYaml(fixture('finished-run/tally.yaml')) as TallyConfig;
 
+it('accepts generated Entire summaries only as an explicit boolean setting', () => {
+  expect(validateConfig({ ...config, entire: { generatedSummaries: false } }).ok).toBe(true);
+  expect(validateConfig({ ...config, entire: { generatedSummaries: true } }).ok).toBe(true);
+  expect(validateConfig({ ...config, entire: { generatedSummaries: 'true' } }).ok).toBe(false);
+});
+
 // A row written against the TypeScript type. `npm run typecheck` fails if the
 // type drifts from this shape; the test below fails if the JSON Schema does.
 const typedRow: LedgerRow = {
@@ -110,6 +116,17 @@ describe('ledger row schema', () => {
 });
 
 describe('finished-run fixture', () => {
+  it('validates graph caps, relative paths and edge endpoints', () => {
+    const impact = run.tasks[0]!.impact!;
+    const withImpact = (value: unknown) => ({ ...run, tasks: [{ ...run.tasks[0], impact: value }] });
+    expect(validateRunState(withImpact(impact)).ok).toBe(true);
+    expect(validateRunState(withImpact({ ...impact, totals: { ...impact.totals, nodes: 0 } })).ok).toBe(false);
+    expect(validateRunState(withImpact({ ...impact, nodes: Array.from({ length: 41 }, (_, i) => ({ id: `src/${i}.ts`, kind: 'target' })) })).ok).toBe(false);
+    expect(validateRunState(withImpact({ ...impact, nodes: [{ id: '/absolute.ts', kind: 'target' }] })).ok).toBe(false);
+    expect(validateRunState(withImpact({ ...impact, nodes: [{ id: '../escape.ts', kind: 'target' }] })).ok).toBe(false);
+    expect(validateRunState(withImpact({ ...impact, edges: [{ from: 'missing.ts', to: 'src/refund.ts', kind: 'calls' }] })).ok).toBe(false);
+    expect(validateRunState({ ...run, tasks: [{ ...run.tasks[0], changedFiles: ['/absolute.ts'] }] }).ok).toBe(false);
+  });
   it('validates against all three schemas', () => {
     expect(validateConfig(config)).toEqual({ ok: true, errors: [] });
     expect(validateLedger(ledger)).toEqual({ ok: true, errors: [] });
