@@ -286,6 +286,33 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     return task.taskId === options.only || String(task.issueNumber) === options.only;
   });
   const taskStates = tasks.map(initialTaskState);
+  const writeCurrent = (status: RunState['status'], endedAt: string | null): RunState => {
+    const updatedAt = now().toISOString();
+    const runState: RunState = {
+      schemaVersion: SCHEMA_VERSION,
+      runId,
+      mode,
+      dryRun: false,
+      status,
+      repo: repoName(config),
+      baseCommit: null,
+      startedAt: started.toISOString(),
+      updatedAt,
+      endedAt,
+      budget: {
+        source: config.budget.source,
+        limitNanos: usdToNanos(options.budgetUsd ?? config.budget.usd),
+        spentNanos: ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
+      },
+      tasks: taskStates,
+      integrations: integrationStates(config),
+    };
+    assertValid(runState, ledger);
+    writeFileSync(runStatePath, `${JSON.stringify(runState, null, 2)}\n`);
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+    return runState;
+  };
+  writeCurrent('running', null);
 
   for (const [index, task] of tasks.entries()) {
     const existingRows = ledger.filter((row) => row.taskId === task.taskId);
@@ -303,6 +330,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         escalated: latest.escalatedFrom !== null,
         prUrl: latest.prUrl,
       };
+      writeCurrent('running', null);
       continue;
     }
     const taskInput = { taskId: task.taskId, title: task.title, body: task.body };
@@ -316,6 +344,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (route.action === 'skip') {
       state.status = 'skipped';
       state.statusReason = route.statusReason;
+      writeCurrent('running', null);
       continue;
     }
     const first = await runAttempt({
@@ -381,30 +410,10 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     state.spentNanos = rows.reduce((sum, row) => sum + row.estimatedCostNanos, 0);
     state.escalated = latest.escalatedFrom !== null;
     state.prUrl = latest.prUrl;
+    writeCurrent('running', null);
   }
 
   const endedAt = now().toISOString();
-  const runState: RunState = {
-    schemaVersion: SCHEMA_VERSION,
-    runId,
-    mode,
-    dryRun: false,
-    status: 'finished',
-    repo: repoName(config),
-    baseCommit: null,
-    startedAt: started.toISOString(),
-    updatedAt: endedAt,
-    endedAt,
-    budget: {
-      source: config.budget.source,
-      limitNanos: usdToNanos(options.budgetUsd ?? config.budget.usd),
-      spentNanos: ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
-    },
-    tasks: taskStates,
-    integrations: integrationStates(config),
-  };
-  assertValid(runState, ledger);
-  writeFileSync(runStatePath, `${JSON.stringify(runState, null, 2)}\n`);
-  writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+  const runState = writeCurrent('finished', endedAt);
   return { runState, ledger, outputDir, runStatePath, ledgerPath };
 }
