@@ -64,6 +64,7 @@ export interface LedgerRow {
   result: AttemptResult;
   /** Short explanation of the result, e.g. "2 tests failing" or "ceiling crossed". */
   resultReason: string | null;
+  scopeWarnings?: string[];
   /** attemptId of the attempt this one took over from, if it is an escalation. */
   escalatedFrom: string | null;
   handoff: Handoff;
@@ -174,6 +175,7 @@ export interface TallyConfig {
     aoProject?: string;
     /** Let the worker push/open its own PR. Defaults to false; Tally publishes after verification. */
     workerPublishesPr?: boolean;
+    blockOutOfScopeChanges?: boolean;
   };
   test: {
     /** Run in the task's checkout; exit code 0 means the task passed. */

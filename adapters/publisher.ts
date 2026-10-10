@@ -17,10 +17,12 @@ export interface PublishPrInput extends WorkerBranchInput {
   task: BacklogTask;
   runId: string;
   attempt: number;
+  scopeWarnings?: string[];
 }
 
 export interface PublishPort {
   commitsAhead(input: WorkerBranchInput): Promise<number>;
+  changedFiles(input: WorkerBranchInput): Promise<string[]>;
   publishPr(input: PublishPrInput): Promise<string>;
 }
 
@@ -35,11 +37,17 @@ function errorMessage(error: unknown): string {
 
 function prBody(input: PublishPrInput): string {
   const issue = input.task.issueNumber ? `\n\nRefs #${input.task.issueNumber}` : '';
-  return [`Tally run ${input.runId}, task ${input.task.taskId}, attempt ${input.attempt}.`, '', input.task.body || '(No issue body was provided.)', issue].join('\n');
+  const warning = input.scopeWarnings?.length ? `\n\nScope warning: out-of-scope changes: ${input.scopeWarnings.join(', ')}` : '';
+  return [`Tally run ${input.runId}, task ${input.task.taskId}, attempt ${input.attempt}.`, '', input.task.body || '(No issue body was provided.)', issue, warning].filter((part, index) => index < 4 || part).join('\n');
 }
 
 export class GitHubPublisher implements PublishPort {
   constructor(private readonly command: PublishCommand = defaultCommand) {}
+
+  async changedFiles(input: WorkerBranchInput): Promise<string[]> {
+    const { stdout } = await this.command('git', ['diff', '--name-only', '-z', `origin/${input.config.repo.baseBranch}...HEAD`], { cwd: input.checkoutPath });
+    return stdout.split('\0').filter(Boolean);
+  }
 
   async commitsAhead(input: WorkerBranchInput): Promise<number> {
     try {

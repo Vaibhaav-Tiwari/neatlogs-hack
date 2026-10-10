@@ -23,6 +23,18 @@ const config: TallyConfig = {
 };
 
 describe('GitHubPublisher', () => {
+  it('reads NUL-separated changed paths and includes scope warnings in the PR', async () => {
+    let body = '';
+    const publisher = new GitHubPublisher(async (file, args) => {
+      if (file === 'git' && args[0] === 'diff') return { stdout: 'src/file.ts\0vercel.json\0', stderr: '' };
+      if (file === 'gh') body = args[args.indexOf('--body') + 1]!;
+      return { stdout: 'https://github.com/acme/payments/pull/1', stderr: '' };
+    });
+    const input = { checkoutPath: '/tmp/worktree', branch: 'task', config };
+    expect(await publisher.changedFiles(input)).toEqual(['src/file.ts', 'vercel.json']);
+    await publisher.publishPr({ ...input, task: { taskId: 'T1', title: 'Fix replay', body: '', issueNumber: null, issueUrl: null, size: 'small', outcomes: ['passed'] }, runId: 'run', attempt: 1, scopeWarnings: ['vercel.json'] });
+    expect(body).toContain('Scope warning: out-of-scope changes: vercel.json');
+  });
   it('counts commits ahead of the base branch and publishes a PR from Tally', async () => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
     const command: PublishCommand = async (file, args, options) => {

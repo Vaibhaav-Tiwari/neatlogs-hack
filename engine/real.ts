@@ -29,6 +29,7 @@ import { FilePriceHistory } from '../adapters/history-file.js';
 import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { GitHubPublisher, type PublishPort } from '../adapters/publisher.js';
+import { outOfScopeFiles } from './scope.js';
 import { CommandVerifier, EntireGraphVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
 import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
@@ -268,6 +269,7 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
     'You are already inside your own AO git worktree for the target repo. Work only in the current working directory.',
     'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
     publishInstruction,
+    'Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.',
     '',
     task.body || '(No issue body was provided.)',
     '',
@@ -423,6 +425,7 @@ async function runAttempt(input: {
   let prUrl: string | null = null;
   let checkpointId: string | null = null;
   let checkpointUrl: string | null = null;
+  let scopeWarnings: string[] = [];
 
   if (first.kind === 'watch' && first.verdict.action === 'stop') {
     abort.abort();
@@ -465,7 +468,11 @@ async function runAttempt(input: {
         result = verification.passed ? 'passed' : 'failed';
         resultReason = verification.reason;
         if (verification.passed && !input.dryRun) {
-          if (input.config.repo.workerPublishesPr) {
+          scopeWarnings = outOfScopeFiles(input.task, await input.ports.publisher.changedFiles({ checkoutPath: checkoutPath!, branch: branch!, config: input.config }));
+          if (scopeWarnings.length && input.config.repo.blockOutOfScopeChanges) {
+            result = 'error';
+            resultReason = `out-of-scope changes: ${scopeWarnings.join(', ')}`;
+          } else if (input.config.repo.workerPublishesPr) {
             prUrl = workerResult.prUrl;
             if (!prUrl) {
               result = 'failed';
@@ -480,6 +487,7 @@ async function runAttempt(input: {
                 task: input.task,
                 runId: input.runId,
                 attempt: input.attempt,
+                scopeWarnings,
               });
             } catch (error) {
               result = 'failed';
@@ -523,6 +531,7 @@ async function runAttempt(input: {
     ceilingNanos: input.ceilingNanos ?? 0,
     result,
     resultReason,
+    scopeWarnings,
     escalatedFrom: input.escalatedFrom,
     handoff: input.handoff,
     prUrl: input.dryRun ? null : prUrl,

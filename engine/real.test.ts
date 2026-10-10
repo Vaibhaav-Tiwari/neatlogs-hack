@@ -86,6 +86,8 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
   commitChecks: Array<{ checkoutPath: string; branch: string }> = [];
   publishPaths: string[] = [];
   commitsAheadCount = 1;
+  files = ['calc.ts'];
+  async changedFiles() { return this.files; }
 
   async start(input: WorkerStartInput): ReturnType<WorkerPort['start']> {
     this.starts.push(input);
@@ -278,6 +280,19 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it.each([false, true])('records scope warnings and only blocks when configured: %s', async (block) => {
+    const { dir, configPath } = fixture();
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('aoProject: "payments"', `aoProject: "payments", blockOutOfScopeChanges: ${block}`));
+    const worker = new FakeWorker();
+    worker.files = ['calc.ts', 'vercel.json'];
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'run'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker } });
+    expect(result.ledger[0]?.scopeWarnings).toEqual(['vercel.json']);
+    expect(result.ledger[0]?.result).toBe(block ? 'error' : 'passed');
+    expect(worker.published).toHaveLength(block ? 0 : 1);
+    expect(worker.starts).toHaveLength(1);
+    expect(worker.starts[0]?.prompt).toContain('If a check outside your task fails, report it; do not fix it.');
+  });
   it('sizes, routes, spawns, verifies, escalates once and writes valid output', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
