@@ -294,6 +294,7 @@ describe('runRealTally', () => {
     const contexts: Array<{ entireSessionId?: string | null }> = [];
     const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'native'), latestRunDir: join(dir, 'latest'), now: fixedNow,
       ports: { intake: { tasks: async (...args) => (await intake.tasks(...args)).map(t => ({ ...t, firstAttemptCeilingUsd: 0.001 })) },
+        worktrees: { checkoutPathFor: async () => null, commitWorkInProgress: async () => null },
         signals, worker, usage: worker, sessions: worker, publisher: worker, trace: new FakeTrace(),
         history: { lookup: async () => null, record: async () => {} },
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
