@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KJS4B5S28HG4GHA9R54CEH",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/close-workers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/ao.test.ts",
+    "adapters/ao.ts",
+    "engine/real.test.ts",
+    "engine/real.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18367,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1490432,
+    "output_tokens": 3705,
+    "api_call_count": 14
+  }
+}

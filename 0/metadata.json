@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KJS4B5S28HG4GHA9R54CEH",
+  "session_id": "01a125af-3ac6-7c02-a43b-a467b6fc3d3a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T18:56:38.298545Z",
+  "branch": "ao/neatlogs-hack-2/close-workers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/ao.test.ts",
+    "adapters/ao.ts",
+    "engine/real.test.ts",
+    "engine/real.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "6bad32491df8",
+  "checkpoint_transcript_start": 8487,
+  "transcript_lines_at_start": 8487,
+  "compact_transcript_start": 982,
+  "token_usage": {
+    "input_tokens": 18367,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1490432,
+    "output_tokens": 3705,
+    "api_call_count": 14
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T18:56:37.787256Z",
+    "agent_lines": 52,
+    "agent_removed": 32,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 52,
+    "total_lines_changed": 84,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
