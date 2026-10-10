@@ -37,6 +37,7 @@ describe('runInit', () => {
     writeFileSync(join(repo, 'Makefile'), 'test:\n\ttrue\n');
     const onboarding = vi.fn(async () => undefined);
     await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, dryRun: true, onboarding,
+      cfoaiCheck: async () => ({ status: 'ok', detail: 'fake connected' }),
       readLine: async (question, fallback) => question.includes('cfo.ai') ? 'y' : fallback ?? '' });
     expect(onboarding).not.toHaveBeenCalled();
   });
@@ -195,6 +196,7 @@ describe('runInit', () => {
       cwd: repo,
       command,
       print: () => {},
+      onboarding: async () => undefined,
       env: { NEATLOGS_API_KEY: 'fake-test-key' },
       readLine: async () => answers[prompt++]!,
       doctor: async () => [{ product: 'AO daemon', status: 'connected', detail: 'ok', fix: null }],

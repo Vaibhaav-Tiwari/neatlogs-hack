@@ -317,7 +317,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     concurrency: 3,
     integrations: { neatlogs, entire, cfoai, slack: false },
   };
-  if (!options.dryRun) await (options.onboarding ?? configureIntegrations)({ config, ui: {
+  if (!options.dryRun) await (options.onboarding ?? configureIntegrations)({ config, repoRoot, ui: {
     print,
     confirm: async (question) => !options.yes && parseYes(await readLine(`${question} y/N`, 'N')),
     select: async (question, choices) => {

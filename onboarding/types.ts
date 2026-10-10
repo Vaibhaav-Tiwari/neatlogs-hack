@@ -11,6 +11,8 @@ export interface OnboardingUi {
 export interface OnboardingContext {
   config: TallyConfig;
   ui: OnboardingUi;
+  /** Actual target root, independent of the CLI process's working directory. */
+  repoRoot?: string;
 }
 
 export interface OnboardingResult {

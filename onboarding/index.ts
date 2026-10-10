@@ -1,10 +1,11 @@
 import { CfoaiOnboarding } from './cfoai.js';
+import { EntireOnboarding } from './entire.js';
 import type { OnboardingContext, IntegrationOnboarding } from './types.js';
 
 /** Integration modules return proposals; only init owns the config file write. */
 export async function configureIntegrations(
   context: OnboardingContext,
-  products: Partial<Record<'cfoai' | 'neatlogs' | 'entire', IntegrationOnboarding>> = { cfoai: new CfoaiOnboarding() },
+  products: Partial<Record<'cfoai' | 'neatlogs' | 'entire', IntegrationOnboarding>> = { cfoai: new CfoaiOnboarding(), entire: new EntireOnboarding() },
 ): Promise<void> {
   for (const name of ['cfoai', 'neatlogs', 'entire'] as const) {
     const product = products[name];
