@@ -4,6 +4,7 @@
 import { frameAt } from './replay-core.js';
 import { displayedCost, isRunning, withLiveCosts } from './live-state.js';
 import { createCodeGraph } from './code-graph.js';
+import { experimentMarkup, experimentMatches, validExperiment } from './experiment-view.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -119,7 +120,7 @@ function runOptionFrom(value) {
 async function readRunsIndex() {
   const index = await readJson(config.runsIndex);
   const rawRuns = Array.isArray(index) ? index : Array.isArray(index?.runs) ? index.runs : [];
-  return rawRuns.map(runOptionFrom).filter(Boolean);
+  return { runs: rawRuns.map(runOptionFrom).filter(Boolean), experiments: (Array.isArray(index?.experiments) ? index.experiments : []).map(runOptionFrom).filter(Boolean) };
 }
 
 // ---------- drawing ----------
@@ -172,6 +173,8 @@ function runSummary(state, source = {}) {
   return {
     runId: run.runId,
     mode: run.mode,
+    repeat: Number.isInteger(run.repeat) ? run.repeat : null,
+    status: run.status,
     repo: run.repo,
     taskIds: taskIdsKey(run),
     kind: costKind(run, ledger, source),
@@ -191,7 +194,8 @@ function pct(value) {
 function median(values) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function spread(values, format) {
@@ -366,10 +370,28 @@ function drawHeadline(run, baseline) {
 
 function drawComparison(run, source) {
   const node = document.getElementById('comparison-section');
+  if (source.experiment) {
+    node.hidden = false;
+    document.getElementById('comparison-note').textContent = 'Baseline against Tally for this experiment: cost per passed task, pass rate, total cost, and repeat spread.';
+    draw('comparison', experimentMarkup(source.experiment.summary, { path: source.experiment.path, choices: source.experimentChoices, pageUrl: location.href }));
+    const select = document.getElementById('experiment-select');
+    if (select && !select.__tallyBound) {
+      select.__tallyBound = true;
+      select.addEventListener('change', () => {
+        selectedExperiment = select.value;
+        const next = new URL(location.href);
+        next.searchParams.set('experiment', selectedExperiment);
+        history.replaceState(null, '', next);
+        tick();
+      });
+    }
+    return;
+  }
+  document.getElementById('comparison-note').textContent = 'Baseline against Tally from recorded run folders: cost per passed task, pass rate, total cost, and repeat spread.';
   const baseline = source.baseline?.run ?? null;
   const repeatRuns = source.comparisonRuns ?? [];
   const current = runSummary({ run, ledger: source.ledger ?? [] }, source);
-  const compatible = repeatRuns.filter((item) => item.key === current.key);
+  const compatible = repeatRuns.filter((item) => item.key === current.key && item.status === 'finished');
   const tallyRepeats = compatible.filter((item) => item.mode === 'tally');
   const baselineRepeats = compatible.filter((item) => item.mode === 'baseline');
   if (!baseline && repeatRuns.length === 0) {
@@ -387,7 +409,7 @@ function drawComparison(run, source) {
       const group = mode[1];
       if (group.length === 0) return '';
       const modeName = mode[0];
-      const runList = group.map((item) => item.runId).join(', ');
+      const runList = group.map((item) => `${item.runId}${item.repeat !== null ? ` (repeat ${item.repeat})` : ''}`).join(', ');
       return `<tr>
         <td>${modeName === 'baseline' ? 'Baseline repeats' : 'Tally repeats'}<span class="l-note">${group.length} ${group.length === 1 ? 'run' : 'runs'}: ${esc(runList)}</span></td>
         <td class="num fig">${spread(group.map((item) => item.perMerged), usd)}</td>
@@ -413,7 +435,7 @@ function drawComparison(run, source) {
   draw(
     'comparison',
     `${scope}<div class="scroll"><table class="comparison">
-      <thead><tr><th>Run set</th><th class="num">Cost per merged PR</th><th class="num">Pass rate</th><th class="num">Total cost</th></tr></thead>
+      <thead><tr><th>Run set</th><th class="num">Cost per passed task</th><th class="num">Pass rate</th><th class="num">Total cost</th></tr></thead>
       <tbody>${body}${repeatGroups}</tbody>
     </table></div>`,
   );
@@ -767,6 +789,22 @@ let runsIndexError = null;
 let runsIndexReadAt = 0;
 let comparisonRuns = [];
 let comparisonReadAt = 0;
+let experiments = [];
+let selectedExperiment = query.get('experiment') ?? defaults.experiment ?? null;
+
+const summaryPath = (path) => path.endsWith('summary.json') ? path : `${asFolder(path)}summary.json`;
+
+async function readExperiments(state) {
+  const current = runSummary(state);
+  const paths = experiments.filter((item) => !item.repo || item.repo === current.repo).map((item) => summaryPath(item.path));
+  if (selectedExperiment && !paths.includes(summaryPath(selectedExperiment))) paths.unshift(summaryPath(selectedExperiment));
+  const summaries = await Promise.allSettled(paths.map(async (path) => ({ path, summary: await readJson(path) })));
+  const choices = summaries.filter((result) => result.status === 'fulfilled')
+    .map((result) => result.value).filter((item) => validExperiment(item.summary) && experimentMatches(item.summary, current));
+  const requested = selectedExperiment ? choices.find((item) => item.path === summaryPath(selectedExperiment)) : null;
+  const member = choices.find((item) => ['baseline', 'tally'].some((mode) => item.summary.modes[mode].runs.some((run) => run.runId === state.run.runId)));
+  return { experiment: requested ?? member ?? choices[0] ?? null, experimentChoices: choices };
+}
 
 async function tick() {
   let stale = null;
@@ -779,7 +817,9 @@ async function tick() {
   if (!usingSample && performance.now() - runsIndexReadAt > 5000) {
     runsIndexReadAt = performance.now();
     try {
-      runs = await readRunsIndex();
+      const index = await readRunsIndex();
+      runs = index.runs;
+      experiments = index.experiments;
       runsIndexError = null;
     } catch (error) {
       runsIndexError = error.message;
@@ -800,6 +840,7 @@ async function tick() {
       /* keep the last baseline read, if any */
     }
   }
+  const experimentState = usingSample || config.replaySec ? { experiment: null, experimentChoices: [] } : await readExperiments(lastGood);
   document.body.classList.remove('unread');
 
   let state = lastGood;
@@ -810,7 +851,7 @@ async function tick() {
     replaying = fraction < 1;
     state = frameAt(lastGood.run, lastGood.ledger, fraction);
   }
-  drawAll(state, { sample: usingSample, stale, baseline, replaying, runs, runsIndexError, comparisonRuns });
+  drawAll(state, { sample: usingSample, stale, baseline, replaying, runs, runsIndexError, comparisonRuns, ...experimentState });
 }
 
 async function loop() {
