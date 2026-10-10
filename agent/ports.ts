@@ -137,6 +137,8 @@ export interface CheckpointInfo {
 
 export interface CheckpointPort {
   checkpointFor(context: HandoffContext & { sessionId: string }): Promise<CheckpointInfo | null>;
+  /** Native capture session may exist before any checkpoint or task commit. */
+  sessionIdFor?(context: HandoffContext & { sessionId: string }): Promise<string | null>;
 }
 
 export interface LlmRequest {

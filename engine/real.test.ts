@@ -280,6 +280,28 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it('records the native session of a stopped worker without a checkpoint and passes it to trace drain', async () => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: true, cfoai: false, slack: false');
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('harness: claude-code', 'harness: codex'));
+    const worker = new FakeWorker();
+    const wait = worker.wait.bind(worker);
+    let finish: ((result: WorkerResult) => void) | undefined;
+    worker.wait = (id) => id === 'session-1' ? new Promise(resolve => { finish = resolve; }) : wait(id);
+    worker.stop = async id => {
+      worker.stopped.push(id);
+      if (id === 'session-1') finish?.({ status: 'terminated', branch: 'tally/t1-1', checkoutPath: '/tmp/tally-1', prUrl: null });
+    };
+    const contexts: Array<{ entireSessionId?: string | null }> = [];
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'native'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: { tasks: async (...args) => (await intake.tasks(...args)).map(t => ({ ...t, firstAttemptCeilingUsd: 0.001 })) },
+        signals, worker, usage: worker, sessions: worker, publisher: worker, trace: new FakeTrace(),
+        history: { lookup: async () => null, record: async () => {} },
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        checkpoints: { checkpointFor: async () => null, sessionIdFor: async c => `native-${c.sessionId}` },
+        workerTraceDrain: { drainWorker: async c => { contexts.push(c); } } } });
+    expect(result.ledger[0]).toMatchObject({ result: 'stopped', checkpointId: null, entireSessionId: 'native-session-1', sessionId: 'session-1' });
+    expect(contexts[0]?.entireSessionId).toBe('native-session-1');
+  });
   it.each([
     { dryRun: true, source: 'cfoai', enabled: false },
     { dryRun: false, source: 'cfoai', enabled: false },

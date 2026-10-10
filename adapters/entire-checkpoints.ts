@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolve } from 'node:path';
 import type { CheckpointInfo, CheckpointPort, HandoffContext, HandoffPort, HandoffSummary } from '../agent/ports.js';
 
 const execFileAsync = promisify(execFile);
@@ -32,6 +33,8 @@ interface PendingCheckpoint {
 
 interface SessionInfo {
   session_id?: unknown;
+  worktree_id?: unknown;
+  worktree_path?: unknown;
   branch?: unknown;
   last_checkpoint_id?: unknown;
   checkpoint_id?: unknown;
@@ -111,6 +114,23 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
   async checkpointFor(context: HandoffContext & { sessionId: string }): Promise<CheckpointInfo | null> {
     const found = await this.findCheckpoint(context);
     return found ? { checkpointId: found.checkpointId, checkpointUrl: found.checkpointUrl, entireSessionId: found.entireSessionId ?? null } : null;
+  }
+
+  async sessionIdFor(context: HandoffContext & { sessionId: string }): Promise<string | null> {
+    // Killed workers may have no commit, but prompt-submit has already registered a session.
+    // Read the shared repository after AO removes the worker worktree.
+    const result = await this.command('entire', ['session', 'list', '--json'], { cwd: this.repoPath }).catch(() => null);
+    const sessions = parseJson<SessionInfo[]>(result?.stdout ?? '');
+    if (!Array.isArray(sessions)) return null;
+    const exact = sessions.filter(s => text(s.session_id) === context.sessionId || text(s.worktree_id) === context.sessionId);
+    const candidates = exact.length ? exact : sessions.filter(s => {
+      if (text(s.worktree_id)) return false;
+      const path = text(s.worktree_path);
+      if (path) return !!context.checkoutPath && resolve(path) === resolve(context.checkoutPath);
+      return !!context.branch && text(s.branch) === context.branch;
+    });
+    // Same-branch continuation must not inherit an earlier worker's capture session.
+    return candidates.length === 1 ? text(candidates[0]?.session_id) : null;
   }
 
   async summaryFor(sessionId: string, context: HandoffContext = {}): Promise<HandoffSummary | null> {
