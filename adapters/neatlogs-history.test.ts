@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { usdToNanos } from '../schema/money.js';
 import type { AttemptOutcome, PriceHistoryPort, PriceHistoryWriterPort, PriceStats } from '../agent/ports.js';
-import { historyAttributes, NeatlogsPriceHistory } from './neatlogs-history.js';
+import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from './neatlogs-history.js';
 
 class FakeHistory implements PriceHistoryPort, PriceHistoryWriterPort {
   records: AttemptOutcome[] = [];
@@ -38,13 +38,15 @@ describe('NeatlogsPriceHistory', () => {
         calls.push(`${input}`);
         expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer token');
         expect((init?.headers as Record<string, string>)['x-project-id']).toBe('project');
-        if (`${input}`.includes('/traces?')) return response({ traces: [{ id: 'trace-1' }, { traceId: 'trace-2' }] });
+        if (`${input}`.includes('/traces?')) return response({ data: { page: { hasMore: false, limit: 2, nextCursor: null }, traces: [{ id: 'trace-1' }, { traceId: 'trace-2' }] } });
         if (`${input}`.endsWith('/trace-1/spans')) {
           return response({
-            spans: [
-              { name: 'tally.history.record', attributes: historyAttributes({ size: 'small', tier: 'cheap', result: 'passed', costNanos: usdToNanos(0.12) }) },
-              { name: 'tally.history.record', attributes: historyAttributes({ size: 'small', tier: 'cheap', result: 'failed', costNanos: usdToNanos(0.28) }) },
-            ],
+            data: {
+              spans: [
+                { name: 'tally.history.record', attributes: historyAttributes({ size: 'small', tier: 'cheap', result: 'passed', costNanos: usdToNanos(0.12) }) },
+                { name: 'tally.history.record', attributes: historyAttributes({ size: 'small', tier: 'cheap', result: 'failed', costNanos: usdToNanos(0.28) }) },
+              ],
+            },
           });
         }
         return response({
@@ -55,6 +57,54 @@ describe('NeatlogsPriceHistory', () => {
 
     await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: usdToNanos(0.2) });
     expect(calls[0]).toContain('workflowName=tally-cfo-agent');
+  });
+
+  it('reads observations directly from the public trace list shape returned by neatlogs', async () => {
+    const history = new NeatlogsPriceHistory({
+      fallback: new FakeHistory(null),
+      env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
+      fetch: async (input) => {
+        if (`${input}`.includes('/traces?')) {
+          return response({
+            data: {
+              page: { hasMore: false, limit: 3, nextCursor: null },
+              traces: [
+                { traceId: 'trace-1', traceName: historyTraceName({ size: 'medium', tier: 'middle', result: 'passed', costNanos: 200 }) },
+                { traceId: 'trace-2', traceName: historyTraceName({ size: 'medium', tier: 'middle', result: 'stopped', costNanos: 600 }) },
+              ],
+            },
+          });
+        }
+        return response({ code: 'TRACE_PROCESSING' }, false);
+      },
+    });
+    await expect(history.lookup('medium', 'middle')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 400 });
+  });
+
+  it('only reads span details for old history traces that need attribute fallback', async () => {
+    const calls: string[] = [];
+    const history = new NeatlogsPriceHistory({
+      fallback: new FakeHistory(null),
+      env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
+      fetch: async (input) => {
+        calls.push(`${input}`);
+        if (`${input}`.includes('/traces?')) {
+          return response({
+            data: {
+              traces: [
+                { traceId: 'route-trace', traceName: 'tally.route' },
+                { traceId: 'old-history-trace', traceName: 'tally.history.record' },
+              ],
+            },
+          });
+        }
+        return response({ data: { spans: [{ name: 'tally.history.record', attributes: historyAttributes({ size: 'large', tier: 'top', result: 'passed', costNanos: 1000 }) }] } });
+      },
+    });
+
+    await expect(history.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 1000 });
+    expect(calls.some((call) => call.includes('/route-trace/spans'))).toBe(false);
+    expect(calls.some((call) => call.includes('/old-history-trace/spans'))).toBe(true);
   });
 
   it('falls back to local history when neatlogs read fails or has no matching observations', async () => {

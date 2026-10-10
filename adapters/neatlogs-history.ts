@@ -66,12 +66,39 @@ function traceIdOf(trace: unknown): string | null {
   return stringValue(record.id) ?? stringValue(record.traceId) ?? stringValue(record.trace_id);
 }
 
+function traceNameOf(trace: unknown): string | null {
+  if (typeof trace !== 'object' || trace === null) return null;
+  const record = trace as Record<string, unknown>;
+  return stringValue(record.traceName) ?? stringValue(record.name);
+}
+
+function observationFromName(name: string | null): Observation | null {
+  if (!name?.startsWith('tally.history.record ')) return null;
+  const fields = Object.fromEntries(
+    name
+      .slice('tally.history.record '.length)
+      .split(/\s+/)
+      .map((part) => part.split('='))
+      .filter((parts): parts is [string, string] => parts.length === 2 && parts[0] !== ''),
+  );
+  const size = fields.size;
+  const tier = fields.tier;
+  const result = fields.result;
+  const costNanos = Number(fields.cost_nanos);
+  if (size !== 'small' && size !== 'medium' && size !== 'large') return null;
+  if (!tier || !result || !Number.isFinite(costNanos) || costNanos < 0) return null;
+  return { size, tier, result, costNanos: Math.round(costNanos) };
+}
+
 function spansOf(body: unknown): unknown[] {
   if (Array.isArray(body)) return body;
   if (typeof body !== 'object' || body === null) return [];
   const record = body as Record<string, unknown>;
   if (Array.isArray(record.spans)) return record.spans;
   if (Array.isArray(record.data)) return record.data;
+  if (typeof record.data === 'object' && record.data !== null && Array.isArray((record.data as Record<string, unknown>).spans)) {
+    return (record.data as Record<string, unknown>).spans as unknown[];
+  }
   return [];
 }
 
@@ -81,6 +108,9 @@ function tracesOf(body: unknown): unknown[] {
   const record = body as Record<string, unknown>;
   if (Array.isArray(record.traces)) return record.traces;
   if (Array.isArray(record.data)) return record.data;
+  if (typeof record.data === 'object' && record.data !== null && Array.isArray((record.data as Record<string, unknown>).traces)) {
+    return (record.data as Record<string, unknown>).traces as unknown[];
+  }
   return [];
 }
 
@@ -155,6 +185,10 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
     const traces = tracesOf(await tracesResponse.json());
     const observations: Observation[] = [];
     for (const trace of traces) {
+      const traceName = traceNameOf(trace);
+      const traceObservation = observationFromName(traceName);
+      if (traceObservation) observations.push(traceObservation);
+      if (traceName && traceName !== 'tally.history.record') continue;
       const traceId = traceIdOf(trace);
       if (!traceId) continue;
       const spansResponse = await this.fetchImpl(`${this.endpoint}/traces/${encodeURIComponent(traceId)}/spans`, { headers: this.headers() });
@@ -177,4 +211,8 @@ export function historyAttributes(outcome: AttemptOutcome): Record<string, strin
     'tally.history.cost_nanos': outcome.costNanos,
     'tally.history.cost_usd': outcome.costNanos / NANOS_PER_USD,
   };
+}
+
+export function historyTraceName(outcome: AttemptOutcome): string {
+  return `tally.history.record size=${outcome.size} tier=${outcome.tier} result=${outcome.result} cost_nanos=${outcome.costNanos}`;
 }
