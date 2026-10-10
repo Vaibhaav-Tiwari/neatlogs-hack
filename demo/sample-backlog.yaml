@@ -80,10 +80,10 @@ tasks:
     passCheck: npm test -- --run tests/monthly-export.test.ts
     outcomes: [passed]
     scriptedOutcome:
-      route: middle
-      decision: This touches route handling, query filtering, and formatting, so the middle tier is cheaper than risking a stopped cheap attempt.
+      route: cheap
+      decision: Observed history says medium export tasks have been cheap enough to try on the cheap tier first.
       attempts:
-        - tier: middle
+        - tier: cheap
           result: passed
           tokens: { uncachedInput: 32200, cachedInput: 5100, output: 1640 }
 
@@ -98,17 +98,17 @@ tasks:
     passCheck: npm test -- --run tests/exchange-rate-cache.test.ts
     outcomes: [stopped, passed]
     scriptedOutcome:
-      route: middle
-      decision: It looks like a bounded cache change, so the middle tier gets a capped attempt before escalation.
+      route: cheap
+      decision: History makes this look cheap enough for a capped cheap attempt before escalating.
       attempts:
-        - tier: middle
+        - tier: cheap
           result: stopped
           resultReason: Ceiling crossed while chasing stale-cache edge cases.
           tokens: { uncachedInput: 51200, cachedInput: 9800, output: 2740 }
-        - tier: top
+        - tier: middle
           result: passed
           handoff: entire-handoff
-          decision: The first attempt hit its ceiling; continue the same branch with the top tier and the Entire handoff.
+          decision: The cheap attempt hit its ceiling; continue the same branch on the middle tier with the Entire handoff.
           tokens: { uncachedInput: 43800, cachedInput: 12100, output: 2180 }
 
   - id: T6
@@ -122,17 +122,17 @@ tasks:
     passCheck: npm test -- --run tests/refund-reconciliation.test.ts
     outcomes: [failed, passed]
     scriptedOutcome:
-      route: middle
-      decision: Refund reconciliation crosses state transitions and accounting totals, so begin at the middle tier.
+      route: cheap
+      decision: Recent history says refund work can start cheap, but the ceiling should catch hidden state-machine risk.
       attempts:
-        - tier: middle
+        - tier: cheap
           result: failed
-          resultReason: The first attempt missed the full-refund follow-up state.
+          resultReason: The cheap attempt missed the full-refund follow-up state.
           tokens: { uncachedInput: 46700, cachedInput: 6900, output: 2320 }
-        - tier: top
+        - tier: middle
           result: passed
           handoff: entire-handoff
-          decision: The failing middle attempt exposed a hidden state-machine edge; continue with the top tier and the failure context.
+          decision: The failing cheap attempt exposed a hidden state-machine edge; continue with the middle tier and the failure context.
           tokens: { uncachedInput: 52600, cachedInput: 13400, output: 2860 }
 
   - id: T7

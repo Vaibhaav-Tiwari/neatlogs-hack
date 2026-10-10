@@ -90,6 +90,12 @@ async function readRun(folder) {
   return { run, ledger: ledger.filter((row) => row.runId === run.runId || !row.runId) };
 }
 
+async function readRunState(folder) {
+  const run = await readJson(`${folder}run.json`);
+  if (!run || !Array.isArray(run.tasks) || !run.budget) throw new Error('run.json is not a Tally run');
+  return run;
+}
+
 function runOptionFrom(value) {
   if (typeof value === 'string') return { id: value, path: `/runs/${value}/`, label: value };
   if (!value || typeof value !== 'object') return null;
@@ -125,6 +131,38 @@ function draw(id, html) {
 
 const passedCount = (run) => run.tasks.filter((task) => task.status === 'passed').length;
 const perMergedPr = (run) => (passedCount(run) > 0 ? run.budget.spentNanos / passedCount(run) : null);
+const passRate = (run) => (run.tasks.length > 0 ? passedCount(run) / run.tasks.length : 0);
+
+function runSummary(run) {
+  return {
+    runId: run.runId,
+    mode: run.mode,
+    passed: passedCount(run),
+    total: run.tasks.length,
+    passRate: passRate(run),
+    totalCost: run.budget.spentNanos,
+    perMerged: perMergedPr(run),
+  };
+}
+
+function pct(value) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function median(values) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function spread(values, format) {
+  const clean = values.filter((value) => value !== null && Number.isFinite(value));
+  if (clean.length === 0) return '<span class="blank">none</span>';
+  const min = Math.min(...clean);
+  const max = Math.max(...clean);
+  const mid = median(clean);
+  return min === max ? format(min) : `${format(min)}-${format(max)} <span class="spread-mid">median ${format(mid)}</span>`;
+}
 
 /** Tally marks: groups of four strokes crossed by a fifth. */
 function tallyMarks(n) {
@@ -260,6 +298,48 @@ function drawHeadline(run, baseline) {
      <p class="big fig">${each === null ? '<span class="none">none yet</span>' : usd(each)}</p>
      <p class="marks">${tallyMarks(passed)}<span>${passed} of ${run.tasks.length} tasks passed${done < run.tasks.length ? `, ${run.tasks.length - done} still open` : ''}</span></p>
      ${compare}`,
+  );
+}
+
+function drawComparison(run, source) {
+  const node = document.getElementById('comparison-section');
+  const baseline = source.baseline?.run ?? null;
+  const repeatRuns = source.comparisonRuns ?? [];
+  if (!baseline && repeatRuns.length === 0) {
+    node.hidden = true;
+    draw('comparison', '');
+    return;
+  }
+  node.hidden = false;
+  const rows = [runSummary(run), baseline ? runSummary(baseline) : null].filter(Boolean);
+  const repeatGroups = ['tally', 'baseline']
+    .map((mode) => {
+      const group = repeatRuns.filter((item) => item.mode === mode);
+      if (group.length === 0) return '';
+      return `<tr>
+        <td>${mode === 'baseline' ? 'Baseline repeats' : 'Tally repeats'}<span class="l-note">${group.length} ${group.length === 1 ? 'run' : 'runs'}</span></td>
+        <td class="num fig">${spread(group.map((item) => item.perMerged), usd)}</td>
+        <td class="num fig">${spread(group.map((item) => item.passRate), pct)}</td>
+        <td class="num fig">${spread(group.map((item) => item.totalCost), usd)}</td>
+      </tr>`;
+    })
+    .join('');
+  const body = rows
+    .map(
+      (item) => `<tr>
+        <td>${item.mode === 'baseline' ? 'Baseline' : 'Tally'}<span class="l-note">${esc(item.runId)}</span></td>
+        <td class="num fig">${item.perMerged === null ? '<span class="blank">none</span>' : usd(item.perMerged)}</td>
+        <td class="num fig">${pct(item.passRate)}<span class="l-note">${item.passed}/${item.total} passed</span></td>
+        <td class="num fig">${usd(item.totalCost)}</td>
+      </tr>`,
+    )
+    .join('');
+  draw(
+    'comparison',
+    `<div class="scroll"><table class="comparison">
+      <thead><tr><th>Run set</th><th class="num">Cost per merged PR</th><th class="num">Pass rate</th><th class="num">Total cost</th></tr></thead>
+      <tbody>${body}${repeatGroups}</tbody>
+    </table></div>`,
   );
 }
 
@@ -483,6 +563,7 @@ function drawAll(state, source) {
   drawRunPicker(source);
   drawHeadline(state.run, source.baseline);
   drawBudget(state.run, state.ledger);
+  drawComparison(state.run, source);
   drawIntegrations(state.run);
   drawTasks(state.run, state.ledger);
   drawLedger(state.run, state.ledger);
@@ -511,6 +592,8 @@ let replayStart = null;
 let runs = [];
 let runsIndexError = null;
 let runsIndexReadAt = 0;
+let comparisonRuns = [];
+let comparisonReadAt = 0;
 
 async function tick() {
   let stale = null;
@@ -529,6 +612,14 @@ async function tick() {
       runsIndexError = error.message;
     }
   }
+  if (!usingSample && runs.length > 0 && performance.now() - comparisonReadAt > 15000) {
+    comparisonReadAt = performance.now();
+    const read = await Promise.allSettled(runs.map((run) => readRunState(run.path)));
+    comparisonRuns = read
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => runSummary(result.value))
+      .filter((item) => item.mode === 'tally' || item.mode === 'baseline');
+  }
   if (config.baseline) {
     try {
       baseline = await readRun(config.baseline);
@@ -546,7 +637,7 @@ async function tick() {
     replaying = fraction < 1;
     state = frameAt(lastGood.run, lastGood.ledger, fraction);
   }
-  drawAll(state, { sample: usingSample, stale, baseline, replaying, runs, runsIndexError });
+  drawAll(state, { sample: usingSample, stale, baseline, replaying, runs, runsIndexError, comparisonRuns });
 }
 
 async function loop() {
