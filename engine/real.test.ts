@@ -6,7 +6,7 @@ import type { CheckpointPort, HandoffPort, SizingSignalsPort, LiveUsagePort, Ses
 import { usdToNanos, validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
-import { runRealTally, type CfoaiBudgetPort, type WorkerPort, type WorkerResult, type WorkerStartInput } from './real.js';
+import { runRealTally, type CfoaiBudgetPort, type WorkerPort, type WorkerResult, type WorkerStartInput, type WorktreePort } from './real.js';
 
 const fixedNow = () => new Date('2026-10-11T03:00:00.000Z');
 
@@ -83,9 +83,11 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
   starts: WorkerStartInput[] = [];
   stopped: string[] = [];
   published: Array<{ branch: string; taskId: string }> = [];
+  commitChecks: Array<{ checkoutPath: string; branch: string }> = [];
+  publishPaths: string[] = [];
   commitsAheadCount = 1;
 
-  async start(input: WorkerStartInput) {
+  async start(input: WorkerStartInput): ReturnType<WorkerPort['start']> {
     this.starts.push(input);
     return { sessionId: `session-${this.starts.length}`, branch: `tally/t1-${this.starts.length}`, checkoutPath: `/tmp/tally-${this.starts.length}` };
   }
@@ -107,13 +109,27 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
     this.stopped.push(sessionId);
   }
 
-  async commitsAhead() {
+  async commitsAhead(input: { checkoutPath: string; branch: string }) {
+    this.commitChecks.push(input);
     return this.commitsAheadCount;
   }
 
-  async publishPr(input: { branch: string; task: { taskId: string } }) {
+  async publishPr(input: { checkoutPath: string; branch: string; task: { taskId: string } }) {
+    this.publishPaths.push(input.checkoutPath);
     this.published.push({ branch: input.branch, taskId: input.task.taskId });
     return `https://github.com/acme/payments-service/pull/${this.published.length}`;
+  }
+}
+
+class BranchOnlyWorker extends FakeWorker {
+  async start(input: WorkerStartInput): ReturnType<WorkerPort['start']> {
+    this.starts.push(input);
+    return { sessionId: `session-${this.starts.length}`, branch: null, checkoutPath: null };
+  }
+
+  async wait(sessionId: string): Promise<WorkerResult> {
+    const index = Number(sessionId.split('-')[1]);
+    return { status: 'idle' as const, branch: `tally/t1-${index}`, checkoutPath: null, prUrl: null };
   }
 }
 
@@ -151,6 +167,16 @@ class SequenceVerifier implements VerifierPort {
     const result = this.results[Math.min(this.calls, this.results.length - 1)]!;
     this.calls += 1;
     return result;
+  }
+}
+
+class FakeWorktrees implements WorktreePort {
+  calls: Array<{ repoPath: string; branch: string }> = [];
+  constructor(private readonly path: string | null) {}
+
+  async checkoutPathFor(repoPath: string, branch: string): Promise<string | null> {
+    this.calls.push({ repoPath, branch });
+    return this.path;
   }
 }
 
@@ -430,6 +456,75 @@ describe('runRealTally', () => {
 
     expect(worker.published).toEqual([{ branch: 'tally/t1-1', taskId: 'T1' }]);
     expect(result.ledger[0]).toMatchObject({ result: 'passed', prUrl: 'https://github.com/acme/payments-service/pull/1' });
+  });
+
+  it('resolves the worker checkout from git worktrees when AO reports only the branch', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new BranchOnlyWorker();
+    const worktrees = new FakeWorktrees('/tmp/resolved-worker-checkout');
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'resolved-checkout'),
+      now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+        worktrees,
+      },
+    });
+
+    expect(worktrees.calls).toEqual([{ repoPath: dir, branch: 'tally/t1-1' }]);
+    expect(worker.commitChecks).toMatchObject([{ checkoutPath: '/tmp/resolved-worker-checkout', branch: 'tally/t1-1' }]);
+    expect(worker.publishPaths).toEqual(['/tmp/resolved-worker-checkout']);
+    expect(result.ledger[0]).toMatchObject({ result: 'passed', prUrl: 'https://github.com/acme/payments-service/pull/1' });
+  });
+
+  it('records a missing worker checkout as an error without verification or escalation', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new BranchOnlyWorker();
+    const worktrees = new FakeWorktrees(null);
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'missing-checkout'),
+      now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier,
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+        worktrees,
+      },
+    });
+
+    expect(verifier.calls).toBe(0);
+    expect(worker.starts).toHaveLength(1);
+    expect(worker.published).toHaveLength(0);
+    expect(result.ledger).toHaveLength(1);
+    expect(result.ledger[0]).toMatchObject({ result: 'error', resultReason: 'could not locate worker checkout' });
+    expect(result.runState.tasks[0]).toMatchObject({
+      status: 'failed',
+      statusReason: 'could not locate worker checkout',
+      attempts: 1,
+      escalated: false,
+      prUrl: null,
+    });
   });
 
   it('records settled final usage instead of an early empty usage snapshot', async () => {
