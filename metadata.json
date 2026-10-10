@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4KG7M0JF7NY9XQREMN3VG4Z",
   "strategy": "manual-commit",
   "branch": "ao/neatlogs-hack-5/e6-checkpoint-recall",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "adapters/entire-recall.test.ts",
     "adapters/entire-recall.ts",
@@ -20,6 +20,10 @@
       "transcript": "/0/full.jsonl",
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
       "prompt": ""
     }
   ],
