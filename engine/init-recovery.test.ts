@@ -7,6 +7,7 @@ import { pendingInitPath } from './init-transaction.js';
 import { installRecordPath } from './install-record.js';
 import { configureIntegrations } from '../onboarding/index.js';
 import { CfoaiOnboarding } from '../onboarding/cfoai.js';
+import { NeatlogsOnboarding } from '../onboarding/neatlogs.js';
 import { parse as parseYaml } from 'yaml';
 
 function fixture() {
@@ -56,12 +57,16 @@ describe('transactional init prerequisites and recovery', () => {
     expect(existsSync(join(f.cwd, '.tally'))).toBe(false);
   });
 
-  it('checks requested neatlogs before mutation', async () => {
+  it('allows neatlogs connection to be skipped and completes init with tracing off', async () => {
     const f = fixture();
-    await expect(runInit({ cwd: f.cwd, command: f.command, print: () => {}, env: {}, cfoaiCheck: async () => ({ status: 'missing', detail: 'missing' }),
-      readLine: async (question, fallback) => question.startsWith('Enable neatlogs') ? 'y' : fallback ?? '' })).rejects.toThrow('NEATLOGS_API_KEY');
-    expect(f.mutations).toEqual([]);
-    expect(existsSync(join(f.cwd, '.tally'))).toBe(false);
+    const probe = vi.fn(async () => true);
+    const neatlogs = new NeatlogsOnboarding({ env: () => ({}), probe });
+    const result = await runInit({ cwd: f.cwd, command: f.command, print: () => {}, env: {}, doctor: async () => [],
+      onboarding: context => configureIntegrations(context, { neatlogs }),
+      readLine: async (question, fallback) => question.startsWith('Enable neatlogs') || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
+    expect(result.applied).toBe(true);
+    expect(parseYaml(readFileSync(result.configPath, 'utf8')).integrations.neatlogs).toBe(false);
+    expect(probe).not.toHaveBeenCalled();
   });
 
   it('offers cfo.ai login during init and safely uses the local budget when it is skipped', async () => {
