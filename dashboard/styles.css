@@ -313,6 +313,7 @@ th.num, td.num { text-align: right; }
   .tasks-section:has(.code-graph[open]) .tasks tr:not(.graph-row), .tasks-section:has(.code-graph[open]) thead { display: none; }
   .code-graph { width: 100%; break-inside: avoid; }
   .code-graph summary { font-size: 10pt; }
+  .impact-graph { max-height: 170mm; }
   .graph-node rect { fill: white; transition: none; }
 }
 

@@ -603,6 +603,7 @@ function taskDecision(attempts) {
 
 const taskGraphs = new Map();
 function drawTasks(run, ledger) {
+  const focusedGraphNode = [...taskGraphs.values()].some((graph) => graph.element.contains(document.activeElement)) ? document.activeElement : null;
   const graphTasks = run.tasks.filter((task) => task.impact?.source !== 'none' && task.impact?.nodes?.length > 0);
   const keys = new Set(graphTasks.map((task) => `${run.runId}:${task.taskId}`));
   for (const [key, graph] of taskGraphs) if (!keys.has(key)) { graph.dispose(); taskGraphs.delete(key); }
@@ -650,6 +651,7 @@ function drawTasks(run, ledger) {
     if (!slot.contains(graph.element)) slot.append(graph.element);
     graph.update(task, ledger.filter((row) => row.taskId === task.taskId).sort((a,b) => a.attempt - b.attempt));
   }
+  if (focusedGraphNode?.isConnected && document.activeElement !== focusedGraphNode) focusedGraphNode.focus({ preventScroll: true });
 }
 
 function isSuspectPass(row, run) {

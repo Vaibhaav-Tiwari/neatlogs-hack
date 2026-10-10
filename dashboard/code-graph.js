@@ -42,9 +42,10 @@ export function createCodeGraph(task) {
   let attempts = [];
   let layoutKey = '';
   let nodes = [];
+  const printMedia = matchMedia('print');
 
   function layout() {
-    const width = Math.max(280, Math.min(1040, details.getBoundingClientRect().width || 1040));
+    const width = printMedia.matches ? 1040 : Math.max(280, Math.min(1040, details.getBoundingClientRect().width || 1040));
     const nextNodes = graphNodes(currentTask.impact);
     const key = JSON.stringify([Math.round(width), nextNodes, currentTask.impact.edges]);
     if (key === layoutKey) return;
@@ -92,7 +93,7 @@ export function createCodeGraph(task) {
     }
     const totals = task.impact.totals ?? {};
     const limited = task.impact.truncated || (task.impact.nodes?.length ?? 0) > nodes.length;
-    details.querySelector('.graph-caption').textContent = `${totals.filesTouched ?? 0} target files, ${totals.dependents ?? 0} dependents, ${totals.testsPresent ? 'tests present' : 'no tests found'} → ${task.size ?? 'unsized'}.${limited ? ` Showing ${nodes.length}${Number.isFinite(totals.nodes) ? ` of ${totals.nodes}` : ''} nodes; slice truncated, totals cover the full graph.` : ''}`;
+    details.querySelector('.graph-caption').textContent = `${totals.filesTouched ?? 0} target ${totals.filesTouched === 1 ? 'file' : 'files'}, ${totals.dependents ?? 0} dependents, ${totals.testsPresent ? 'tests present' : 'no tests found'} → ${task.size ?? 'unsized'}.${limited ? ` Showing ${nodes.length}${Number.isFinite(totals.nodes) ? ` of ${totals.nodes}` : ''} nodes; slice truncated, totals cover the full graph.` : ''}`;
     details.querySelector('summary').textContent = `Code impact · ${task.taskId}`;
     details.querySelector('.graph-query').textContent = `${task.impact.source === 'scripted' ? 'Sample graph' : task.impact.source === 'entire-graph' ? 'Entire code graph' : 'Code search'}${task.impact.query ? ` · ${task.impact.query}` : ''}`;
     svg.setAttribute('aria-label', `Code impact for ${task.title}`);
@@ -110,11 +111,13 @@ export function createCodeGraph(task) {
     const predicted = new Set((task.impact.nodes ?? []).map((node) => node.id));
     const outside = [...edited].filter((path) => !predicted.has(path)).sort();
     const note = details.querySelector('.graph-outside');
-    note.textContent = outside.length ? `Edited outside predicted slice: ${outside.join(', ')}` : task.changedFiles ? `${edited.size} files edited; all within the predicted slice.` : '';
+    note.textContent = outside.length ? `Edited outside ${limited ? 'displayed slice (prediction truncated)' : 'predicted slice'}: ${outside.join(', ')}` : task.changedFiles ? `${edited.size} files edited; all within the predicted slice.` : '';
     note.classList.toggle('outside', outside.length > 0);
   }
   details.addEventListener('toggle', () => update(currentTask, attempts));
   const observer = new ResizeObserver(() => update(currentTask, attempts));
   observer.observe(details);
-  return { element: details, update, dispose: () => observer.disconnect() };
+  const mediaChanged = () => update(currentTask, attempts);
+  printMedia.addEventListener('change', mediaChanged);
+  return { element: details, update, dispose: () => { observer.disconnect(); printMedia.removeEventListener('change', mediaChanged); } };
 }
