@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KG7M0JF7NY9XQREMN3VG4Z",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/e6-checkpoint-recall",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/entire-recall.test.ts",
+    "adapters/entire-recall.ts",
+    "agent/baseline.test.ts",
+    "agent/ports.ts",
+    "agent/router.test.ts",
+    "agent/sizer.ts",
+    "engine/real.test.ts",
+    "engine/real.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34895,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4066432,
+    "output_tokens": 7887,
+    "api_call_count": 27
+  }
+}
