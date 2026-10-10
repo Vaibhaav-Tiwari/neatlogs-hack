@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KX6PN47DS3JMN1CS1AHJFX",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T21:58:52.861554Z",
+  "branch": "ao/neatlogs-hack-5/cfoai-onboarding",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "engine/init-recovery.test.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "a2d4a958bb0c",
+  "checkpoint_transcript_start": 9250,
+  "transcript_lines_at_start": 9250,
+  "compact_transcript_start": 1049,
+  "token_usage": {
+    "input_tokens": 41766,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3008512,
+    "output_tokens": 12745,
+    "api_call_count": 21
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T21:58:52.227696Z",
+    "agent_lines": 19,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 19,
+    "total_lines_changed": 21,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 295,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "onboarding/neatlogs.test.ts": 120,
+        "onboarding/neatlogs.ts": 122,
+        "onboarding/secrets.ts": 53
+      }
+    }
+  ]
+}
