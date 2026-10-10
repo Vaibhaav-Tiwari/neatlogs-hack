@@ -157,7 +157,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
       : undefined;
   const entireCheckpoints =
     config.integrations.entire && (!hasPort(overrides, 'handoff') || !hasPort(overrides, 'checkpoints'))
-      ? new EntireCheckpointAdapter({ repoPath })
+      ? new EntireCheckpointAdapter({ repoPath, generatedSummaries: config.entire?.generatedSummaries })
       : undefined;
   const handoff = overrides.handoff ?? entireCheckpoints;
   const checkpoints = overrides.checkpoints ?? entireCheckpoints;
@@ -407,6 +407,7 @@ async function runAttempt(input: {
     prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary, input.runId, input.attempt),
     aoProject: input.config.repo.aoProject,
   });
+  let stopped = false;
   const watcher = new CeilingWatcher({ usage: input.ports.usage, sessions: input.ports.sessions, trace: input.ports.trace });
   const abort = new AbortController();
   const watched = watcher.watch(
@@ -414,10 +415,8 @@ async function runAttempt(input: {
     { signal: abort.signal, intervalMs: input.dryRun ? 1 : 5000 },
   );
   const worker = input.ports.worker.wait(started.sessionId, { timeoutMs: input.config.test.timeoutSec ? input.config.test.timeoutSec * 1000 : undefined });
-  const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
-
-  let result: AttemptResult;
-  let resultReason: string | null;
+  let result: AttemptResult = 'error';
+  let resultReason: string | null = null;
   let workerResult: WorkerResult | null = null;
   let tokens: TokenUsage | null = null;
   let estimatedCostNanos = 0;
@@ -429,7 +428,10 @@ async function runAttempt(input: {
   let entireSessionId: string | null = null;
   let resolvedCheckoutPath: string | null = null;
 
+  try {
+  const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
   if (first.kind === 'watch' && first.verdict.action === 'stop') {
+    stopped = first.verdict.stopped;
     abort.abort();
     result = 'stopped';
     resultReason = first.verdict.reason;
@@ -439,12 +441,6 @@ async function runAttempt(input: {
   } else {
     abort.abort();
     workerResult = first.kind === 'worker' ? first.result : await worker;
-    const usagePort = input.ports.usage as FinalUsagePort;
-    const usage = usagePort.settledUsageFor ? await usagePort.settledUsageFor(started.sessionId) : await usagePort.usageFor(started.sessionId);
-    const check = checkCeiling(usage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
-    tokens = check.tokens;
-    estimatedCostNanos = check.costNanos;
-    costSource = input.dryRun ? 'simulated' : check.costSource;
     if (workerResult.status === 'needs_input' || workerResult.status === 'timeout') {
       result = 'error';
       resultReason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
@@ -516,6 +512,28 @@ async function runAttempt(input: {
       checkpointId = null;
       checkpointUrl = null;
     }
+  }
+  } catch (error) {
+    result = 'error';
+    resultReason = error instanceof Error ? error.message : String(error);
+  } finally {
+    abort.abort();
+    if (!stopped) {
+      try {
+        await input.ports.sessions.stop(started.sessionId, `Tally attempt finished: ${result}`);
+      } catch (error) {
+        throw new Error(`could not close worker ${started.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    await watched;
+  }
+  const usagePort = input.ports.usage as FinalUsagePort;
+  const finalUsage = usagePort.settledUsageFor ? await usagePort.settledUsageFor(started.sessionId) : await usagePort.usageFor(started.sessionId);
+  if (finalUsage) {
+    const finalCheck = checkCeiling(finalUsage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
+    tokens = finalCheck.tokens;
+    estimatedCostNanos = finalCheck.costNanos;
+    costSource = input.dryRun ? 'simulated' : finalCheck.costSource;
   }
 
   return {
@@ -614,12 +632,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
   let budgetSource: BudgetSource = 'config';
   let committedBeforeRunNanos = 0;
-  if (options.budgetUsd === undefined && config.budget.source === 'cfoai' && ports.cfoai) {
+  if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
     try {
       const [limit, currentSpend] = await Promise.all([ports.cfoai.budgetLimitNanos(), ports.cfoai.currentSpendNanos?.() ?? Promise.resolve(0)]);
-      budgetLimitNanos = limit;
-      committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
-      budgetSource = 'cfoai';
+      if (options.budgetUsd === undefined && config.budget.source === 'cfoai') {
+        budgetLimitNanos = limit;
+        committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
+        budgetSource = 'cfoai';
+      }
     } catch {
       budgetSource = 'config';
     }
@@ -660,6 +680,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       endedAt,
       budget: {
         source: budgetSource,
+        limitSource: options.budgetUsd === undefined ? budgetSource : 'cli',
+        systemOfRecord: config.integrations.cfoai && ports.cfoai ? 'cfoai' : 'ledger',
         limitNanos: budgetLimitNanos,
         spentNanos: ledgerSpend(ledger),
       },
@@ -695,7 +717,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             sessionId: interrupted.sessionId,
             branch: interrupted.branch,
             checkpointId: interrupted.checkpointId,
+            resultReason: interrupted.resultReason,
           },
+          task,
           config,
           ports: { budget, handoff: ports.handoff, trace: ports.trace },
           traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
@@ -803,7 +827,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           sessionId: first.sessionId,
           branch: first.branch,
           checkpointId: first.checkpointId,
+          resultReason: first.resultReason,
         },
+        task,
         config,
         ports: { budget, handoff: ports.handoff, trace: ports.trace },
         traceAttributes: { sessionId: runId, taskId: first.taskId, attempt: 2 },

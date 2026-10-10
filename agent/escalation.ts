@@ -6,7 +6,7 @@
  */
 import { ceilingNanos } from '../schema/money.js';
 import type { AttemptResult, CostSource, Handoff, TallyConfig, TaskSize, Tier, TokenUsage } from '../schema/types.js';
-import type { BudgetPort, HandoffPort, TraceAttributes, TracePort } from './ports.js';
+import type { BudgetPort, HandoffPort, TaskInput, TraceAttributes, TracePort } from './ports.js';
 import { usd } from './router.js';
 import { traceDecision } from './trace.js';
 
@@ -24,6 +24,7 @@ export interface FinishedAttempt {
   sessionId: string | null;
   branch?: string | null;
   checkpointId?: string | null;
+  resultReason?: string | null;
 }
 
 export interface EscalateDecision {
@@ -60,6 +61,7 @@ export type EscalationDecision = EscalateDecision | GiveUpDecision;
 
 export interface EscalationInput {
   previous: FinishedAttempt;
+  task?: TaskInput;
   config: TallyConfig;
   ports: { budget: BudgetPort; handoff?: HandoffPort; trace?: TracePort };
   traceAttributes?: TraceAttributes;
@@ -129,6 +131,9 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
       const found = await input.ports.handoff.summaryFor(previous.sessionId, {
         branch: previous.branch,
         checkpointId: previous.checkpointId,
+        result: previous.result,
+        resultReason: previous.resultReason,
+        task: input.task,
       });
       if (found && found.summary.trim() !== '') {
         handoff = found.type;

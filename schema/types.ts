@@ -134,6 +134,9 @@ export interface RunState {
   endedAt: string | null;
   budget: {
     source: BudgetSource;
+    /** Origin of this run's effective limit, distinct from spend accounting. */
+    limitSource?: BudgetSource | 'cli';
+    systemOfRecord?: 'ledger' | 'cfoai';
     limitNanos: number;
     /** Always the sum of estimatedCostNanos over this run's ledger rows. */
     spentNanos: number;
@@ -220,5 +223,9 @@ export interface TallyConfig {
     };
   };
   concurrency?: number;
+  entire?: {
+    /** Off by default: generation may export session content to Entire's summary provider. */
+    generatedSummaries?: boolean;
+  };
   integrations: Record<'neatlogs' | 'entire' | 'cfoai' | 'slack', boolean>;
 }

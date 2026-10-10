@@ -74,6 +74,18 @@ describe('decideEscalation', () => {
     expect(decision.handoffSummaryTokens).toEqual({ uncachedInput: 10, cachedInput: 20, output: 5, total: 35 });
   });
 
+  it('passes task text and the failed test verdict to metadata handoff', async () => {
+    const task = { taskId: 'T1', title: 'Fix calc', body: 'Preserve zero inputs.' };
+    let context: unknown;
+    await decideEscalation({
+      previous: previous({ result: 'failed', resultReason: 'zero input test failed', branch: 'worker', checkpointId: 'checkpoint' }),
+      task,
+      config,
+      ports: { budget: new FakeBudget(usdToNanos(40)), handoff: { summaryFor: async (_session, received) => { context = received; return null; } } },
+    });
+    expect(context).toEqual({ branch: 'worker', checkpointId: 'checkpoint', task, result: 'failed', resultReason: 'zero input test failed' });
+  });
+
   it('moves a failed attempt one tier up', async () => {
     const decision = escalated(await decide(previous({ result: 'failed', tier: 'silver' })));
     expect(decision.tier.name).toBe('gold');

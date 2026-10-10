@@ -18,9 +18,13 @@ export interface InitOptions {
   command?: InitCommandRunner;
   readLine?: PromptReader;
   doctor?: (configPath: string) => Promise<DoctorLine[]>;
+  print?: (line: string) => void;
+  yes?: boolean;
+  dryRun?: boolean;
 }
 
 export interface InitResult {
+  applied: boolean;
   configPath: string;
   projectId: string;
   testCommand: string;
@@ -186,7 +190,7 @@ async function ensureAoProject(input: { command: InitCommandRunner; cwd: string;
 
 export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const command = options.command ?? defaultCommand;
-  const readLine = options.readLine ?? defaultReadLine;
+  const readLine = options.readLine ?? (options.yes || options.dryRun ? async (_question: string, defaultValue = '') => defaultValue : defaultReadLine);
   const cwd = options.cwd ?? process.cwd();
   const repoRoot = (await commandOrNull(command, 'git', ['rev-parse', '--show-toplevel'], cwd)) ?? cwd;
   const configPath = resolve(repoRoot, options.configPath ?? 'tally.yaml');
@@ -232,6 +236,26 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     concurrency: 3,
     integrations: { neatlogs, entire, cfoai, slack: false },
   };
+  const existingProject = await commandOrNull(command, 'ao', ['project', 'get', projectId, '--json'], cwd);
+  const currentProjectConfig = existingProject ? (parseYaml(existingProject) as { project?: { config?: unknown } })?.project?.config ?? {} : {};
+  const nextProjectConfig = withPostCreate(currentProjectConfig, setupCommand);
+  const print = options.print ?? console.log;
+  print('Tally init proposed changes:');
+  print(`Create ${configPath}:\n${stringifyYaml(config)}`);
+  print(`Create ${recordPath}: installation ownership record for uninstall.`);
+  print(`${existingProject ? 'Update' : 'Register'} AO project ${projectId} at ${repoRoot}; preserve all existing config fields.`);
+  print(`AO post-create entries: ${JSON.stringify(nextProjectConfig.postCreate ?? [])}`);
+  print('Worker allow-list: not installed; scoped enforcement is not available through the current AO worker launch API.');
+  print('Requested worker rules (not yet enforced):');
+  print('- Edit files in the worker\'s own worktree.');
+  print(`- Run the configured test command: ${testCommand}`);
+  print('- Run git add and git commit.');
+  print('- No git push, network access, or installs. Tally publishes.');
+  print('No global Claude Code or Codex settings, integration credentials, or capture hooks will be changed.');
+  const result = { configPath, projectId, testCommand, setupCommand, baseBranch, tiers: tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`), doctor: [] as DoctorLine[] };
+  if (options.dryRun || (!options.yes && !parseYes(await readLine('Apply these changes? y/N', 'N')))) {
+    return { ...result, applied: false };
+  }
   const projectChanges = await ensureAoProject({ command, cwd, repoRoot, projectId, setupCommand });
   const configText = stringifyYaml(config);
   const record: InstallRecord = { version: 1, configPath, configHash: contentHash(configText), projectId, ...projectChanges };
@@ -239,5 +263,5 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   writeFileSync(recordPath, JSON.stringify(record, null, 2), { mode: 0o600, flag: 'wx' });
   writeFileSync(configPath, configText, { flag: 'wx' });
   const doctor = await (options.doctor ?? ((path) => runDoctor({ configPath: path })))(configPath);
-  return { configPath, projectId, testCommand, setupCommand, baseBranch, tiers: tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`), doctor };
+  return { ...result, applied: true, doctor };
 }

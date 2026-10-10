@@ -26,7 +26,8 @@ Three ways in:
 1. **GitHub (available now):** `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack`.
    Installation builds the CLI automatically.
 2. **npm (not released yet):** after release, `npm install -g tally-agents`.
-3. **Source checkout:** clone this repository, enter it, and run `npm install`.
+3. **Source checkout:** `git clone https://github.com/Vaibhaav-Tiwari/neatlogs-hack`,
+   enter `neatlogs-hack`, and run `npm install`.
    Then use `node bin/tally.js` in place of `tally` in the commands below.
    `npm install` builds the CLI through its prepare script.
 
@@ -68,13 +69,15 @@ No checkout, manual build or `tally init` is needed for the demo.
 
 ### Your Repository
 
-Run `tally init` from the repository you want Tally to work on only when you
-consent to creating `tally.yaml` and an install record in `.tally/`, and to
-registering/updating its AO project and setup hook. It asks for budget and
-issue label; neatlogs, Entire and cfo.ai are separate opt-in prompts, defaulting
-to No. The current build has no final review/confirmation prompt before those
-configuration writes. Review the generated model tiers, prices, tests and
-ceilings before starting workers.
+Run `tally init` from the repository you want Tally to work on. It asks for
+budget and issue label; neatlogs, Entire and cfo.ai are separate opt-in prompts,
+defaulting to No. It displays the proposed `tally.yaml`, install record in
+`.tally/`, AO project registration/configuration and setup hook, then asks for
+final confirmation (default No) before applying changes. Use `tally init
+--dry-run` to preview without applying, or `--yes` only when you consent to
+applying detected defaults without prompts. Review model tiers, prices, tests
+and ceilings before starting workers. Scoped worker allow-list enforcement is
+not yet installed; init does not change global coding-agent settings.
 
 Use `tally doctor`, then `tally run --plan` to inspect routing without spawning
 workers. A real `tally run` starts workers and can publish verified branches
@@ -87,8 +90,7 @@ place; remove that CLI separately with `npm uninstall -g tally-agents`.
 
 ### Static Snapshot
 
-`tally publish --out site` is implemented in PR #49 and is not on main or an
-npm release yet. Once merged, it writes a self-contained static dashboard,
+`tally publish --out site` writes a self-contained static dashboard,
 defaulting to real recorded runs. Select folders explicitly with
 `tally publish --out site --runs run-id-1,run-id-2`; use this for simulated demo
 data. It scans exported files for sensitive content and prints file sizes and
@@ -110,12 +112,12 @@ npm test
 | `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`, `--plan`, `--dashboard`/`--open`. |
 | `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to light up read-only integrations while workers stay fake. |
 | `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
-| `tally init` | Detect tests, prompt for budget/issue label and opt-in integrations, then write configuration and register/update the AO project. |
+| `tally init` | Preview files and AO changes, then ask final default-No consent. `--dry-run` previews; `--yes` applies defaults without prompts. Scoped worker allow-list enforcement is not yet installed. |
 | `tally uninstall` | Confirm removal of init-owned configuration and AO settings; preserve history and credentials. |
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 | `tally login cfoai` | Sign in to cfo.ai; tokens are cached outside the repository. |
 | `tally market --limit 5` | Search CrustData for companies adopting coding agents; requires its credentials. |
-| `tally publish --out site` | Static dashboard export; pending merge of PR #49. No deployment. |
+| `tally publish --out site` | Static dashboard export with a sensitive-content scan. No deployment. |
 
 ## Layout
 
@@ -135,8 +137,12 @@ With `integrations.entire: true`, enable Entire in the target repository and
 trust its Codex hooks through `/hooks` before starting workers. Tally records
 the task commit's `Entire-Checkpoint` trailer and its native `entireSessionId`
 separately from the AO `sessionId`. Logs-only checkpoints retain conversation
-context; escalation uses a generated summary when available and otherwise
-describes the recorded files without claiming an AI summary was generated.
+context; escalation defaults to a metadata-only handoff containing the
+checkpoint/session IDs, branch, recorded and changed files, attempt verdict,
+and task text. It does not generate a summary or export a transcript.
+`entire.generatedSummaries: true` explicitly opts into Entire's summary
+provider (`checkpoint explain --generate`), which may export session content;
+this setting is off by default and requires the user's approval.
 When Tally publishes a verified branch, it also pushes the checkpoint refs
 named by its new commits to `origin` and to an `entire` remote when configured.
 Checkpoint upload failures are reported as publishing failures. Dry runs do

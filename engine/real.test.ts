@@ -295,6 +295,19 @@ describe('runRealTally', () => {
     expect(worker.starts.map((start) => start.ceilingNanos)).toEqual([usdToNanos(0.001), usdToNanos(0.5)]);
     expect(worker.starts[1]?.prompt).toContain('Partial implementation: continue calc.ts.');
   });
+  it('records CLI limit provenance separately from live cfo.ai accounting', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), false, usdToNanos(10));
+    let reads = 0;
+    cfoai.budgetLimitNanos = async () => { reads += 1; return usdToNanos(40); };
+    const result = await runRealTally({ configPath, budgetUsd: 1, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker, cfoai } });
+    expect(result.runState.budget).toMatchObject({ limitSource: 'cli', systemOfRecord: 'cfoai', limitNanos: usdToNanos(1) });
+    expect(reads).toBe(1);
+    expect(worker.starts).toHaveLength(1);
+    expect(cfoai.writes).toEqual([result.runState.budget.spentNanos]);
+  });
   it.each([false, true])('records scope warnings and only blocks when configured: %s', async (block) => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('aoProject: "payments"', `aoProject: "payments", blockOutOfScopeChanges: ${block}`));
@@ -307,6 +320,22 @@ describe('runRealTally', () => {
     expect(worker.published).toHaveLength(block ? 0 : 1);
     expect(worker.starts).toHaveLength(1);
     expect(worker.starts[0]?.prompt).toContain('If a check outside your task fails, report it; do not fix it.');
+  });
+  it.each(['passed', 'verification-error', 'publish-error', 'needs-input'] as const)('closes the worker on %s and records usage after closure', async (scenario) => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const settled = { uncachedInput: 1200, cachedInput: 2000, output: 400, total: 3600 };
+    worker.settledUsageFor = async () => ({ tokens: worker.stopped.length ? settled : tokens, estimatedCostNanos: 123 });
+    if (scenario === 'publish-error') worker.publishPr = async () => { throw new Error('push refused'); };
+    if (scenario === 'needs-input') worker.wait = async () => ({ status: 'needs_input', checkoutPath: '/tmp/worker', branch: 'task', prUrl: null, resultReason: 'worker asked for input' });
+    const verifier: VerifierPort = { verify: async () => {
+      if (scenario === 'verification-error') throw new Error('verifier unavailable');
+      return { passed: true, reason: null };
+    } };
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier, publisher: worker, usage: worker, sessions: worker } });
+    expect(worker.stopped).toEqual(worker.starts.map((_, i) => `session-${i + 1}`));
+    expect(result.ledger.every((row) => row.tokens.total === settled.total)).toBe(true);
   });
   it('sizes, routes, spawns, verifies, escalates once and writes valid output', async () => {
     const { dir, configPath } = fixture();
