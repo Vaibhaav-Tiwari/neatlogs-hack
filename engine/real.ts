@@ -43,10 +43,11 @@ export interface WorkerStartInput {
 }
 
 export interface WorkerResult {
-  status: 'idle' | 'terminated';
+  status: 'idle' | 'terminated' | 'needs_input';
   branch: string | null;
   checkoutPath: string | null;
   prUrl: string | null;
+  resultReason?: string | null;
 }
 
 export interface WorkerPort {
@@ -192,13 +193,19 @@ function initialTaskState(task: BacklogTask): TaskState {
 }
 
 function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSummary: string | null, runId: string, attempt: number): string {
+  const setup = config.test.setupCommand ? [`First run this setup command from the current working directory: ${config.test.setupCommand}`] : [];
   return [
     `You are implementing Tally run ${runId}, task ${task.taskId}, attempt ${attempt}: ${task.title}`,
     `Neatlogs correlation: runId=${runId} taskId=${task.taskId} attempt=${attempt}.`,
     '',
+    'You are already inside your own AO git worktree for the target repo. Work only in the current working directory.',
+    'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
+    'Commit your changes on your current branch, push that branch, open a pull request against the default branch, and do not merge it.',
+    '',
     task.body || '(No issue body was provided.)',
     '',
     `Target repo: ${repoName(config)}`,
+    ...setup,
     `Run this verification command before claiming success: ${config.test.command}`,
     `You are running on tier ${tier.name} (${tier.harness}/${tier.model}).`,
     handoffSummary ? `\nHandoff from the previous attempt:\n${handoffSummary}` : '',
@@ -357,14 +364,19 @@ async function runAttempt(input: {
     tokens = check.tokens;
     estimatedCostNanos = check.costNanos;
     costSource = input.dryRun ? 'simulated' : check.costSource;
-    const verification = await input.ports.verifier.verify({
-      checkoutPath: workerResult.checkoutPath ?? started.checkoutPath,
-      branch: workerResult.branch ?? started.branch,
-      repoPath: resolve(dirname(input.configPath), input.config.repo.path),
-      config: input.config,
-    });
-    result = verification.passed ? 'passed' : 'failed';
-    resultReason = verification.reason;
+    if (workerResult.status === 'needs_input') {
+      result = 'error';
+      resultReason = workerResult.resultReason ?? 'worker asked for input';
+    } else {
+      const verification = await input.ports.verifier.verify({
+        checkoutPath: workerResult.checkoutPath ?? started.checkoutPath,
+        branch: workerResult.branch ?? started.branch,
+        repoPath: resolve(dirname(input.configPath), input.config.repo.path),
+        config: input.config,
+      });
+      result = verification.passed ? 'passed' : 'failed';
+      resultReason = verification.reason;
+    }
   }
 
   return {
@@ -511,7 +523,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         await recordHistory({ ports, row: latest, dryRun: options.dryRun });
         await recordSpend(latest);
       } else {
-        interrupted.resultReason = escalation.statusReason;
+        interrupted.resultReason = interrupted.result === 'error' && interrupted.resultReason ? interrupted.resultReason : escalation.statusReason;
       }
       taskStates[index] = stateFromRows(taskStates[index]!, ledger.filter((row) => row.taskId === task.taskId));
       writeCurrent('running', null);
@@ -603,7 +615,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         await recordHistory({ ports, row: latest, dryRun: options.dryRun });
         await recordSpend(latest);
       } else {
-        latest.resultReason = escalation.statusReason;
+        latest.resultReason = latest.result === 'error' && latest.resultReason ? latest.resultReason : escalation.statusReason;
       }
     }
     const rows = ledger.filter((row) => row.taskId === task.taskId);

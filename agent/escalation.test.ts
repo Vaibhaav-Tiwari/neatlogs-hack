@@ -78,7 +78,9 @@ describe('decideEscalation', () => {
 
   it('gives up when the next ceiling does not fit the budget left', async () => {
     const decision = await decide(previous(), 1.99);
-    expect(decision).toMatchObject({ action: 'give-up', statusReason: 'failed: no budget to escalate' });
+    expect(decision).toMatchObject({ action: 'give-up' });
+    if (decision.action !== 'give-up') throw new Error('expected give-up decision');
+    expect(decision.statusReason).toBe('failed: no budget to escalate (next ceiling $2.00, budget left $1.99)');
     expect(decision.reason).toContain('$1.99');
     expect(escalated(await decide(previous(), 2)).tier.name).toBe('silver');
   });
