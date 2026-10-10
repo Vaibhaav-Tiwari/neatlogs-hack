@@ -1,17 +1,52 @@
 {
-  "name": "tally",
+  "name": "tally-agents",
   "version": "0.1.0",
   "description": "A CFO for a fleet of coding agents: budgets, routing, ceilings and a ledger per task.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vaibhaav-Tiwari/neatlogs-hack.git"
+  },
+  "homepage": "https://github.com/Vaibhaav-Tiwari/neatlogs-hack#readme",
+  "bugs": {
+    "url": "https://github.com/Vaibhaav-Tiwari/neatlogs-hack/issues"
+  },
+  "keywords": [
+    "agents",
+    "ai-agents",
+    "coding-agents",
+    "cli",
+    "budget",
+    "finops",
+    "dashboard"
+  ],
   "engines": {
     "node": ">=20"
   },
+  "files": [
+    "bin/",
+    "dist/",
+    "dashboard/",
+    "demo/sample-backlog.yaml",
+    "demo/tally.yaml",
+    "demo/tally.live.yaml",
+    "schema/*.schema.json",
+    "schema/fixtures/finished-run/run.json",
+    "schema/fixtures/finished-run/ledger.json",
+    "schema/fixtures/finished-run/tally.yaml",
+    "README.md",
+    "LICENSE",
+    "!**/*.test.*",
+    "!dist/**/testing/**",
+    "!dashboard/.gitkeep"
+  ],
   "bin": {
     "tally": "bin/tally.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

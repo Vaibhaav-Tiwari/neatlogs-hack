@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export interface DashboardServerOptions {
   port?: number;
@@ -95,9 +96,18 @@ function runIndex(runsDir: string): { runs: RunIndexEntry[] } {
   return { runs };
 }
 
+function defaultDashboardDir(): string {
+  const candidates = [
+    resolve('dashboard'),
+    fileURLToPath(new URL('../dashboard/', import.meta.url)),
+    fileURLToPath(new URL('../../dashboard/', import.meta.url)),
+  ];
+  return candidates.find((candidate) => existsSync(join(candidate, 'index.html'))) ?? candidates[0]!;
+}
+
 export async function startDashboardServer(options: DashboardServerOptions = {}): Promise<DashboardServer> {
   const host = options.host ?? '127.0.0.1';
-  const dashboardDir = resolve(options.dashboardDir ?? 'dashboard');
+  const dashboardDir = options.dashboardDir ? resolve(options.dashboardDir) : defaultDashboardDir();
   const runsDir = resolve(options.runsDir ?? '.tally/runs');
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', `http://${host}`);

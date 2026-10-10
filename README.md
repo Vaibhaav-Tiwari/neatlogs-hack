@@ -10,6 +10,26 @@ seven-task simulated demo backlog, and `tally run --dry-run` writes run state
 plus a ledger from a file-backed backlog. The real AO worker path is wired and
 ready for a gated one-task smoke run.
 
+## Install
+
+Prerequisites before you install:
+
+- Node 20 or later.
+- Agent Orchestrator installed and running.
+- At least one signed-in coding agent that Agent Orchestrator can start.
+- GitHub CLI installed and signed in with `gh auth login`.
+
+Three ways in:
+
+```bash
+npm install -g github:Vaibhaav-Tiwari/neatlogs-hack
+npm install -g tally-agents
+git clone https://github.com/Vaibhaav-Tiwari/neatlogs-hack && cd neatlogs-hack && npm install && npm run build
+```
+
+The npm package is named `tally-agents`; the installed command is still
+`tally`.
+
 ## Quickstart
 
 Needs Node 20 or later.

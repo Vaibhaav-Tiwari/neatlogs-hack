@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Ledger, RunState } from '../schema/index.js';
 import { createDryRunPorts } from './dry-run.js';
 import { runRealTally, type RealRunOptions } from './real.js';
@@ -44,9 +45,12 @@ export async function runTally(options: RunOptions | RealRunOptions): Promise<Ru
 
 function demoConfigPath(live = false): string {
   const file = live ? 'tally.live.yaml' : 'tally.yaml';
-  const fromCwd = resolve('demo', file);
-  if (existsSync(fromCwd)) return fromCwd;
-  return resolve(new URL(`../demo/${file}`, import.meta.url).pathname);
+  const candidates = [
+    resolve('demo', file),
+    fileURLToPath(new URL(`../demo/${file}`, import.meta.url)),
+    fileURLToPath(new URL(`../../demo/${file}`, import.meta.url)),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
 }
 
 export async function runDemo(options: Pick<RunOptions, 'outputDir' | 'latestRunDir' | 'now'> & { live?: boolean } = {}): Promise<RunResult> {
