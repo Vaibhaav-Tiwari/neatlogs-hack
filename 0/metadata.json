@@ -1,0 +1,67 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KKJVDZTWYREP8CGMJQA2NM",
+  "session_id": "01a125ae-c722-75d0-93f1-147e3e8f6ffa",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T19:10:38.688891Z",
+  "branch": "ao/neatlogs-hack-6/task-code-graphs",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/code-graph.js",
+    "dashboard/code-graph.test.js",
+    "dashboard/graph-fixture/ledger.json",
+    "dashboard/graph-fixture/run.json",
+    "dashboard/replay-core.js",
+    "dashboard/styles.css"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "c065dad00a7f",
+  "checkpoint_transcript_start": 4642,
+  "transcript_lines_at_start": 4642,
+  "compact_transcript_start": 546,
+  "token_usage": {
+    "input_tokens": 18079,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 607488,
+    "output_tokens": 8407,
+    "api_call_count": 6
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T19:10:38.480201Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 5,
+    "total_committed": 2,
+    "total_lines_changed": 5,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 943,
+      "user_lines_removed": 5,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "dashboard/app.js": 21,
+        "dashboard/code-graph.js": 119,
+        "dashboard/code-graph.test.js": 42,
+        "dashboard/graph-fixture/ledger.json": 142,
+        "dashboard/graph-fixture/run.json": 580,
+        "dashboard/replay-core.js": 2,
+        "dashboard/styles.css": 37
+      },
+      "user_removed_per_file": {
+        "dashboard/app.js": 5
+      }
+    }
+  ]
+}
