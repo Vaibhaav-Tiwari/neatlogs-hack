@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -280,6 +280,34 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it('persists actual branch files after worker close removes its checkout', async () => {
+    const { dir, configPath } = fixture();
+    const checkout = join(dir, 'worker');
+    mkdirSync(checkout);
+    const worker = new FakeWorker();
+    const wait = worker.wait.bind(worker);
+    worker.wait = async id => ({ ...await wait(id), checkoutPath: checkout });
+    worker.stop = async id => { worker.stopped.push(id); rmSync(checkout, { recursive: true, force: true }); };
+    let settledDiff = false;
+    worker.changedFiles = async (input?: { checkoutPath?: string; branch?: string; baseCommit?: string | null }) => {
+      if (worker.stopped.length) {
+        expect(existsSync(checkout)).toBe(false);
+        expect(input).toMatchObject({ checkoutPath: dir, branch: 'tally/t1-1', baseCommit: 'pinned-base' });
+        settledDiff = true;
+      }
+      return ['calc.ts', 'tests/outside-predicted-slice.test.ts'];
+    };
+    const result = await runRealTally({ configPath, requiredBaseCommit: 'pinned-base', dryRun: false, baseline: false,
+      outputDir: join(dir, 'actual'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        worktrees: { checkoutPathFor: async () => checkout, commitFor: async () => 'pinned-base' },
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+    expect(settledDiff).toBe(true);
+    expect(result.runState.tasks[0]?.changedFiles).toEqual(['calc.ts', 'tests/outside-predicted-slice.test.ts']);
+    const saved = JSON.parse(readFileSync(join(result.outputDir, 'run.json'), 'utf8'));
+    expect(saved.tasks[0].changedFiles).toEqual(result.runState.tasks[0]?.changedFiles);
+    expect(validateRunState(saved).ok).toBe(true);
+  }, 10_000);
   it('records the native session of a stopped worker without a checkpoint and passes it to trace drain', async () => {
     const { dir, configPath } = fixture('neatlogs: true, entire: true, cfoai: false, slack: false');
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('harness: claude-code', 'harness: codex'));
