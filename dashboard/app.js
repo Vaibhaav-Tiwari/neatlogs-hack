@@ -2,6 +2,7 @@
 // It never writes anything.
 
 import { frameAt } from './replay-core.js';
+import { displayedCost, isRunning, withLiveCosts } from './live-state.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -16,6 +17,7 @@ const config = {
   baseline: query.get('baseline') ?? defaults.baseline ?? null,
   intervalMs: Math.max(250, Number(query.get('interval') ?? defaults.intervalMs ?? 2000) || 2000),
   aoProject: query.get('aoProject') ?? defaults.aoProject ?? null,
+  liveCeilingSec: Math.max(30, Number(query.get('liveCeilingSec') ?? defaults.liveCeilingSec ?? 180) || 180),
   sample: defaults.sample ?? null,
   // ?demo shows the checked-in sample. ?replay=60 plays the chosen run over that many seconds.
   useSample: wantsDemo || (wantsReplay && !hasExplicitData),
@@ -70,8 +72,6 @@ function traceEvidence(row) {
 function checkpointEvidence(row) {
   return link(row.checkpointUrl, 'Entire checkpoint') || idEvidence('checkpoint', row.checkpointId);
 }
-
-const isRunning = (row) => row.result === 'running' || (!row.endedAt && !['passed', 'failed', 'stopped', 'error'].includes(row.result));
 
 // ---------- reading ----------
 
@@ -195,11 +195,12 @@ function drawBudget(run, ledger) {
   const over = spentNanos > limitNanos;
   const scale = Math.max(limitNanos, spentNanos) || 1;
   const segments = ledger
-    .filter((row) => row.estimatedCostNanos > 0)
+    .filter((row) => displayedCost(row) > 0)
     .map((row) => {
       const cls = row.result === 'stopped' ? 'seg stop' : isRunning(row) ? 'seg run' : 'seg';
-      const label = `${row.taskId} attempt ${row.attempt}, ${row.model}: ${usd(row.estimatedCostNanos)}${row.costSource === 'simulated' ? ' simulated' : ''}`;
-      return `<span class="${cls}" style="width:${((row.estimatedCostNanos / scale) * 100).toFixed(3)}%" title="${esc(label)}"></span>`;
+      const live = row.displayIsLiveEstimate ? ' live estimate toward ceiling' : '';
+      const label = `${row.taskId} attempt ${row.attempt}, ${row.model}: ${usd(displayedCost(row))}${row.costSource === 'simulated' ? ' simulated' : ''}${live}`;
+      return `<span class="${cls}" style="width:${((displayedCost(row) / scale) * 100).toFixed(3)}%" title="${esc(label)}"></span>`;
     })
     .join('');
   const limitAt = ((limitNanos / scale) * 100).toFixed(3);
@@ -216,6 +217,7 @@ function drawBudget(run, ledger) {
      </div>
      <p class="bar-scale"><span>$0</span><span>${usd(limitNanos)}, ${source}</span></p>
      <p class="bar-key">One block per attempt, in the order they ran.
+       ${ledger.some((row) => row.displayIsLiveEstimate) ? '<span>Grey blocks are live estimates for attempts still running.</span>' : ''}
        ${ledger.some((row) => row.result === 'stopped') ? '<span class="key-stop">Red is money spent before a worker was stopped at its ceiling.</span>' : ''}</p>`,
   );
 }
@@ -263,8 +265,11 @@ function statusMark(kind, text) {
 }
 
 /** Cost against a ceiling: the track is the ceiling, and anything past it runs over in red. */
-function costCell(costNanos, ceilingNanos, stopped, costSource) {
-  const source = costSource === 'simulated' ? '<span class="l-note">simulated</span>' : costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : '';
+function costCell(costNanos, ceilingNanos, stopped, costSource, liveEstimate = false) {
+  const source = [
+    liveEstimate ? '<span class="l-note">live estimate until the attempt writes final usage</span>' : '',
+    costSource === 'simulated' ? '<span class="l-note">simulated</span>' : costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : '',
+  ].join('');
   if (!ceilingNanos) return `<p class="fig cost">${usd(costNanos)}</p>${source}`;
   const share = costNanos / ceilingNanos;
   const over = share > 1;
@@ -329,7 +334,7 @@ function drawTasks(run, ledger) {
         <td class="tier">${finalRouteCell(task, attempts, awaiting)}</td>
         <td class="attempts">${attemptCountCell(task, attempts, awaiting)}</td>
         <td class="why">${taskDecision(attempts)}</td>
-        <td class="money">${costCell(task.spentNanos ?? 0, null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource)}</td>
+        <td class="money">${costCell(task.spentNanos ?? 0, null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</td>
         <td class="state">${attempts.some((row) => row.result === 'stopped') ? '<span class="stamp">Stopped and escalated</span>' : statusMark(task.status, STATUS_WORD[task.status] ?? task.status)}</td>
       </tr>`;
     })
@@ -359,7 +364,9 @@ function drawLedger(run, ledger) {
         <td class="l-task"><span class="l-task-id">${esc(row.taskId)}</span>${esc(row.taskTitle)}${row.escalatedFrom ? '<span class="l-note">continues the attempt above it</span>' : ''}</td>
         <td><span class="fig">${esc(row.model)}</span><span class="l-note">${esc(row.tier)} tier, ${esc(row.harness)}</span></td>
         <td class="num"><span class="fig">${count(row.tokens.total)}</span><span class="l-note">${tokenSplit}</span></td>
-        <td class="num fig ${row.result === 'stopped' ? 'over' : ''}">${usd(row.estimatedCostNanos)}${row.costSource === 'simulated' ? '<span class="l-note">simulated</span>' : row.costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : ''}</td>
+        <td class="num fig ${row.result === 'stopped' ? 'over' : ''}">${usd(displayedCost(row))}${
+          row.displayIsLiveEstimate ? '<span class="l-note">live estimate</span>' : row.costSource === 'simulated' ? '<span class="l-note">simulated</span>' : row.costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : ''
+        }</td>
         <td class="num fig">${usd(row.ceilingNanos)}</td>
         <td class="num fig">${running ? `since ${clock(row.startedAt)}` : minutes(row.startedAt, row.endedAt ?? row.startedAt)}</td>
         <td class="l-result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${row.resultReason && row.result !== 'stopped' ? `<span class="l-note">${esc(row.resultReason)}</span>` : ''}</td>
@@ -367,7 +374,7 @@ function drawLedger(run, ledger) {
     })
     .join('');
   const tokens = ledger.reduce((sum, row) => sum + row.tokens.total, 0);
-  const cost = ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0);
+  const cost = ledger.reduce((sum, row) => sum + displayedCost(row), 0);
   const empty = `<tr><td colspan="9" class="empty">No attempt has been entered yet. Rows appear here as workers start.</td></tr>`;
   draw(
     'ledger',
@@ -376,7 +383,11 @@ function drawLedger(run, ledger) {
      <tbody>${rows || empty}</tbody>
      <tfoot><tr><td colspan="3">Total, ${ledger.length} ${ledger.length === 1 ? 'attempt' : 'attempts'}</td>
        <td class="num fig">${count(tokens)}</td><td class="num fig total">${usd(cost)}</td><td colspan="4">${
-         Math.abs(cost - run.budget.spentNanos) > 1 ? `<span class="over">does not match the ${usd(run.budget.spentNanos)} the run reports as spent</span>` : 'agrees with the budget spent'
+         ledger.some((row) => row.displayIsLiveEstimate)
+           ? 'includes live estimates for running attempts'
+           : Math.abs(cost - run.budget.spentNanos) > 1
+             ? `<span class="over">does not match the ${usd(run.budget.spentNanos)} the run reports as spent</span>`
+             : 'agrees with the budget spent'
        }</td></tr></tfoot>`,
   );
 }
@@ -392,6 +403,7 @@ function drawFoot(source) {
 }
 
 function drawAll(state, source) {
+  state = withLiveCosts(state, { liveCeilingSec: config.liveCeilingSec });
   drawRun(state.run);
   drawNotice(state.run, source);
   drawDataSource(source);
