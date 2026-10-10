@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KJVCHWB036KEWTE8EGHZNX",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/budget-provenance",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/run-state.schema.json",
+    "schema/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3057,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 352000,
+    "output_tokens": 1630,
+    "api_call_count": 3
+  }
+}
