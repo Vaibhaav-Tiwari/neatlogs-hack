@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { runInit, type InitCommandRunner } from './init.js';
 import { pendingInitPath } from './init-transaction.js';
 import { installRecordPath } from './install-record.js';
+import { configureIntegrations } from '../onboarding/index.js';
+import { CfoaiOnboarding } from '../onboarding/cfoai.js';
+import { parse as parseYaml } from 'yaml';
 
 function fixture() {
   const cwd = mkdtempSync(join(tmpdir(), 'tally-init-recover-'));
@@ -53,12 +56,26 @@ describe('transactional init prerequisites and recovery', () => {
     expect(existsSync(join(f.cwd, '.tally'))).toBe(false);
   });
 
-  it.each(['neatlogs', 'cfo.ai'])('checks requested %s before mutation', async (product) => {
+  it('checks requested neatlogs before mutation', async () => {
     const f = fixture();
     await expect(runInit({ cwd: f.cwd, command: f.command, print: () => {}, env: {}, cfoaiCheck: async () => ({ status: 'missing', detail: 'missing' }),
-      readLine: async (question, fallback) => question.startsWith(`Enable ${product}`) ? 'y' : fallback ?? '' })).rejects.toThrow(product === 'neatlogs' ? 'NEATLOGS_API_KEY' : 'tally login cfoai');
+      readLine: async (question, fallback) => question.startsWith('Enable neatlogs') ? 'y' : fallback ?? '' })).rejects.toThrow('NEATLOGS_API_KEY');
     expect(f.mutations).toEqual([]);
     expect(existsSync(join(f.cwd, '.tally'))).toBe(false);
+  });
+
+  it('offers cfo.ai login during init and safely uses the local budget when it is skipped', async () => {
+    const f = fixture();
+    const login = vi.fn(async () => undefined);
+    const cfoai = new CfoaiOnboarding({ check: async () => ({ status: 'missing', detail: 'not connected' }), login });
+    const result = await runInit({ cwd: f.cwd, command: f.command, print: () => {}, doctor: async () => [],
+      onboarding: context => configureIntegrations(context, { cfoai }),
+      readLine: async (question, fallback) => question.startsWith('Enable cfo.ai') || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
+    expect(result.applied).toBe(true);
+    const config = parseYaml(readFileSync(result.configPath, 'utf8'));
+    expect(config.integrations.cfoai).toBe(false);
+    expect(config.budget.source).toBe('config');
+    expect(login).not.toHaveBeenCalled();
   });
 
   it('recovers an AO failure without duplicate registration or lost daemon defaults', async () => {
