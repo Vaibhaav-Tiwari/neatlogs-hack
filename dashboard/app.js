@@ -8,13 +8,17 @@ const NANOS_PER_USD = 1_000_000_000;
 const query = new URLSearchParams(location.search);
 const defaults = window.TALLY_DASHBOARD ?? {};
 const asFolder = (path) => (path.endsWith('/') ? path : `${path}/`);
+const hasExplicitData = query.has('data');
+const wantsDemo = query.has('demo');
+const wantsReplay = query.has('replay');
 const config = {
   data: asFolder(query.get('data') ?? defaults.data ?? './'),
   baseline: query.get('baseline') ?? defaults.baseline ?? null,
   intervalMs: Math.max(250, Number(query.get('interval') ?? defaults.intervalMs ?? 2000) || 2000),
   sample: defaults.sample ?? null,
-  // ?replay=60 plays the run that was read back over that many seconds, in the page.
-  replaySec: query.has('replay') ? Math.max(5, Number(query.get('replay')) || 60) : null,
+  // ?demo shows the checked-in sample. ?replay=60 plays the chosen run over that many seconds.
+  useSample: wantsDemo || (wantsReplay && !hasExplicitData),
+  replaySec: wantsReplay ? Math.max(5, Number(query.get('replay')) || 60) : null,
 };
 if (config.baseline) config.baseline = asFolder(config.baseline);
 
@@ -110,7 +114,7 @@ function drawRun(run) {
 
 function drawNotice(run, source) {
   const lines = [];
-  if (source.sample) lines.push(`No run.json was found at ${esc(config.data)}, so this is the sample run that ships with Tally.`);
+  if (source.sample) lines.push(`Sample data: this page is reading the bundled fixture at ${esc(config.sample)}, not a live Tally run.`);
   if (source.replaying) lines.push('Replay of a finished run, speeded up. Nothing is running now.');
   if (run.dryRun) lines.push('Simulated run: the workers are scripted and no money is spent.');
   if (source.stale) lines.push(`Could not read ${esc(config.data)}run.json just now (${esc(source.stale)}). Showing the last figures read.`);
@@ -164,7 +168,7 @@ function drawBudget(run, ledger) {
     .filter((row) => row.estimatedCostNanos > 0)
     .map((row) => {
       const cls = row.result === 'stopped' ? 'seg stop' : isRunning(row) ? 'seg run' : 'seg';
-      const label = `${row.taskId} attempt ${row.attempt}, ${row.model}: ${usd(row.estimatedCostNanos)}`;
+      const label = `${row.taskId} attempt ${row.attempt}, ${row.model}: ${usd(row.estimatedCostNanos)}${row.costSource === 'simulated' ? ' simulated' : ''}`;
       return `<span class="${cls}" style="width:${((row.estimatedCostNanos / scale) * 100).toFixed(3)}%" title="${esc(label)}"></span>`;
     })
     .join('');
@@ -225,8 +229,9 @@ function statusMark(kind, text) {
 }
 
 /** Cost against a ceiling: the track is the ceiling, and anything past it runs over in red. */
-function costCell(costNanos, ceilingNanos, stopped) {
-  if (!ceilingNanos) return `<p class="fig cost">${usd(costNanos)}</p>`;
+function costCell(costNanos, ceilingNanos, stopped, costSource) {
+  const source = costSource === 'simulated' ? '<span class="l-note">simulated</span>' : costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : '';
+  if (!ceilingNanos) return `<p class="fig cost">${usd(costNanos)}</p>${source}`;
   const share = costNanos / ceilingNanos;
   const over = share > 1;
   const fill = Math.min(share, 1) * 100;
@@ -234,7 +239,7 @@ function costCell(costNanos, ceilingNanos, stopped) {
   return `<p class="fig cost ${over || stopped ? 'over' : ''}">${usd(costNanos)} <span class="of">of ${usd(ceilingNanos)}</span></p>
     <div class="meter" role="img" aria-label="${Math.round(share * 100)}% of ceiling">
       <span class="fill" style="width:${fill.toFixed(2)}%"></span>${over ? `<span class="spill" style="width:${spill.toFixed(2)}%"></span>` : ''}
-    </div>`;
+    </div>${source}`;
 }
 
 function tierCell(tier, model) {
@@ -278,7 +283,7 @@ function drawTasks(run, ledger) {
         return `<tr class="${classes}">${i === 0 ? lead : ''}
           <td class="tier">${attempts.length > 1 || awaiting ? `<span class="nth">Attempt ${row.attempt}</span>` : ''}${tierCell(row.tier, row.model)}</td>
           <td class="why">${carried}<p>${esc(row.decision)}</p>${row.resultReason ? `<p class="reason ${stopped ? 'over' : ''}">${esc(row.resultReason)}</p>` : ''}</td>
-          <td class="money">${costCell(row.estimatedCostNanos, row.ceilingNanos, stopped)}</td>
+          <td class="money">${costCell(row.estimatedCostNanos, row.ceilingNanos, stopped, row.costSource)}</td>
           <td class="state">${stopped ? '<span class="stamp">Stopped at ceiling</span>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}</td></tr>`;
       });
       if (awaiting) {
@@ -371,7 +376,7 @@ function drawUnreadable(error) {
 // ---------- the loop ----------
 
 let lastGood = null;
-let usingSample = false;
+let usingSample = config.useSample;
 let baseline = null;
 let replayStart = null;
 
@@ -380,15 +385,6 @@ async function tick() {
   try {
     lastGood = await readRun(usingSample ? config.sample : config.data);
   } catch (error) {
-    if (!lastGood && !usingSample && config.sample && !query.has('data')) {
-      // Nothing at the default location: fall back once to the bundled sample.
-      try {
-        lastGood = await readRun(config.sample);
-        usingSample = true;
-      } catch {
-        /* reported below */
-      }
-    }
     if (!lastGood) return drawUnreadable(error);
     if (!usingSample) stale = error.message;
   }
