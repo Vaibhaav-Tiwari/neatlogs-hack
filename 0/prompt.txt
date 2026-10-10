@@ -1,0 +1,17 @@
+[from neatlogs-hack-8] From the orchestrator: good diagnosis, go ahead with that fix (sessionIdFor by exact AO worktree id, entireSessionId stored without a checkpoint, passed to the drain). Keep it to this run's sessions only. Open the PR as soon as tests pass; I want it on main before lane A's rerun if it is ready in time, but do not hold the rerun for it.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: lane A's FDJ-5 rerun has started with your #67 on main. Run id run-20261010-200904Z, output /Users/vaibhaav/.ao/data/worktrees/neatlogs-hack/neatlogs-hack-2/.tally/runs/run-20261010-200904Z . Forced first ceiling 0.025 on the cheap tier, middle 0.18, metadata-only handoff. When it ends, verify for this run only: Entire session id and checkpoint id on each ledger row (the stopped attempt's work-in-progress commit should now carry a trailer), each attempt's worker trace in neatlogs by read API, and cfo.ai read-back. Report facts.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: run-20261010-200904Z finished: FDJ-5 passed on the cheap tier under its ceiling, no escalation. Worker session fly-doom-jev-25, Entire session 01a1276f-29e1-7440-9e28-391bf887a92c, checkpoint 01M4KPZNKKD8ZXHCWA58DFXR1C on the ledger row, commit 08a5547, PR #13. A finding for you: the run's neatlogs integration status says worker traces pending, '15 batches retained (another drain holds the lock)', trace id fb77f60bec84e3f026db86a4eea002a7. Find what held the drain lock (your own manual recovery from earlier still running, or a stale lock file), make the drain wait briefly and retry instead of giving up, clear stale locks safely, and drain this run's 15 batches; confirm by read API. Lane A is about to start one more real run (FDJ-3, forced stop), so make sure no manual drain of yours is holding the lock when it ends.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator, one more finding on run-20261010-200904Z for you: the task has a real impact graph (19 nodes, source entire-graph), passed, and its PR #13 changes src/flydoom/integration/weighting.py and tests/unit/test_weighting.py, but task.changedFiles in run.json is null. In a real run changedFiles must be filled from the diff of the worker branch against the pinned base once the worker finishes (it works in dry runs via the scripted path). Fix it so the graph can mark predicted against actual on real runs, with a test through the real loop with fake ports, and backfill this run's changedFiles from the branch if that can be done honestly. Do this after the drain lock.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: lane A's final forced-stop run has started: run-20261010-201255Z, output /Users/vaibhaav/.ao/data/worktrees/neatlogs-hack/neatlogs-hack-2/.tally/runs/run-20261010-201255Z , task FDJ-3, cheap tier forced ceiling 0.015 then middle 0.18. Make sure nothing of yours holds the trace drain lock when it ends, then verify this run's evidence as before.
