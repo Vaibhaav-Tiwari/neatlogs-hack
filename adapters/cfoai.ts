@@ -322,7 +322,7 @@ export class CfoaiBudgetAdapter implements BudgetPort {
           values: { columns: [this.monthColumn()], rows: [[this.config.spendRow, usd]] },
         },
       });
-      if (receiptStatus(result) !== 'applied') {
+      if (!successfulEdit(result)) {
         throw new Error('cfo.ai did not apply the spend update');
       }
       const readBack = usdToNanos(await this.readUsd(this.config.spendRow));
@@ -330,7 +330,7 @@ export class CfoaiBudgetAdapter implements BudgetPort {
         throw new Error('cfo.ai spend read-back did not match the applied update');
       }
     } catch (e) {
-      this.statusState = { status: 'missing', detail: `${(e as Error).message}. ${CFOAI_FIX_COMMAND}` };
+      this.statusState = { status: 'error', detail: `write failed: ${(e as Error).message}; actual spend is retained in the run CSV fallback.` };
       throw e;
     }
   }
@@ -440,7 +440,7 @@ export class CfoaiBudgetAdapter implements BudgetPort {
         values: { columns: [this.monthColumn()], rows: [...rows].map(([row, nanos]) => [row, Number(nanosToUsd(nanos).toFixed(9))]) },
       },
     });
-    if (receiptStatus(result) !== 'applied') throw new Error(`cfo.ai did not apply the ${table} update`);
+    if (!successfulEdit(result)) throw new Error(`cfo.ai did not apply the ${table} update`);
   }
 
   private async verifyRows(table: string, rows: Map<string, number>): Promise<void> {
@@ -477,10 +477,10 @@ export class CfoaiBudgetAdapter implements BudgetPort {
   }
 }
 
-function receiptStatus(value: unknown): string | null {
+function successfulEdit(value: unknown): boolean {
+  if (isRecord(value) && value.isError === true) return false;
   const parsed = unwrapToolResult(value);
-  if (isRecord(parsed) && typeof parsed.status === 'string') return parsed.status;
-  return null;
+  return isRecord(parsed) && (parsed.status === 'applied' || (parsed.status === 'no_op' && parsed.reason === 'already_satisfied'));
 }
 
 function extractUsd(value: unknown, row: string, column: string): number {

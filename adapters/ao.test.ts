@@ -4,9 +4,67 @@ import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AoCliAdapter, type CommandRunner, usageFromAoPayload } from './ao.js';
+import { AoCliAdapter as RealAoCliAdapter, type AoAdapterOptions, type CommandRunner, usageFromAoPayload } from './ao.js';
+import { GitWorktreeResolver } from '../engine/real.js';
+
+class AoCliAdapter extends RealAoCliAdapter {
+  constructor(options: AoAdapterOptions = {}) {
+    super({ ...options, fetch: options.fetch ?? (async () => ({ ok: true, json: async () => ({ totals: { inputTokens: 1, outputTokens: 1 } }) }) as Response) });
+  }
+}
 
 describe('AO branch continuation', () => {
+  it('launches a clean continuation with its task prompt instead of sending into startup idle', async () => {
+    const calls: string[][] = [];
+    const adapter = new AoCliAdapter({ command: async (file, args) => {
+      calls.push(args);
+      if (file === 'git') return { stdout: '', stderr: '' };
+      if (args[0] === 'spawn') return { stdout: 'spawned session next', stderr: '' };
+      return { stdout: JSON.stringify({ session: { branch: 'task', isTerminated: args[2] === 'old', worktreePath: '/next' } }), stderr: '' };
+    } });
+    await adapter.start({ task: {} as never, tier: {} as never, attempt: 2, ceilingNanos: 1, harness: 'codex', model: 'middle', name: 'continued', prompt: 'edit and test', continueBranch: 'task', continueSessionId: 'old' });
+    expect(calls.find((args) => args[0] === 'spawn')).toContain('--prompt');
+    expect(calls.some((args) => args[0] === 'send')).toBe(false);
+  });
+  it('saves stopped edits with a normal git commit that runs repository hooks', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'tally-wip-test-'));
+    const worktree = join(root, 'worker');
+    const exec = promisify(execFile);
+    const git = (args: string[], cwd = root) => exec('git', args, { cwd });
+    try {
+      await git(['init', '-b', 'main']);
+      await writeFile(join(root, 'tracked'), 'original');
+      await git(['add', 'tracked']);
+      await git(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'base']);
+      await git(['worktree', 'add', '-b', 'task', worktree]);
+      await writeFile(join(root, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nprintf hook-ran > hook-proof\n', { mode: 0o755 });
+      await writeFile(join(worktree, 'tracked'), 'partial implementation');
+      await writeFile(join(worktree, 'new-test'), 'partial regression');
+      const resolver = new GitWorktreeResolver();
+      const sha = await resolver.commitWorkInProgress(root, 'task');
+      expect(sha).toMatch(/^[a-f0-9]{40}$/);
+      expect(await readFile(join(worktree, 'hook-proof'), 'utf8')).toBe('hook-ran');
+      expect((await git(['show', `${sha}:new-test`])).stdout).toBe('partial regression');
+      expect((await git(['rev-list', '--count', 'main..task'])).stdout.trim()).toBe('1');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it('does not complete startup idle until tokens arrive and subsequent idle is stable', async () => {
+    let polls = 0;
+    const adapter = new AoCliAdapter({ pollMs: 0, sleep: async () => {}, idleStablePolls: 2,
+      command: async () => ({ stdout: JSON.stringify({ session: { status: 'idle' } }), stderr: '' }),
+      fetch: async () => ({ ok: true, json: async () => ({ totals: ++polls < 4 ? { inputTokens: 0 } : { inputTokens: 10 } }) }) as Response });
+    await expect(adapter.wait('startup')).resolves.toMatchObject({ status: 'idle' });
+    expect(polls).toBe(5);
+  });
+  it('reports a bounded zero-token startup as never started and kills it', async () => {
+    let clock = 0;
+    const calls: string[][] = [];
+    const adapter = new AoCliAdapter({ startupTimeoutMs: 10, now: () => clock, sleep: async () => { clock += 5; },
+      command: async (_file, args) => { calls.push(args); return { stdout: JSON.stringify({ session: { status: 'idle' } }), stderr: '' }; },
+      fetch: async () => ({ ok: true, json: async () => ({ totals: { inputTokens: 0 } }) }) as Response });
+    await expect(adapter.wait('startup')).resolves.toMatchObject({ status: 'never_started', resultReason: 'worker never started' });
+    expect(calls.at(-1)).toEqual(['session', 'kill', 'startup']);
+  });
   it('replays tracked and untracked edits on the same branch before sending the task', async () => {
     const root = await mkdtemp(join(tmpdir(), 'tally-continuation-test-'));
     const old = join(root, 'old');
