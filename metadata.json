@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KNQ8KBPFMB19MGDTYKR916",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/worker-trace-drain",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/run-state.schema.json",
+    "schema/schema.test.ts",
+    "schema/tally-config.schema.json",
+    "schema/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 73207,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1519488,
+    "output_tokens": 5837,
+    "api_call_count": 14
+  }
+}
