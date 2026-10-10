@@ -14,13 +14,27 @@ runs use Agent Orchestrator and record their attempts and evidence separately.
 Prerequisites before you install:
 
 - Node 20 or later and npm.
-- Git for installation from GitHub or a source checkout.
-- For real runs: Agent Orchestrator installed and running, with at least one
-  signed-in coding agent it can start.
-- For real runs: GitHub CLI installed and signed in with `gh auth login`.
+- Git, for installing from GitHub or from a source checkout.
 
-The simulated demo and dashboard need only Node and npm. They do not need an
-AO account, coding-agent login or GitHub credentials.
+That is all the simulated demo and the dashboard need. They use no Agent
+Orchestrator account, coding-agent login or GitHub credentials.
+
+A real run on your own repository also needs, today:
+
+- **Agent Orchestrator (AO), installed and running.** Tally does not start
+  coding agents itself yet: every worker is an AO session. A runner that works
+  without AO is planned and has not landed, so without AO there is no real run.
+- At least one coding agent that AO can start, installed and signed in: Codex
+  or Claude Code. `tally init` proposes model tiers only for the agents it
+  finds installed.
+- GitHub CLI, signed in with `gh auth login`, with access to the repository.
+  Tally reads issues and opens pull requests through it.
+- A test command for the repository that exits 0 when the work is good. Tally
+  accepts a task only when that command passes, so `tally init` writes no
+  configuration without one.
+
+neatlogs, Entire and cfo.ai are optional. Each is off unless you turn it on
+during `tally init`, and the dashboard shows which are on, off or broken.
 
 Three ways in:
 
@@ -79,10 +93,38 @@ tally dashboard --port 0
 
 No checkout, manual build or `tally init` is needed for the demo.
 
-### Your Repository
+### First Run On Your Own Repo
 
-Run `tally init` from the repository you want Tally to work on. It asks for
-budget and issue label; neatlogs, Entire and cfo.ai are separate opt-in prompts,
+Check the prerequisites for a real run above first. Then, from the root of the
+repository you want Tally to work on:
+
+1. **Label the issues Tally should take.** Tally reads open issues that carry
+   one label (`tally` unless you choose another). The label must exist and be
+   on at least one open issue:
+
+   ```bash
+   gh label create tally --description "Work for Tally"
+   gh issue edit 12 --add-label tally
+   gh issue list --label tally --state open
+   ```
+
+   The last command is the query Tally makes. If it prints nothing, Tally has
+   no tasks to work on.
+2. **`tally init`** asks for a budget and the issue label, shows the
+   `tally.yaml` it proposes and the AO changes it would make, and applies
+   nothing until you confirm. Type the label exactly as it is on GitHub.
+3. **`tally doctor`** prints one line per integration: connected, missing or
+   broken, with the fix.
+4. **`tally run --plan`** lists the tasks it found and the model each would go
+   to. It starts no workers and spends nothing. Check the task count here
+   before going further.
+5. **`tally run`** starts real workers through AO. It spends against your
+   agent accounts and can push branches and open pull requests on the
+   repository.
+6. **`tally dashboard`**, in a second terminal in the same directory, prints a
+   local URL showing the run as it happens.
+
+More on `tally init`: neatlogs, Entire and cfo.ai are separate opt-in prompts,
 defaulting to No. It displays the proposed `tally.yaml`, install record in
 `.tally/`, AO project registration/configuration and setup hook, then asks for
 final confirmation (default No) before applying changes. Use `tally init
@@ -98,9 +140,8 @@ or `--yes` with no detected test command fails without writing configuration
 or changing AO settings. An undetected setup command is optional and never
 guessed.
 
-Use `tally doctor`, then `tally run --plan` to inspect routing without spawning
-workers. A real `tally run` starts workers and can publish verified branches
-and pull requests. `tally run --dry-run` uses simulated workers instead.
+`tally run --dry-run` runs the same loop with simulated workers instead of
+real ones.
 
 `tally uninstall` lists the files and AO settings it owns and asks for
 confirmation before removing them. It refuses to overwrite edits made since
