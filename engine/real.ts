@@ -20,6 +20,7 @@ import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
 import { FilePriceHistory } from '../adapters/history-file.js';
+import { historyAttributes, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { CommandVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
@@ -102,6 +103,7 @@ function defaultPorts(config: TallyConfig, configPath: string): RealRunPorts {
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
   const trace = config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
+  const localHistory = new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
   const cfoai = config.integrations.cfoai || config.budget.source === 'cfoai' ? new CfoaiBudgetAdapter({ config: config.budget.cfoai }) : undefined;
   return {
     intake: new ConfigBacklogIntake(),
@@ -110,7 +112,7 @@ function defaultPorts(config: TallyConfig, configPath: string): RealRunPorts {
     verifier: new CommandVerifier(),
     usage: ao,
     sessions: ao,
-    history: new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') }),
+    history: config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory }) : localHistory,
     ...(trace ? { trace } : {}),
     ...(cfoai ? { cfoai } : {}),
   };
@@ -189,9 +191,10 @@ function initialTaskState(task: BacklogTask): TaskState {
   };
 }
 
-function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSummary: string | null): string {
+function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSummary: string | null, runId: string, attempt: number): string {
   return [
-    `You are implementing Tally task ${task.taskId}: ${task.title}`,
+    `You are implementing Tally run ${runId}, task ${task.taskId}, attempt ${attempt}: ${task.title}`,
+    `Neatlogs correlation: runId=${runId} taskId=${task.taskId} attempt=${attempt}.`,
     '',
     task.body || '(No issue body was provided.)',
     '',
@@ -256,6 +259,23 @@ function appendCfoaiFallback(outputDir: string, row: LedgerRow, cumulativeRunSpe
   );
 }
 
+async function recordHistory(input: { ports: RealRunPorts; row: LedgerRow; dryRun: boolean }): Promise<void> {
+  const outcome = { size: input.row.size, tier: input.row.tier, result: input.row.result, costNanos: input.row.estimatedCostNanos };
+  await input.ports.history.record(outcome);
+  if (input.dryRun || !input.ports.trace) return;
+  await input.ports.trace.span(
+    'tally.history.record',
+    {
+      sessionId: input.row.runId,
+      taskId: input.row.taskId,
+      attempt: input.row.attempt,
+      model: input.row.model,
+      ...historyAttributes(outcome),
+    },
+    async () => {},
+  );
+}
+
 function isTaskDone(rows: LedgerRow[]): boolean {
   const latest = rows[rows.length - 1];
   return latest?.result === 'passed' || (latest !== undefined && latest.attempt >= 2);
@@ -303,7 +323,7 @@ async function runAttempt(input: {
     harness: input.tier.harness,
     model: input.tier.model,
     name: `tally-${input.runId}-${input.task.taskId}-${input.attempt}`,
-    prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary),
+    prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary, input.runId, input.attempt),
     aoProject: input.config.repo.aoProject,
   });
   const watcher = new CeilingWatcher({ usage: input.ports.usage, sessions: input.ports.sessions, trace: input.ports.trace });
@@ -488,7 +508,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           dryRun: options.dryRun,
         });
         ledger.push(latest);
-        await ports.history.record({ size: latest.size, tier: latest.tier, result: latest.result, costNanos: latest.estimatedCostNanos });
+        await recordHistory({ ports, row: latest, dryRun: options.dryRun });
         await recordSpend(latest);
       } else {
         interrupted.resultReason = escalation.statusReason;
@@ -542,7 +562,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       dryRun: options.dryRun,
     });
     ledger.push(first);
-    await ports.history.record({ size: first.size, tier: first.tier, result: first.result, costNanos: first.estimatedCostNanos });
+    await recordHistory({ ports, row: first, dryRun: options.dryRun });
     await recordSpend(first);
     let latest = first;
     if (first.result !== 'passed') {
@@ -580,7 +600,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           dryRun: options.dryRun,
         });
         ledger.push(latest);
-        await ports.history.record({ size: latest.size, tier: latest.tier, result: latest.result, costNanos: latest.estimatedCostNanos });
+        await recordHistory({ ports, row: latest, dryRun: options.dryRun });
         await recordSpend(latest);
       } else {
         latest.resultReason = escalation.statusReason;
