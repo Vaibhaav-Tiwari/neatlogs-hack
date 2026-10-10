@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface PublishOptions {
@@ -11,8 +11,15 @@ export interface PublishOptions {
 
 export class PublishError extends Error {}
 
-const assets = ['index.html', 'app.js', 'styles.css', 'live-state.js', 'replay-core.js'];
-const fonts = ['ibm-plex-mono-latin-400-normal', 'ibm-plex-mono-latin-500-normal', 'ibm-plex-mono-latin-600-normal', 'libre-caslon-text-latin-400-italic', 'libre-caslon-text-latin-400-normal', 'libre-caslon-text-latin-700-normal'];
+function dashboardAssets(root: string, prefix = ''): string[] {
+  return readdirSync(join(root, prefix), { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name.startsWith('.') || /(?:fixture|testing|node_modules|^runs$|\.(?:test|spec)\.)/i.test(entry.name)) return [];
+    const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isSymbolicLink()) throw new PublishError(`refusing symlinked dashboard asset: ${path}`);
+    if (entry.isDirectory()) return dashboardAssets(root, path);
+    return ['.html', '.js', '.css', '.woff', '.woff2', '.ttf', '.otf'].includes(extname(entry.name)) && path !== 'config.js' ? [path] : [];
+  });
+}
 
 function scan(text: string, file: string): void {
   const patterns = [
@@ -93,7 +100,7 @@ export function publishSite(options: PublishOptions): { files: { path: string; b
   runs.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   const initial = runs.find((run) => run.real) ?? runs[0];
   if (!initial) throw new PublishError('no real runs to publish');
-  for (const asset of [...assets, ...fonts.map((font) => `fonts/${font}.woff2`)]) files.set(asset, readSafe(join(dashboard, asset)));
+  for (const asset of dashboardAssets(dashboard)) files.set(asset, readSafe(join(dashboard, asset)));
   const add = (path: string, text: string) => { scan(text, path); files.set(path, Buffer.from(text)); };
   add('config.js', `window.TALLY_DASHBOARD = ${JSON.stringify({ data: initial.path, runsIndex: './runs/index.json', runsRoot: './runs/', baseline: null, sample: null, intervalMs: 2000, aoProject: null }, null, 2)};\n`);
   add('runs/index.json', `${JSON.stringify({ runs: runs.map(({ real: _real, ...entry }) => entry) }, null, 2)}\n`);

@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { publishSite } from './publish.js';
 import { main } from './main.js';
@@ -37,6 +37,38 @@ describe('static publish', () => {
     publishSite({ ...f, runs: ['dry'] });
     expect(existsSync(join(f.out, 'runs/dry/run.json'))).toBe(true);
     expect(existsSync(join(f.out, 'runs/real'))).toBe(false);
+  });
+
+  it('includes every local HTML and JS import, including newly added modules, and excludes fixtures', () => {
+    const f = fixture(); f.add('real');
+    const dashboardDir = join(f.root, 'dashboard');
+    cpSync(new URL('../dashboard/', import.meta.url), dashboardDir, { recursive: true });
+    writeFileSync(join(dashboardDir, 'extra-module.js'), 'export const extra = true;');
+    writeFileSync(join(dashboardDir, 'app.js'), `${readFileSync(join(dashboardDir, 'app.js'), 'utf8')}\nimport './extra-module.js';`);
+    mkdirSync(join(dashboardDir, 'graph-fixture'), { recursive: true });
+    writeFileSync(join(dashboardDir, 'graph-fixture/index.html'), 'private fixture');
+    const result = publishSite({ ...f, dashboardDir });
+    expect(result.files.some((file) => file.path.includes('fixture'))).toBe(false);
+    expect(result.files.some((file) => file.path.includes('.test.'))).toBe(false);
+    const queue = ['index.html', 'app.js'];
+    const seen = new Set<string>();
+    while (queue.length) {
+      const path = queue.pop()!;
+      if (seen.has(path)) continue;
+      seen.add(path);
+      const file = join(f.out, path);
+      expect(existsSync(file), `missing imported asset ${path}`).toBe(true);
+      const text = readFileSync(file, 'utf8');
+      const matches = path.endsWith('.html') ? text.matchAll(/(?:src|href)=["']([^"']+)["']/g) : text.matchAll(/(?:from\s*|import\s*)["']([^"']+)["']/g);
+      for (const match of matches) {
+        const target = match[1]!;
+        if (/^(?:data:|https?:|#)/.test(target)) continue;
+        const imported = resolve(dirname(file), target);
+        expect(existsSync(imported), `missing import ${target} from ${path}`).toBe(true);
+        if (imported.endsWith('.js')) queue.push(imported.slice(f.out.length + 1));
+      }
+    }
+    expect(seen.has('extra-module.js')).toBe(true);
   });
 
   for (const text of ['sk-12345678901234567890', '/Users/person/private', 'API_KEY=private-value', 'access_token: private-value', 'Bearer private-value']) {
