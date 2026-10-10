@@ -99,6 +99,12 @@ describe('parseCli', () => {
     expect(parseCli(['run', '--plan'])).toMatchObject({ kind: 'command', command: 'run', options: { plan: true } });
   });
 
+  it('parses experiment repeat counts and rejects invalid counts', () => {
+    expect(parseCli(['experiment', '--repeats', '2', '--budget', '10', '--dry-run'])).toMatchObject({ kind: 'command', command: 'experiment', options: { repeats: 2, budgetUsd: 10, dryRun: true } });
+    expect(parseCli(['experiment', '--repeats', '0'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['experiment', '--repeats', '1.5'])).toMatchObject({ kind: 'error' });
+  });
+
   it('parses demo --live', () => {
     expect(parseCli(['demo', '--live'])).toMatchObject({ kind: 'command', command: 'demo', options: { live: true } });
   });

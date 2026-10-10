@@ -54,7 +54,7 @@ export interface WorkerStartInput {
 }
 
 export interface WorkerResult {
-  status: 'idle' | 'terminated' | 'needs_input' | 'timeout';
+  status: 'idle' | 'terminated' | 'needs_input' | 'timeout' | 'experiment_stop';
   branch: string | null;
   checkoutPath: string | null;
   prUrl: string | null;
@@ -453,7 +453,10 @@ async function runAttempt(input: {
   } else {
     abort.abort();
     workerResult = first.kind === 'worker' ? first.result : await worker;
-    if (workerResult.status === 'needs_input' || workerResult.status === 'timeout') {
+    if (workerResult.status === 'experiment_stop') {
+      result = 'stopped';
+      resultReason = workerResult.resultReason ?? 'stopped: experiment cap reached';
+    } else if (workerResult.status === 'needs_input' || workerResult.status === 'timeout') {
       result = 'error';
       resultReason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
     } else {
@@ -645,7 +648,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const ports = resolvePorts(config, options.configPath, options.ports);
   const now = options.now ?? (() => new Date());
   const started = now();
-  const runId = runIdFrom(started);
+  const runId = options.runId ?? runIdFrom(started);
   const mode: RunMode = options.baseline ? 'baseline' : 'tally';
   const outputDir = options.outputDir ? resolve(options.outputDir) : defaultOutputDir(runId);
   const ledgerPath = resolve(outputDir, 'ledger.json');
@@ -713,6 +716,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       schemaVersion: SCHEMA_VERSION,
       runId,
       mode,
+      ...(options.repeat === undefined ? {} : { repeat: options.repeat }),
       dryRun: options.dryRun,
       status,
       repo: repoName(config),
@@ -737,6 +741,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   writeCurrent('running', null);
 
   for (const [index, task] of tasks.entries()) {
+    const stopReason = options.stopRequested?.();
+    if (stopReason) {
+      for (const state of taskStates.slice(index)) {
+        state.status = 'skipped';
+        state.statusReason = stopReason;
+      }
+      break;
+    }
     const existingRows = ledger.filter((row) => row.taskId === task.taskId);
     if (isTaskDone(existingRows)) {
       taskStates[index] = stateFromRows(taskStates[index]!, existingRows);
@@ -869,7 +881,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     await recordHistory({ ports, row: first, dryRun: options.dryRun });
     await recordSpend(first);
     let latest = first;
-    if (first.result !== 'passed' && first.result !== 'error') {
+    if (first.result !== 'passed' && first.result !== 'error' && !options.stopRequested?.()) {
       const escalation = await decideEscalation({
         previous: {
           attemptId: first.attemptId,
@@ -936,7 +948,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   }
 
   const endedAt = now().toISOString();
-  const runState = writeCurrent('finished', endedAt);
+  const runState = writeCurrent(options.stopRequested?.() ? 'interrupted' : 'finished', endedAt);
   await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
   const paths = writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
   return { runState, ledger, ...paths };

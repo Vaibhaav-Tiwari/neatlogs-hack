@@ -135,6 +135,7 @@ export interface RunState {
   schemaVersion: 1;
   runId: string;
   mode: RunMode;
+  repeat?: number;
   /** True when workers were simulated and nothing was spent. */
   dryRun: boolean;
   status: RunStatus;

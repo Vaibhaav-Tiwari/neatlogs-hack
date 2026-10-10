@@ -33,7 +33,14 @@ describe('dashboard server', () => {
           { id: 'run-new', path: '/runs/run-new/', updatedAt: '2026-10-10T11:00:00.000Z', status: 'running', mode: 'baseline', repo: 'acme/new' },
           { id: 'run-old', path: '/runs/run-old/', updatedAt: '2026-10-10T10:00:00.000Z', status: 'finished', mode: 'tally', repo: 'acme/old' },
         ],
+        experiments: [],
       });
+      const experimentDir = join(runsDir, 'experiments', 'exp-test');
+      mkdirSync(experimentDir, { recursive: true });
+      writeFileSync(join(experimentDir, 'summary.json'), JSON.stringify({ real: false, repo: 'acme/new', status: 'running' }));
+      const index = await (await fetch(new URL('/runs/index.json', dashboard.url))).json();
+      expect(index.experiments).toMatchObject([{ id: 'exp-test', path: '/runs/experiments/exp-test/', real: false, status: 'running', repo: 'acme/new' }]);
+      await expect((await fetch(new URL('/runs/experiments/exp-test/summary.json', dashboard.url))).json()).resolves.toMatchObject({ status: 'running' });
       expect((await fetch(new URL('/runs/', dashboard.url))).status).toBe(404);
       expect((await fetch(new URL('/runs/../secret.txt', dashboard.url))).status).toBe(404);
       expect((await fetch(new URL('/../secret.txt', dashboard.url))).status).toBe(404);

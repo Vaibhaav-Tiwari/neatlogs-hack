@@ -24,6 +24,7 @@
     "schemaVersion": { "const": 1 },
     "runId": { "type": "string", "minLength": 1 },
     "mode": { "enum": ["tally", "baseline"] },
+    "repeat": { "type": "integer", "minimum": 1 },
     "dryRun": { "type": "boolean" },
     "status": { "enum": ["running", "finished", "interrupted"] },
     "repo": { "type": "string", "minLength": 1 },

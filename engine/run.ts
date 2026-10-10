@@ -20,6 +20,9 @@ export interface RunOptions {
   preflightRunner?: PreflightRunner;
   /** Experiment pin: reject a different resolved repository base before starting workers. */
   requiredBaseCommit?: string;
+  runId?: string;
+  repeat?: number;
+  stopRequested?: () => string | null;
 }
 
 export interface RunResult {
