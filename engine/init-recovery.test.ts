@@ -7,6 +7,7 @@ import { pendingInitPath } from './init-transaction.js';
 import { installRecordPath } from './install-record.js';
 import { configureIntegrations } from '../onboarding/index.js';
 import { CfoaiOnboarding } from '../onboarding/cfoai.js';
+import { EntireOnboarding } from '../onboarding/entire.js';
 import { NeatlogsOnboarding } from '../onboarding/neatlogs.js';
 import { parse as parseYaml } from 'yaml';
 
@@ -48,13 +49,24 @@ describe('transactional init prerequisites and recovery', () => {
     expect(existsSync(join(f.cwd, '.tally'))).toBe(false);
   });
 
-  it('does not accept Entire opt-in until it is enabled in the target repository', async () => {
+  it('completes init with Entire off when target repository capture setup is declined', async () => {
     const f = fixture();
-    const command: InitCommandRunner = async (file, args, options) => file === 'entire'
-      ? { stdout: args[0] === 'status' ? '{"enabled":false}' : 'ok', stderr: '' } : f.command(file, args, options);
-    await expect(runInit({ cwd: f.cwd, command, print: () => {}, readLine: async (question, fallback) => question.startsWith('Enable Entire') ? 'y' : fallback ?? '' })).rejects.toThrow('entire enable');
-    expect(f.mutations).toEqual([]);
-    expect(existsSync(join(f.cwd, '.tally'))).toBe(false);
+    const captureMutations: string[] = [];
+    const entire = new EntireOnboarding({ command: async (file, args, options) => {
+      expect(options.cwd).toBe(f.cwd);
+      if (file === 'git') return { stdout: args[0] === 'rev-parse' ? f.cwd : '' };
+      if (args[0] === 'auth') return { stdout: '{"logged_in":true}' };
+      if (args[0] === 'plugin') return { stdout: '  graph v0.4.0' };
+      if (args[0] === 'status') return { stdout: '{"enabled":false}' };
+      if (args[0] === 'enable') captureMutations.push('enable');
+      return { stdout: 'ok' };
+    } });
+    const result = await runInit({ cwd: f.cwd, command: f.command, print: () => {}, doctor: async () => [],
+      onboarding: context => configureIntegrations(context, { entire }),
+      readLine: async (question, fallback) => question.startsWith('Enable Entire') || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
+    expect(result.applied).toBe(true);
+    expect(parseYaml(readFileSync(result.configPath, 'utf8')).integrations.entire).toBe(false);
+    expect(captureMutations).toEqual([]);
   });
 
   it('allows neatlogs connection to be skipped and completes init with tracing off', async () => {

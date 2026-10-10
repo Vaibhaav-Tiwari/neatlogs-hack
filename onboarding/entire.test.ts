@@ -1,0 +1,193 @@
+import { describe, expect, it, vi } from 'vitest';
+import { sampleConfig } from '../agent/testing/fakes.js';
+import { EntireOnboarding, type EntireOnboardingCommand } from './entire.js';
+import type { OnboardingContext } from './types.js';
+
+function fixture(answers: boolean[] = [true]) {
+  const cwd = '/tmp/tally-onboarding-target';
+  const state = { loggedIn: true, graph: true, enabled: true, agents: ['Codex'], dirty: '', generated: '', branch: 'main',
+    local: 'base-sha', remote: 'base-sha', published: true, remoteHooks: true, fail: '', loginWorks: true, pluginWorks: true };
+  const calls: { file: string; args: string[]; cwd: string; interactive?: boolean }[] = [];
+  const command: EntireOnboardingCommand = async (file, args, options) => {
+    calls.push({ file, args, ...options });
+    const name = `${file} ${args.join(' ')}`;
+    if (state.fail && name.startsWith(state.fail)) throw new Error('fake-private-error');
+    let stdout = '';
+    if (file === 'entire') {
+      if (args[0] === '--version') stdout = 'entire version fake';
+      else if (args[0] === 'auth') stdout = JSON.stringify({ logged_in: state.loggedIn });
+      else if (args[0] === 'plugin' && args[1] === 'list') stdout = state.graph ? 'Managed plugin directory\n  graph v0.4.0' : 'No installed plugins';
+      else if (args[0] === 'plugin') state.graph = state.pluginWorks;
+      else if (args[0] === 'login') state.loggedIn = state.loginWorks;
+      else if (args[0] === 'status') stdout = JSON.stringify({ enabled: state.enabled, agents: state.agents });
+      else if (args[0] === 'enable') { state.enabled = true; state.agents = [args[args.indexOf('--agent') + 1]! === 'codex' ? 'Codex' : 'Claude Code']; state.generated = '?? .entire/settings.json\n?? .codex/hooks.json'; }
+      else if (args[0] === 'agent') { state.agents.push(args[2] === 'codex' ? 'Codex' : 'Claude Code'); state.generated = ' M .codex/hooks.json'; }
+      else throw new Error(`Unexpected ${name}`);
+    } else if (file === 'git') {
+      if (args[0] === 'rev-parse') stdout = args[1] === '--show-toplevel' ? cwd : args[1] === 'HEAD' ? state.local : state.remote;
+      else if (args[0] === 'status') stdout = state.dirty || state.generated;
+      else if (args[0] === 'branch') stdout = state.branch;
+      else if (args[0] === 'symbolic-ref') stdout = 'origin/main';
+      else if (args[0] === 'show') stdout = args[1]!.endsWith('.entire/settings.json') ? JSON.stringify({ enabled: state.published }) : state.remoteHooks ? '{"command":"entire hooks codex SessionStart"}' : '{"hooks":{}}';
+      else if (args[0] === 'commit') { state.generated = ''; state.local = 'setup-sha'; }
+      else if (args[0] === 'push') { state.remote = state.local; state.published = true; }
+      else if (args[0] !== 'add') throw new Error(`Unexpected ${name}`);
+    } else throw new Error(`Unexpected ${name}`);
+    return { stdout };
+  };
+  const config = sampleConfig();
+  config.tiers = config.tiers.map(t => ({ ...t, harness: 'codex' }));
+  const context: OnboardingContext = { repoRoot: cwd, config, ui: { print: vi.fn(), confirm: vi.fn(async () => answers.shift() ?? false), select: vi.fn(async () => null) } };
+  const module = new EntireOnboarding({ cwd, command });
+  return { state, calls, context, module, command };
+}
+const mutations = (calls: ReturnType<typeof fixture>['calls']) => calls.filter(c =>
+  c.file === 'entire' && ['login', 'enable', 'agent'].includes(c.args[0]!) ||
+  c.file === 'entire' && c.args[0] === 'plugin' && c.args[1] === 'install' ||
+  c.file === 'git' && ['add', 'commit', 'push'].includes(c.args[0]!));
+
+describe('Entire onboarding', () => {
+  it('checks a configured repository without mutations', async () => {
+    const f = fixture();
+    expect((await f.module.check()).status).toBe('ok');
+    expect(mutations(f.calls)).toEqual([]);
+  });
+  it('reuses a configured repository and asks the human about Codex hook trust', async () => {
+    const f = fixture();
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(mutations(f.calls)).toEqual([]);
+    expect(f.context.ui.print).toHaveBeenCalledWith(expect.stringContaining('/hooks'));
+    expect(f.calls.every(call => call.cwd === f.context.repoRoot)).toBe(true);
+  });
+  it('keeps Entire off when hook trust is skipped', async () => {
+    const f = fixture([false]);
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(mutations(f.calls)).toEqual([]);
+  });
+  it('offers login and verifies the session after approval', async () => {
+    const f = fixture([true, true]);
+    f.state.loggedIn = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(f.calls.find(call => call.args[0] === 'login')?.interactive).toBe(true);
+  });
+  it('gives a sign-up address and fallback when login is declined', async () => {
+    const f = fixture([false]);
+    f.state.loggedIn = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(mutations(f.calls)).toEqual([]);
+    expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('https://entire.io');
+    expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('code search');
+  });
+  it('falls back without enabling the repo when login did not succeed', async () => {
+    const f = fixture([true]);
+    f.state.loggedIn = false;
+    f.state.loginWorks = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(f.calls.some(c => c.args[0] === 'enable')).toBe(false);
+  });
+  it('offers the missing graph plugin and rechecks installation', async () => {
+    const f = fixture([true, true]);
+    f.state.graph = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(f.calls.filter(c => c.args.join(' ') === 'plugin install graph')).toHaveLength(1);
+  });
+  it.each(['declined', 'failed'])('stays off for %s graph installation', async mode => {
+    const f = fixture([mode !== 'declined']);
+    f.state.graph = false;
+    f.state.pluginWorks = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(f.calls.some(c => c.args[0] === 'enable')).toBe(false);
+  });
+  it('shows the capture files before enabling and never commits on setup decline', async () => {
+    const f = fixture([false]);
+    f.state.enabled = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(mutations(f.calls)).toEqual([]);
+    expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('.entire/settings.json');
+    expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('default branch');
+  });
+  it('enables, commits only generated settings and pushes the default branch only after separate consent', async () => {
+    const f = fixture([true, true, true]);
+    f.state.enabled = false;
+    f.state.published = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(f.calls.find(c => c.args[0] === 'enable')!.args).toEqual(['enable', '--agent', 'codex', '--telemetry=false', '--project', '--no-init-repo', '--skip-initial-commit']);
+    expect(f.calls.find(c => c.args[0] === 'add')!.args).toEqual(['add', '--', '.entire/settings.json', '.codex/hooks.json']);
+    expect(f.calls.find(c => c.args[0] === 'commit')!.args).toContain('--');
+    expect(f.calls.find(c => c.args[0] === 'push')!.args).toEqual(['push', 'origin', 'setup-sha:refs/heads/main']);
+    expect(vi.mocked(f.context.ui.confirm).mock.calls[1]![0]).toContain('Commit only these settings');
+    // Rerun is read-only apart from the human's trust confirmation.
+    f.calls.length = 0;
+    f.context.ui.confirm = async () => true;
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(mutations(f.calls)).toEqual([]);
+  });
+  it('does not commit or push when publishing is declined', async () => {
+    const f = fixture([true, false]);
+    f.state.enabled = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(f.calls.some(c => c.file === 'git' && ['add', 'commit', 'push'].includes(c.args[0]!))).toBe(false);
+  });
+  it('does not publish if the checkout moved during the approval prompt', async () => {
+    const f = fixture();
+    f.state.enabled = false;
+    let prompt = 0;
+    f.context.ui.confirm = async () => {
+      if (++prompt === 2) f.state.branch = 'other-work';
+      return true;
+    };
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(f.calls.some(c => c.file === 'git' && ['commit', 'push'].includes(c.args[0]!))).toBe(false);
+  });
+  it.each(['feature branch', 'unpublished commits', 'dirty checkout', 'unexpected file'])('refuses unsafe publication with %s', async problem => {
+    const f = fixture([true, true]);
+    f.state.enabled = false;
+    if (problem === 'feature branch') f.state.branch = 'feature';
+    if (problem === 'unpublished commits') f.state.local = 'other-unpublished-work';
+    if (problem === 'dirty checkout') f.state.dirty = ' M README.md';
+    if (problem === 'unexpected file') {
+      const base = f.command;
+      f.module = new EntireOnboarding({ cwd: f.context.repoRoot, command: async (file, args, options) => {
+        const result = await base(file, args, options);
+        if (args[0] === 'enable') f.state.generated += '\n?? private-token.json';
+        return result;
+      } });
+    }
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(f.calls.some(c => c.file === 'git' && ['commit', 'push'].includes(c.args[0]!))).toBe(false);
+  });
+  it('does not treat a local-only setup as ready on rerun', async () => {
+    const f = fixture();
+    f.state.generated = ' M .codex/hooks.json';
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(mutations(f.calls)).toEqual([]);
+  });
+  it.each(['capture disabled', 'hooks absent'])('keeps integration off when remote default-branch evidence has %s', async problem => {
+    const f = fixture();
+    if (problem === 'capture disabled') f.state.published = false;
+    else f.state.remoteHooks = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+  });
+  it('does not write a checkout different from the init target', async () => {
+    const f = fixture();
+    f.state.enabled = false;
+    f.context.repoRoot = '/tmp/some-other-root';
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(mutations(f.calls)).toEqual([]);
+  });
+  it.each(['entire --version', 'entire auth status', 'entire plugin install', 'entire enable', 'git commit', 'git push'])('handles %s failure with no secret-bearing error output', async failing => {
+    const f = fixture([true, true, true, true]);
+    f.state.fail = failing;
+    if (failing === 'entire plugin install') f.state.graph = false;
+    if (['entire enable', 'git commit', 'git push'].includes(failing)) f.state.enabled = false;
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(JSON.stringify(vi.mocked(f.context.ui.print).mock.calls)).not.toContain('fake-private-error');
+  });
+  it('adds missing capture hooks for the configured harness with explicit consent', async () => {
+    const f = fixture([true, true, true]);
+    f.state.agents = ['Claude Code'];
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(f.calls.find(c => c.args[0] === 'agent')!.args).toEqual(['agent', 'add', 'codex']);
+    expect(f.calls.find(c => c.args[0] === 'add')!.args).toEqual(['add', '--', '.codex/hooks.json']);
+  });
+});
