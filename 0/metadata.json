@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KQQ2JPNWW95QNPENA9HANW",
+  "session_id": "01a125ae-c722-75d0-93f1-147e3e8f6ffa",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T20:22:52.352469Z",
+  "branch": "ao/neatlogs-hack-6/ledger-recording-polish",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "dashboard/app.js",
+    "dashboard/code-graph.js",
+    "dashboard/index.html",
+    "dashboard/reason-text.js",
+    "dashboard/recording-polish.test.mjs",
+    "dashboard/session-evidence.js",
+    "dashboard/styles.css"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "91e17c6dbb5c",
+  "checkpoint_transcript_start": 5903,
+  "transcript_lines_at_start": 5903,
+  "compact_transcript_start": 696,
+  "token_usage": {
+    "input_tokens": 16682,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1454208,
+    "output_tokens": 6633,
+    "api_call_count": 8
+  },
+  "session_metrics": {
+    "turn_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T20:22:52.086797Z",
+    "agent_lines": 95,
+    "agent_removed": 20,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 95,
+    "total_lines_changed": 115,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
