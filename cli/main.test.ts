@@ -75,10 +75,10 @@ describe('main', () => {
     }
   });
 
-  it('requires --dry-run for run until real workers are implemented', async () => {
+  it('reports config errors before a real run can start', async () => {
     const c = capture();
-    expect(await main(['run'], c.io)).toBe(2);
-    expect(c.err.join('\n')).toContain('--dry-run');
+    expect(await main(['run', '--config', '/nonexistent/tally.yaml'], c.io)).toBe(2);
+    expect(c.err.join('\n')).toContain('file not found');
   });
 
   it('runs demo and reports the generated files', async () => {

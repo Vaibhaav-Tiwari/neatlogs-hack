@@ -112,14 +112,10 @@ const stub =
   };
 
 async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
-  if (!options.dryRun) {
-    io.stderr('tally run: real worker execution is not implemented yet; pass --dry-run');
-    return 2;
-  }
   try {
     const result = await runTally({
       configPath: options.config,
-      dryRun: true,
+      dryRun: options.dryRun,
       baseline: options.baseline,
       budgetUsd: options.budgetUsd,
       only: options.only,
