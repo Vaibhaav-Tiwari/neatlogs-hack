@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KK03RBTTVTERCSPTSS07DJ",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/checkpoint-publishing",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "README.md",
+    "adapters/entire-checkpoints.test.ts",
+    "adapters/entire-checkpoints.ts",
+    "adapters/publisher.test.ts",
+    "adapters/publisher.ts",
+    "agent/ports.ts",
+    "dashboard/app.js",
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/fixtures/finished-run/ledger.json",
+    "schema/ledger-row.schema.json",
+    "schema/schema.test.ts",
+    "schema/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 568505,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 16683008,
+    "output_tokens": 36912,
+    "api_call_count": 130,
+    "subagent_tokens_complete": true
+  }
+}
