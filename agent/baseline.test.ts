@@ -15,6 +15,7 @@ const estimate = (size: SizeEstimate['size'], confidence: number): SizeEstimate 
   specificity: 0,
   refinedBy: 'rules',
   summary: 'no sizing signals',
+  recall: null,
 });
 
 describe('routeBaseline', () => {

@@ -15,6 +15,7 @@ function estimate(size: TaskSize, confidence: number): SizeEstimate {
     specificity: 0.5,
     refinedBy: 'rules',
     summary: '1 file touched, no dependents and tests present',
+    recall: null,
   };
 }
 
@@ -70,6 +71,7 @@ describe('routeTask', () => {
           specificity: 0.65,
           refinedBy: 'rules',
           summary: '1 file touched, no dependents and tests present',
+          recall: null,
         },
         config,
         ports: { budget: new FakeBudget(usdToNanos(40)) },

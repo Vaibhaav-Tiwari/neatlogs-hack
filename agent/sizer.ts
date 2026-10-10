@@ -5,7 +5,7 @@
  * cheaper on its own word.
  */
 import type { TaskSize } from '../schema/types.js';
-import type { LlmPort, SizingSignals, SizingSignalsPort, TaskInput, TracePort } from './ports.js';
+import type { CheckpointRecall, LlmPort, SizingSignals, SizingSignalsPort, TaskInput, TracePort } from './ports.js';
 import { traceDecision } from './trace.js';
 
 export interface SizeEstimate {
@@ -19,6 +19,7 @@ export interface SizeEstimate {
   refinedBy: 'rules' | 'llm';
   /** The signals in plain words, for the decision sentence. */
   summary: string;
+  recall: CheckpointRecall | null;
 }
 
 export interface SizerOptions {
@@ -76,7 +77,7 @@ function summarise(signals: SizingSignals | null): string {
 export function sizeFromSignals(task: TaskInput, signals: SizingSignals | null): SizeEstimate {
   const specific = specificity(task);
   const broad = BROAD.test(`${task.title}\n${task.body}`);
-  const base = { signals, specificity: specific, refinedBy: 'rules' as const, summary: summarise(signals) };
+  const base = { signals, specificity: specific, refinedBy: 'rules' as const, summary: summarise(signals), recall: null };
 
   if (!signals || signals.source === 'none') {
     // Nothing measured: assume the middle and admit it is a guess.
@@ -95,6 +96,18 @@ export function sizeFromSignals(task: TaskInput, signals: SizingSignals | null):
   if (broad) confidence -= 0.1;
 
   return { ...base, size: SIZES[index]!, confidence: round2(clamp01(confidence)) };
+}
+
+export function applyCheckpointRecall(estimate: SizeEstimate, recall: CheckpointRecall | null): SizeEstimate {
+  if (!recall?.failed) return estimate;
+  const confidence = round2(clamp01(estimate.confidence - 0.15));
+  const files = recall.files.length > 0 ? ` on ${recall.files.slice(0, 2).join(', ')}` : '';
+  return {
+    ...estimate,
+    confidence,
+    recall,
+    summary: `${estimate.summary}; a prior checkpoint failed${files} before`,
+  };
 }
 
 function buildPrompt(task: TaskInput, rules: SizeEstimate): string {

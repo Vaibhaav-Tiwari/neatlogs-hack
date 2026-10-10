@@ -35,6 +35,19 @@ export interface SizingSignalsPort {
   signalsFor(task: TaskInput): Promise<SizingSignals | null>;
 }
 
+export interface CheckpointRecall {
+  checkpointId: string;
+  checkpointUrl: string | null;
+  summary: string;
+  files: string[];
+  failed: boolean;
+}
+
+export interface CheckpointRecallPort {
+  /** Searches past agent checkpoints for work on the same area. */
+  recallFor(task: TaskInput): Promise<CheckpointRecall | null>;
+}
+
 /** What has actually been observed for one (task size, tier) pair. No prior mixed in. */
 export interface PriceStats {
   /** Attempts that ended passed, failed or stopped. */

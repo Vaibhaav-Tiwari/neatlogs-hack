@@ -6,6 +6,7 @@ import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
 import type {
   BudgetPort,
+  CheckpointRecallPort,
   CheckpointPort,
   HandoffPort,
   LiveUsagePort,
@@ -16,12 +17,13 @@ import type {
   TracePort,
 } from '../agent/ports.js';
 import { routeTask } from '../agent/router.js';
-import { sizeTask } from '../agent/sizer.js';
+import { applyCheckpointRecall, sizeTask } from '../agent/sizer.js';
 import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
 import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { EntireCheckpointAdapter } from '../adapters/entire-checkpoints.js';
+import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
 import { FilePriceHistory } from '../adapters/history-file.js';
 import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
@@ -88,6 +90,7 @@ export interface RealRunPorts {
   usage: LiveUsagePort;
   sessions: SessionControlPort;
   history: PriceHistoryPort & PriceHistoryWriterPort;
+  recall?: CheckpointRecallPort;
   handoff?: HandoffPort;
   checkpoints?: CheckpointPort;
   trace?: TracePort;
@@ -157,6 +160,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
       : undefined;
   const handoff = overrides.handoff ?? entireCheckpoints;
   const checkpoints = overrides.checkpoints ?? entireCheckpoints;
+  const recall = overrides.recall ?? (config.integrations.entire ? new EntireCheckpointRecallAdapter({ repoPath }) : undefined);
   return {
     intake: overrides.intake ?? new ConfigBacklogIntake(),
     signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals),
@@ -165,6 +169,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     usage: overrides.usage ?? ao,
     sessions: overrides.sessions ?? ao,
     history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
+    ...(recall ? { recall } : {}),
     publisher: overrides.publisher ?? new GitHubPublisher(),
     worktrees: overrides.worktrees ?? new GitWorktreeResolver(),
     ...(handoff ? { handoff } : {}),
@@ -714,7 +719,15 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       continue;
     }
     const taskInput = { taskId: task.taskId, title: task.title, body: task.body };
-    const estimate = await sizeTask(taskInput, { signals: ports.signals, trace: ports.trace });
+    const sized = await sizeTask(taskInput, { signals: ports.signals, trace: ports.trace });
+    let estimate = sized;
+    if (ports.recall) {
+      try {
+        estimate = applyCheckpointRecall(sized, await ports.recall.recallFor(taskInput));
+      } catch {
+        estimate = sized;
+      }
+    }
     task.size = estimate.size;
     const route = options.baseline
       ? await routeBaseline({
