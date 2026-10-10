@@ -138,6 +138,11 @@ function traceStatus(trace: TracePort | undefined): RunState['integrations']['ne
   return withStatus?.status?.() ?? { status: 'missing', detail: 'Trace adapter is not configured.' };
 }
 
+function lastTraceId(trace: TracePort | undefined): string | null {
+  const withTraceId = trace as (TracePort & { lastTraceId?: () => string | null }) | undefined;
+  return withTraceId?.lastTraceId?.() ?? null;
+}
+
 function portStatus(port: unknown, fallback: RunState['integrations']['entire']): RunState['integrations']['entire'] {
   const withStatus = port as { status?: () => RunState['integrations']['entire'] };
   return withStatus.status?.() ?? fallback;
@@ -282,6 +287,7 @@ async function runAttempt(input: {
   escalatedFrom: string | null;
   handoff: LedgerRow['handoff'];
   handoffSummary: string | null;
+  traceId: string | null;
   config: TallyConfig;
   configPath: string;
   ports: RealRunPorts;
@@ -363,6 +369,7 @@ async function runAttempt(input: {
     escalatedFrom: input.escalatedFrom,
     handoff: input.handoff,
     prUrl: input.dryRun ? null : (workerResult?.prUrl ?? null),
+    traceId: input.traceId,
     traceUrl: null,
     checkpointId: null,
     checkpointUrl: null,
@@ -459,7 +466,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         },
         config,
         ports: { budget, handoff: ports.handoff, trace: ports.trace },
+        traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
       });
+      const escalationTraceId = lastTraceId(ports.trace);
       if (escalation.action === 'escalate') {
         latest = await runAttempt({
           runId,
@@ -471,6 +480,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           escalatedFrom: escalation.escalatedFrom,
           handoff: escalation.handoff,
           handoffSummary: escalation.handoffSummary,
+          traceId: escalationTraceId,
           config,
           configPath: options.configPath,
           ports,
@@ -491,8 +501,21 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     const estimate = await sizeTask(taskInput, { signals: ports.signals, trace: ports.trace });
     task.size = estimate.size;
     const route = options.baseline
-      ? await routeBaseline({ task: taskInput, estimate, config, ports: { history: ports.history, budget, trace: ports.trace } })
-      : await routeTask({ task: taskInput, estimate, config, ports: { history: ports.history, budget, trace: ports.trace } });
+      ? await routeBaseline({
+          task: taskInput,
+          estimate,
+          config,
+          ports: { history: ports.history, budget, trace: ports.trace },
+          traceAttributes: { sessionId: runId, taskId: task.taskId, attempt: 1 },
+        })
+      : await routeTask({
+          task: taskInput,
+          estimate,
+          config,
+          ports: { history: ports.history, budget, trace: ports.trace },
+          traceAttributes: { sessionId: runId, taskId: task.taskId, attempt: 1 },
+        });
+    const routeTraceId = lastTraceId(ports.trace);
     const state = taskStates[index]!;
     state.size = estimate.size;
     if (route.action === 'skip') {
@@ -511,6 +534,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       escalatedFrom: null,
       handoff: 'none',
       handoffSummary: null,
+      traceId: routeTraceId,
       config,
       configPath: options.configPath,
       ports,
@@ -534,7 +558,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         },
         config,
         ports: { budget, handoff: ports.handoff, trace: ports.trace },
+        traceAttributes: { sessionId: runId, taskId: first.taskId, attempt: 2 },
       });
+      const escalationTraceId = lastTraceId(ports.trace);
       if (escalation.action === 'escalate') {
         latest = await runAttempt({
           runId,
@@ -546,6 +572,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           escalatedFrom: escalation.escalatedFrom,
           handoff: escalation.handoff,
           handoffSummary: escalation.handoffSummary,
+          traceId: escalationTraceId,
           config,
           configPath: options.configPath,
           ports,

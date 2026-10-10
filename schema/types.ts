@@ -68,6 +68,8 @@ export interface LedgerRow {
   escalatedFrom: string | null;
   handoff: Handoff;
   prUrl: string | null;
+  /** Neatlogs trace id for the routing or escalation decision that created this attempt. */
+  traceId: string | null;
   traceUrl: string | null;
   checkpointId: string | null;
   checkpointUrl: string | null;

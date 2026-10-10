@@ -11,7 +11,7 @@ export async function routeBaseline(input: RouteInput): Promise<RouteDecision> {
   return traceDecision(
     input.ports.trace,
     'tally.baseline.route',
-    { taskId: input.task.taskId, size: input.estimate.size, confidence: input.estimate.confidence },
+    { ...input.traceAttributes, taskId: input.task.taskId, size: input.estimate.size, confidence: input.estimate.confidence },
     async (span) => {
       const { task, estimate, config } = input;
       const top = config.tiers[config.tiers.length - 1];

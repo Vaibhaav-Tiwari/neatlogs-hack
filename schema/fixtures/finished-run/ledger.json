@@ -26,12 +26,13 @@
     "escalatedFrom": null,
     "handoff": "none",
     "prUrl": "https://github.com/acme/payments-service/pull/31",
-    "traceUrl": "https://app.neatlogs.com/traces/56e27d5956e31b9056e3b9c756e457fe",
+    "traceUrl": null,
     "checkpointId": "248e067d248e",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/248e067d248e",
     "decision": "Small change in one file with an existing test file beside it, so the cheap tier is expected to finish under its $0.30 ceiling.",
     "startedAt": "2026-10-11T03:00:00Z",
-    "endedAt": "2026-10-11T03:04:00Z"
+    "endedAt": "2026-10-11T03:04:00Z",
+    "traceId": "56e27d5956e31b9056e3b9c756e457fe"
   },
   {
     "schemaVersion": 1,
@@ -60,12 +61,13 @@
     "escalatedFrom": null,
     "handoff": "none",
     "prUrl": "https://github.com/acme/payments-service/pull/32",
-    "traceUrl": "https://app.neatlogs.com/traces/f519f70af51a9541f51b3378f51bd1af",
+    "traceUrl": null,
     "checkpointId": "c2c5802ec2c6",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/c2c5802ec2c6",
     "decision": "Two files touched and no dependents outside the export module; cheap tier, with $39.87 of budget left.",
     "startedAt": "2026-10-11T03:00:00Z",
-    "endedAt": "2026-10-11T03:06:00Z"
+    "endedAt": "2026-10-11T03:06:00Z",
+    "traceId": "f519f70af51a9541f51b3378f51bd1af"
   },
   {
     "schemaVersion": 1,
@@ -94,12 +96,13 @@
     "escalatedFrom": null,
     "handoff": "none",
     "prUrl": "https://github.com/acme/payments-service/pull/33",
-    "traceUrl": "https://app.neatlogs.com/traces/935170bb93520ef29352ad2993534b60",
+    "traceUrl": null,
     "checkpointId": "60fcf9df60fd",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/60fcf9df60fd",
     "decision": "Single function with tests already covering it; the issue names the exact failing case, so cheap is the lowest-cost route.",
     "startedAt": "2026-10-11T03:00:00Z",
-    "endedAt": "2026-10-11T03:03:00Z"
+    "endedAt": "2026-10-11T03:03:00Z",
+    "traceId": "935170bb93520ef29352ad2993534b60"
   },
   {
     "schemaVersion": 1,
@@ -128,12 +131,13 @@
     "escalatedFrom": null,
     "handoff": "none",
     "prUrl": "https://github.com/acme/payments-service/pull/34",
-    "traceUrl": "https://app.neatlogs.com/traces/3188ea6c318988a3318a26da318ac511",
+    "traceUrl": null,
     "checkpointId": "ff347390ff35",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/ff347390ff35",
     "decision": "Medium task touching the delivery queue, which has 9 callers and no tests; too uncertain for cheap, so it starts on the middle tier.",
     "startedAt": "2026-10-11T03:04:00Z",
-    "endedAt": "2026-10-11T03:15:00Z"
+    "endedAt": "2026-10-11T03:15:00Z",
+    "traceId": "3188ea6c318988a3318a26da318ac511"
   },
   {
     "schemaVersion": 1,
@@ -162,12 +166,13 @@
     "escalatedFrom": null,
     "handoff": "none",
     "prUrl": null,
-    "traceUrl": "https://app.neatlogs.com/traces/cfc0641dcfc10254cfc1a08bcfc23ec2",
+    "traceUrl": null,
     "checkpointId": "9d6bed419d6c",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/9d6bed419d6c",
     "decision": "Looks contained to one handler with tests present, so a cheap attempt capped at $0.80 costs less in expectation than going straight to middle.",
     "startedAt": "2026-10-11T03:06:00Z",
-    "endedAt": "2026-10-11T03:19:00Z"
+    "endedAt": "2026-10-11T03:19:00Z",
+    "traceId": "cfc0641dcfc10254cfc1a08bcfc23ec2"
   },
   {
     "schemaVersion": 1,
@@ -196,12 +201,13 @@
     "escalatedFrom": null,
     "handoff": "none",
     "prUrl": "https://github.com/acme/payments-service/pull/36",
-    "traceUrl": "https://app.neatlogs.com/traces/0c2f577f0c2ff5b60c3093ed0c313224",
+    "traceUrl": null,
     "checkpointId": "d9dae0a3d9db",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/d9dae0a3d9db",
     "decision": "Medium task across the route, the query layer and the client types; middle tier, since past cheap attempts on API-shape changes have not paid off.",
     "startedAt": "2026-10-11T03:15:00Z",
-    "endedAt": "2026-10-11T03:27:00Z"
+    "endedAt": "2026-10-11T03:27:00Z",
+    "traceId": "0c2f577f0c2ff5b60c3093ed0c313224"
   },
   {
     "schemaVersion": 1,
@@ -230,12 +236,13 @@
     "escalatedFrom": "run-20261011-0830:T5:1",
     "handoff": "entire-handoff",
     "prUrl": "https://github.com/acme/payments-service/pull/35",
-    "traceUrl": "https://app.neatlogs.com/traces/6df7ddce6df87c056df91a3c6df9b873",
+    "traceUrl": null,
     "checkpointId": "3ba366f23ba4",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/3ba366f23ba4",
     "decision": "Cheap attempt was stopped at its ceiling; escalating one tier with the Entire handoff summary and the saved branch, with $37.90 of budget left.",
     "startedAt": "2026-10-11T03:19:00Z",
-    "endedAt": "2026-10-11T03:28:00Z"
+    "endedAt": "2026-10-11T03:28:00Z",
+    "traceId": "6df7ddce6df87c056df91a3c6df9b873"
   },
   {
     "schemaVersion": 1,
@@ -264,11 +271,12 @@
     "escalatedFrom": null,
     "handoff": "none",
     "prUrl": "https://github.com/acme/payments-service/pull/37",
-    "traceUrl": "https://app.neatlogs.com/traces/aa66d130aa676f67aa680d9eaa68abd5",
+    "traceUrl": null,
     "checkpointId": "78125a547812",
     "checkpointUrl": "https://entire.io/gh/acme/payments-service/checkpoints/78125a547812",
     "decision": "Large task with 14 dependents across the ledger module and data-integrity risk; sent straight to the top tier with a $10.00 ceiling.",
     "startedAt": "2026-10-11T03:27:00Z",
-    "endedAt": "2026-10-11T03:49:00Z"
+    "endedAt": "2026-10-11T03:49:00Z",
+    "traceId": "aa66d130aa676f67aa680d9eaa68abd5"
   }
 ]

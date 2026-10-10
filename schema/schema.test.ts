@@ -47,6 +47,7 @@ const typedRow: LedgerRow = {
   escalatedFrom: null,
   handoff: 'none',
   prUrl: null,
+  traceId: null,
   traceUrl: null,
   checkpointId: null,
   checkpointUrl: null,
