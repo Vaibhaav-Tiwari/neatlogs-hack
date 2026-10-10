@@ -5,6 +5,7 @@ import { frameAt } from './replay-core.js';
 import { displayedCost, isRunning, withLiveCosts } from './live-state.js';
 import { createCodeGraph } from './code-graph.js';
 import { experimentMarkup, experimentMatches, validExperiment } from './experiment-view.js';
+import { budgetPageUrl } from './budget-link.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -443,10 +444,10 @@ function drawComparison(run, source) {
 
 function budgetSource(run) {
   if (run.budget.source !== 'cfoai') return 'Source: tally.yaml';
-  const detail = run.integrations?.cfoai?.detail;
+  const pageUrl = budgetPageUrl(run.budget);
   const label = 'Source: cfo.ai budget table';
-  if (typeof detail === 'string' && /^https?:\/\//.test(detail)) {
-    return `Source: <a href="${esc(detail)}" target="_blank" rel="noreferrer">cfo.ai budget table</a>`;
+  if (pageUrl) {
+    return `Source: <a href="${esc(pageUrl)}" target="_blank" rel="noreferrer">cfo.ai budget table</a>`;
   }
   return label;
 }
@@ -505,10 +506,10 @@ function drawIntegrations(run) {
     ([key, name, job]) => {
       const { status, detail } = run.integrations[key];
       const note = detail ?? (status === 'off' ? INTEGRATION_OFF_NOTE[key] : job);
-      const linkedNote =
-        key === 'cfoai' && status !== 'off' && typeof note === 'string' && /^https?:\/\//.test(note)
-          ? `<a href="${esc(note)}" target="_blank" rel="noreferrer">Open budget table</a>`
-          : esc(note);
+      const pageUrl = key === 'cfoai' && status !== 'off' ? budgetPageUrl(run.budget) : null;
+      const linkedNote = pageUrl
+        ? `<a href="${esc(pageUrl)}" target="_blank" rel="noreferrer">cfo.ai budget table</a>`
+        : key === 'cfoai' && typeof note === 'string' && /^https?:\/\//.test(note) ? 'cfo.ai budget table' : esc(note);
       return `<div class="int int-${esc(status)}">
         <span class="box" aria-hidden="true"></span>
         <p><b>${name}</b> <span class="state">${INTEGRATION_WORD[status] ?? esc(status)}</span>
