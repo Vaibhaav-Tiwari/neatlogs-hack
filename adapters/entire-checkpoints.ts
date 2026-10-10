@@ -1,9 +1,8 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runCommand } from './command.js';
 import { resolve } from 'node:path';
 import type { CheckpointInfo, CheckpointPort, HandoffContext, HandoffPort, HandoffSummary } from '../agent/ports.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync = runCommand;
 
 export interface CommandResult {
   stdout: string;

@@ -140,6 +140,29 @@ or `--yes` with no detected test command fails without writing configuration
 or changing AO settings. An undetected setup command is optional and never
 guessed.
 
+AO does not need to be on your ordinary terminal's PATH. Tally resolves the
+CLI from PATH first, then `TALLY_AO_BIN`, then `repo.aoBin` in `tally.yaml`
+(relative to that file), then the macOS Agent Orchestrator app bundle under
+`/Applications` or `~/Applications`. For a custom installation:
+
+```bash
+export TALLY_AO_BIN="/Applications/Agent Orchestrator.app/Contents/Resources/daemon/ao"
+tally init
+```
+
+Doctor and real runs use the same resolver. Init checks AO, git, GitHub auth
+and requested integrations before applying changes. An Entire opt-in requires
+Entire to be enabled in the target repo; init prints `entire enable` and stops
+if it is not, rather than installing capture hooks without consent.
+
+Once confirmed, init records progress in `.tally/init-pending.json`. If an AO
+or file operation fails, it lists confirmed changes and unwritten files and
+prints the exact init command to resume. Re-running resumes only its owned,
+unchanged files; edited configs or changed AO settings are never overwritten.
+The recovery record is removed after init and doctor complete. This is a
+recoverable transaction, not an atomic transaction spanning the AO daemon and
+the filesystem: an interrupted call may require checking its outcome.
+
 `tally run --dry-run` runs the same loop with simulated workers instead of
 real ones.
 

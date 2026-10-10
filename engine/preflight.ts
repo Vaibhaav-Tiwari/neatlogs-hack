@@ -1,11 +1,8 @@
 import { existsSync } from 'node:fs';
-import { execFile } from 'node:child_process';
+import { CommandError, runCommand } from '../adapters/command.js';
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { promisify } from 'node:util';
 import type { TallyConfig } from '../schema/index.js';
 import { ConfigError } from './config.js';
-
-const execFileAsync = promisify(execFile);
 
 export type PreflightRunner = (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 
@@ -23,7 +20,7 @@ export function backlogPath(config: TallyConfig, configPath: string): string | n
 }
 
 function defaultRunner(file: string, args: string[]) {
-  return execFileAsync(file, args);
+  return runCommand(file, args);
 }
 
 interface AoProjectResponse {
@@ -143,6 +140,7 @@ function parseAoProject(stdout: string): AoProjectResponse {
 }
 
 export async function validateRealRunConfig(config: TallyConfig, configPath: string, runner: PreflightRunner = defaultRunner): Promise<void> {
+  if (runner === defaultRunner) runner = (file, args) => runCommand(file, args, { aoBin: config.repo.aoBin ? configRelative(configPath, config.repo.aoBin) : undefined });
   const problems: string[] = [];
   if (!config.repo.aoProject) problems.push('repo.aoProject is required for real runs so AO knows where to spawn workers');
   const resolvedRepo = repoPath(config, configPath);
@@ -154,7 +152,8 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
     let project: AoProjectResponse | null = null;
     try {
       project = parseAoProject((await runner('ao', ['project', 'get', config.repo.aoProject, '--json'])).stdout);
-    } catch {
+    } catch (error) {
+      if (error instanceof CommandError) throw error;
       problems.push(
         `repo.aoProject "${config.repo.aoProject}" is not registered in AO; fix: ao project add --path ${resolvedRepo} --id ${config.repo.aoProject}`,
       );

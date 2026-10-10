@@ -28,6 +28,14 @@
     "dryRun": { "type": "boolean" },
     "status": { "enum": ["running", "finished", "interrupted"] },
     "repo": { "type": "string", "minLength": 1 },
+    "backlog": {
+      "type": "object", "additionalProperties": false, "required": ["source"],
+      "properties": {
+        "source": { "enum": ["github-issues", "file"] },
+        "issueLabel": { "type": "string" },
+        "file": { "type": "string" }
+      }
+    },
     "baseCommit": { "type": ["string", "null"] },
     "startedAt": { "type": "string", "format": "date-time" },
     "updatedAt": { "type": "string", "format": "date-time" },

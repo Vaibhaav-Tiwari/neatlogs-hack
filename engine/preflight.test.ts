@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig } from './config.js';
 import { validateRealRunConfig, workerAutoModeFixCommand } from './preflight.js';
 import { runTally } from './run.js';
+import { CommandError } from '../adapters/command.js';
 
 function writeConfig(extraRepo = '') {
   const dir = mkdtempSync(join(tmpdir(), 'tally-preflight-'));
@@ -36,6 +37,12 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 }
 
 describe('real run preflight', () => {
+  it('reports missing AO executable as a prerequisite error before any run output or worker', async () => {
+    const { configPath } = writeConfig(', aoProject: "test-project"');
+    await expect(runTally({ configPath, dryRun: false, baseline: false, preflightRunner: async () => {
+      throw new CommandError('Agent Orchestrator (AO) is required; set TALLY_AO_BIN to its executable path.', 'ENOENT');
+    } })).rejects.toThrow('set TALLY_AO_BIN');
+  });
   it('requires repo.aoProject before a real run can spawn a worker', async () => {
     const { configPath } = writeConfig();
     await expect(
