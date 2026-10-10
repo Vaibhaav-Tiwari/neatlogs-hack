@@ -194,15 +194,23 @@ const INTEGRATIONS = [
   ['slack', 'Slack', 'alerts'],
 ];
 const INTEGRATION_WORD = { ok: 'on', off: 'off', missing: 'not connected', error: 'broken' };
+const INTEGRATION_OFF_NOTE = {
+  neatlogs: 'Off for this run; traces were not sent.',
+  entire: 'Off for this run; checkpoints and handoff use local fallback.',
+  cfoai: 'Off for this run; budget comes from tally.yaml.',
+  github: 'Off for this run; backlog came from a file.',
+  slack: 'Off for this run; alerts were not sent.',
+};
 
 function drawIntegrations(run) {
   const items = INTEGRATIONS.filter(([key]) => run.integrations?.[key] && (key !== 'slack' || run.integrations[key].status !== 'off')).map(
     ([key, name, job]) => {
       const { status, detail } = run.integrations[key];
+      const note = detail ?? (status === 'off' ? INTEGRATION_OFF_NOTE[key] : job);
       return `<div class="int int-${esc(status)}">
         <span class="box" aria-hidden="true"></span>
         <p><b>${name}</b> <span class="state">${INTEGRATION_WORD[status] ?? esc(status)}</span>
-        <span class="detail">${esc(detail ?? job)}</span></p></div>`;
+        <span class="detail">${esc(note)}</span></p></div>`;
     },
   );
   draw('integrations', items.join(''));
