@@ -1,5 +1,7 @@
 import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
 import type {
@@ -33,6 +35,8 @@ import { loadConfig } from './config.js';
 import { writeRunFiles } from './output.js';
 import type { RunOptions, RunResult } from './run.js';
 
+const execFileAsync = promisify(execFile);
+
 export interface WorkerStartInput {
   task: BacklogTask;
   attempt: number;
@@ -63,6 +67,10 @@ export interface FinalUsagePort extends LiveUsagePort {
   settledUsageFor?(sessionId: string): Promise<Awaited<ReturnType<LiveUsagePort['usageFor']>>>;
 }
 
+export interface WorktreePort {
+  checkoutPathFor(repoPath: string, branch: string): Promise<string | null>;
+}
+
 export interface CfoaiBudgetPort extends BudgetPort {
   budgetLimitNanos(): Promise<number>;
   currentSpendNanos?(): Promise<number>;
@@ -85,10 +93,26 @@ export interface RealRunPorts {
   trace?: TracePort;
   cfoai?: CfoaiBudgetPort;
   publisher: PublishPort;
+  worktrees: WorktreePort;
 }
 
 export interface RealRunOptions extends RunOptions {
   ports?: Partial<RealRunPorts>;
+}
+
+export class GitWorktreeResolver implements WorktreePort {
+  async checkoutPathFor(repoPath: string, branch: string): Promise<string | null> {
+    const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
+    let worktree: string | null = null;
+    for (const line of stdout.split('\n')) {
+      if (line.startsWith('worktree ')) {
+        worktree = line.slice('worktree '.length);
+        continue;
+      }
+      if (line === `branch refs/heads/${branch}` || line === `branch refs/remotes/origin/${branch}`) return worktree;
+    }
+    return null;
+  }
 }
 
 class LedgerBudget implements BudgetPort {
@@ -142,6 +166,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     sessions: overrides.sessions ?? ao,
     history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
     publisher: overrides.publisher ?? new GitHubPublisher(),
+    worktrees: overrides.worktrees ?? new GitWorktreeResolver(),
     ...(handoff ? { handoff } : {}),
     ...(checkpoints ? { checkpoints } : {}),
     ...(trace ? { trace } : {}),
@@ -414,11 +439,14 @@ async function runAttempt(input: {
       result = 'error';
       resultReason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
     } else {
-      const checkoutPath = workerResult.checkoutPath ?? started.checkoutPath;
+      let checkoutPath = workerResult.checkoutPath ?? started.checkoutPath;
       const branch = workerResult.branch ?? started.branch;
+      if (!input.dryRun && !checkoutPath && branch) {
+        checkoutPath = await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch);
+      }
       if (!input.dryRun && (!checkoutPath || !branch)) {
-        result = 'failed';
-        resultReason = 'worker checkout path or branch was not reported';
+        result = 'error';
+        resultReason = 'could not locate worker checkout';
       } else if (!input.dryRun && (await input.ports.publisher.commitsAhead({ checkoutPath: checkoutPath!, branch: branch!, config: input.config })) <= 0) {
         result = 'failed';
         resultReason = 'no changes made';
@@ -633,51 +661,53 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (interrupted && interrupted.result !== 'passed' && interrupted.attempt === 1) {
       task.size = interrupted.size;
       let latest = interrupted;
-      const escalation = await decideEscalation({
-        previous: {
-          attemptId: interrupted.attemptId,
-          taskId: interrupted.taskId,
-          attempt: interrupted.attempt,
-          size: interrupted.size,
-          tier: interrupted.tier,
-          result: interrupted.result,
-          sessionId: interrupted.sessionId,
-          branch: interrupted.branch,
-          checkpointId: interrupted.checkpointId,
-        },
-        config,
-        ports: { budget, handoff: ports.handoff, trace: ports.trace },
-        traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
-      });
-      const escalationTraceId = lastTraceId(ports.trace);
-      if (escalation.action === 'escalate') {
-        const summaryRow = handoffSummaryLedgerRow({ runId, task, previous: interrupted, decision: escalation, traceId: escalationTraceId, now });
-        if (summaryRow) {
-          ledger.push(summaryRow);
-          await recordSpend(summaryRow);
-        }
-        latest = await runAttempt({
-          runId,
-          task,
-          attempt: 2,
-          tier: escalation.tier,
-          ceilingNanos: escalation.ceilingNanos,
-          decision: escalation.reason,
-          escalatedFrom: escalation.escalatedFrom,
-          handoff: escalation.handoff,
-          handoffSummary: escalation.handoffSummary,
-          traceId: escalationTraceId,
+      if (interrupted.result !== 'error') {
+        const escalation = await decideEscalation({
+          previous: {
+            attemptId: interrupted.attemptId,
+            taskId: interrupted.taskId,
+            attempt: interrupted.attempt,
+            size: interrupted.size,
+            tier: interrupted.tier,
+            result: interrupted.result,
+            sessionId: interrupted.sessionId,
+            branch: interrupted.branch,
+            checkpointId: interrupted.checkpointId,
+          },
           config,
-          configPath: options.configPath,
-          ports,
-          now,
-          dryRun: options.dryRun,
+          ports: { budget, handoff: ports.handoff, trace: ports.trace },
+          traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
         });
-        ledger.push(latest);
-        await recordHistory({ ports, row: latest, dryRun: options.dryRun });
-        await recordSpend(latest);
-      } else {
-        interrupted.resultReason = interrupted.result === 'error' && interrupted.resultReason ? interrupted.resultReason : escalation.statusReason;
+        const escalationTraceId = lastTraceId(ports.trace);
+        if (escalation.action === 'escalate') {
+          const summaryRow = handoffSummaryLedgerRow({ runId, task, previous: interrupted, decision: escalation, traceId: escalationTraceId, now });
+          if (summaryRow) {
+            ledger.push(summaryRow);
+            await recordSpend(summaryRow);
+          }
+          latest = await runAttempt({
+            runId,
+            task,
+            attempt: 2,
+            tier: escalation.tier,
+            ceilingNanos: escalation.ceilingNanos,
+            decision: escalation.reason,
+            escalatedFrom: escalation.escalatedFrom,
+            handoff: escalation.handoff,
+            handoffSummary: escalation.handoffSummary,
+            traceId: escalationTraceId,
+            config,
+            configPath: options.configPath,
+            ports,
+            now,
+            dryRun: options.dryRun,
+          });
+          ledger.push(latest);
+          await recordHistory({ ports, row: latest, dryRun: options.dryRun });
+          await recordSpend(latest);
+        } else {
+          interrupted.resultReason = escalation.statusReason;
+        }
       }
       taskStates[index] = stateFromRows(taskStates[index]!, ledger.filter((row) => row.taskId === task.taskId));
       writeCurrent('running', null);
@@ -731,7 +761,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     await recordHistory({ ports, row: first, dryRun: options.dryRun });
     await recordSpend(first);
     let latest = first;
-    if (first.result !== 'passed') {
+    if (first.result !== 'passed' && first.result !== 'error') {
       const escalation = await decideEscalation({
         previous: {
           attemptId: first.attemptId,
