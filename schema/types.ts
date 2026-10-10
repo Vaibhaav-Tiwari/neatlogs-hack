@@ -192,7 +192,17 @@ export interface TallyConfig {
     source: BudgetSource;
     /** The budget, or the fallback when the cfo.ai scenario cannot be read. */
     usd: number;
-    cfoai?: { scenario: string };
+    cfoai?: {
+      /** cfo.ai org/workspace id, e.g. "103210" for Clever Dingo. */
+      orgId?: string;
+      scenario?: string;
+      table?: string;
+      budgetRow?: string;
+      spendRow?: string;
+      remainingRow?: string;
+      tableUrl?: string;
+      serverUrl?: string;
+    };
   };
   concurrency?: number;
   integrations: Record<'neatlogs' | 'entire' | 'cfoai' | 'slack', boolean>;

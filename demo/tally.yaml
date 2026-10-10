@@ -40,6 +40,16 @@ ceilings:
 budget:
   source: config
   usd: 40
+  # To read/write the live monthly budget in cfo.ai, set source: cfoai,
+  # integrations.cfoai: true, then run: npm run tally -- login cfoai
+  cfoai:
+    orgId: "103210"
+    scenario: Main Scenario
+    table: Tally agent budget
+    budgetRow: Agent budget
+    spendRow: Agent spend
+    remainingRow: Budget remaining
+    tableUrl: https://app.cfo.ai/s/p_AQKqpgYkMDBiYzMwNzQtZjA3OS00YjYwLWFlYTctM2FjYzYyMjgxMDQ5DWRlZmF1bHRfbGF5ZXI
 
 concurrency: 3
 

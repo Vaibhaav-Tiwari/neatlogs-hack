@@ -12,7 +12,7 @@ function capture() {
 
 describe('parseCli', () => {
   it('parses each command', () => {
-    for (const command of COMMANDS) {
+    for (const command of COMMANDS.filter((command) => command !== 'login')) {
       expect(parseCli([command])).toMatchObject({ kind: 'command', command });
     }
   });
@@ -21,7 +21,7 @@ describe('parseCli', () => {
     expect(parseCli(['run', '--dry-run', '--budget', '40', '--only', 'T3', '--baseline', '--config', 'x/tally.yaml', '--dashboard', '--port', '0'])).toEqual({
       kind: 'command',
       command: 'run',
-      options: { config: 'x/tally.yaml', dryRun: true, baseline: true, budgetUsd: 40, only: 'T3', dashboard: true, port: 0, plan: false },
+      options: { config: 'x/tally.yaml', dryRun: true, baseline: true, budgetUsd: 40, only: 'T3', dashboard: true, port: 0, plan: false, loginTarget: undefined },
     });
   });
 
@@ -29,8 +29,17 @@ describe('parseCli', () => {
     expect(parseCli(['run'])).toEqual({
       kind: 'command',
       command: 'run',
-      options: { config: 'tally.yaml', dryRun: false, baseline: false, budgetUsd: undefined, only: undefined, dashboard: false, port: undefined, plan: false },
+      options: { config: 'tally.yaml', dryRun: false, baseline: false, budgetUsd: undefined, only: undefined, dashboard: false, port: undefined, plan: false, loginTarget: undefined },
     });
+  });
+
+  it('parses the cfo.ai login command', () => {
+    expect(parseCli(['login', 'cfoai'])).toEqual({
+      kind: 'command',
+      command: 'login',
+      options: { config: 'tally.yaml', dryRun: false, baseline: false, budgetUsd: undefined, only: undefined, dashboard: false, port: undefined, plan: false, loginTarget: 'cfoai' },
+    });
+    expect(parseCli(['login'])).toMatchObject({ kind: 'error' });
   });
 
   it('parses --plan', () => {

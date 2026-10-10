@@ -222,10 +222,14 @@ function drawIntegrations(run) {
     ([key, name, job]) => {
       const { status, detail } = run.integrations[key];
       const note = detail ?? (status === 'off' ? INTEGRATION_OFF_NOTE[key] : job);
+      const linkedNote =
+        key === 'cfoai' && status !== 'off' && typeof note === 'string' && /^https?:\/\//.test(note)
+          ? `<a href="${esc(note)}" target="_blank" rel="noreferrer">Open budget table</a>`
+          : esc(note);
       return `<div class="int int-${esc(status)}">
         <span class="box" aria-hidden="true"></span>
         <p><b>${name}</b> <span class="state">${INTEGRATION_WORD[status] ?? esc(status)}</span>
-        <span class="detail">${esc(note)}</span></p></div>`;
+        <span class="detail">${linkedNote}</span></p></div>`;
     },
   );
   draw('integrations', items.join(''));

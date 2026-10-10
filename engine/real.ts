@@ -1,4 +1,4 @@
-import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
@@ -16,13 +16,14 @@ import { routeTask } from '../agent/router.js';
 import { sizeTask } from '../agent/sizer.js';
 import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
+import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
 import { FilePriceHistory } from '../adapters/history-file.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { CommandVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
-import type { AttemptResult, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
+import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
 import { type BacklogTask } from './backlog.js';
 import { loadConfig } from './config.js';
 import { writeRunFiles } from './output.js';
@@ -52,6 +53,13 @@ export interface WorkerPort {
   wait(sessionId: string): Promise<WorkerResult>;
 }
 
+export interface CfoaiBudgetPort extends BudgetPort {
+  budgetLimitNanos(): Promise<number>;
+  writeCumulativeActualSpend(runSpendNanos: number): Promise<void>;
+  status(): IntegrationState;
+  tableUrl?(): string | undefined;
+}
+
 export interface RealRunPorts {
   intake: BacklogIntakePort;
   signals: SizingSignalsPort;
@@ -62,6 +70,7 @@ export interface RealRunPorts {
   history: PriceHistoryPort & PriceHistoryWriterPort;
   handoff?: HandoffPort;
   trace?: TracePort;
+  cfoai?: CfoaiBudgetPort;
 }
 
 export interface RealRunOptions extends RunOptions {
@@ -93,6 +102,7 @@ function defaultPorts(config: TallyConfig, configPath: string): RealRunPorts {
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
   const trace = config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
+  const cfoai = config.integrations.cfoai || config.budget.source === 'cfoai' ? new CfoaiBudgetAdapter({ config: config.budget.cfoai }) : undefined;
   return {
     intake: new ConfigBacklogIntake(),
     signals: config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals,
@@ -102,6 +112,7 @@ function defaultPorts(config: TallyConfig, configPath: string): RealRunPorts {
     sessions: ao,
     history: new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') }),
     ...(trace ? { trace } : {}),
+    ...(cfoai ? { cfoai } : {}),
   };
 }
 
@@ -141,7 +152,7 @@ function integrationStates(config: TallyConfig, ports: RealRunPorts): RunState['
           detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.',
         })
       : { status: 'off', detail: null },
-    cfoai: config.integrations.cfoai ? { status: 'missing', detail: 'CSV fallback not implemented yet.' } : { status: 'off', detail: null },
+    cfoai: config.integrations.cfoai ? (ports.cfoai?.status() ?? { status: 'missing', detail: CFOAI_FIX_COMMAND }) : { status: 'off', detail: null },
     github:
       config.backlog.source === 'github-issues'
         ? { status: 'ok', detail: null }
@@ -199,6 +210,40 @@ function loadLedger(path: string): Ledger {
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
   if (!Array.isArray(parsed)) return [];
   return parsed as Ledger;
+}
+
+function ledgerSpend(ledger: Ledger): number {
+  return ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0);
+}
+
+function csv(value: string | number | null): string {
+  const text = value === null ? '' : String(value);
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function appendCfoaiFallback(outputDir: string, row: LedgerRow, cumulativeRunSpendNanos: number): void {
+  mkdirSync(outputDir, { recursive: true });
+  const path = resolve(outputDir, 'cfoai-spend-fallback.csv');
+  if (!existsSync(path)) {
+    appendFileSync(path, 'run_id,attempt_id,task_id,attempt,tier,model,cost_usd,cumulative_run_spend_usd,cost_source,ended_at\n');
+  }
+  appendFileSync(
+    path,
+    [
+      row.runId,
+      row.attemptId,
+      row.taskId,
+      row.attempt,
+      row.tier,
+      row.model,
+      row.estimatedCostNanos / 1_000_000_000,
+      cumulativeRunSpendNanos / 1_000_000_000,
+      row.costSource,
+      row.endedAt,
+    ]
+      .map(csv)
+      .join(',') + '\n',
+  );
 }
 
 function isTaskDone(rows: LedgerRow[]): boolean {
@@ -332,7 +377,28 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const outputDir = options.outputDir ? resolve(options.outputDir) : defaultOutputDir(runId);
   const ledgerPath = resolve(outputDir, 'ledger.json');
   const ledger = loadLedger(ledgerPath);
-  const budget = new LedgerBudget(usdToNanos(options.budgetUsd ?? config.budget.usd), ledger);
+  let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
+  let budgetSource: BudgetSource = 'config';
+  if (!options.dryRun && options.budgetUsd === undefined && config.budget.source === 'cfoai' && ports.cfoai) {
+    try {
+      budgetLimitNanos = await ports.cfoai.budgetLimitNanos();
+      budgetSource = 'cfoai';
+    } catch {
+      budgetSource = 'config';
+    }
+  }
+  const budget = new LedgerBudget(budgetLimitNanos, ledger);
+  const recordSpend = async (row: LedgerRow) => {
+    if (options.dryRun) return;
+    const cumulative = ledgerSpend(ledger);
+    appendCfoaiFallback(outputDir, row, cumulative);
+    if (!config.integrations.cfoai || !ports.cfoai) return;
+    try {
+      await ports.cfoai.writeCumulativeActualSpend(cumulative);
+    } catch {
+      // CSV fallback has already preserved the attempted spend for a later sync.
+    }
+  };
   const tasks = (await ports.intake.tasks(config, options.configPath)).filter((task) => {
     if (options.only === undefined) return true;
     return task.taskId === options.only || String(task.issueNumber) === options.only;
@@ -352,9 +418,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       updatedAt,
       endedAt,
       budget: {
-        source: config.budget.source,
-        limitNanos: usdToNanos(options.budgetUsd ?? config.budget.usd),
-        spentNanos: ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
+        source: budgetSource,
+        limitNanos: budgetLimitNanos,
+        spentNanos: ledgerSpend(ledger),
       },
       tasks: taskStates,
       integrations: integrationStates(config, ports),
@@ -408,6 +474,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         });
         ledger.push(latest);
         await ports.history.record({ size: latest.size, tier: latest.tier, result: latest.result, costNanos: latest.estimatedCostNanos });
+        await recordSpend(latest);
       } else {
         interrupted.resultReason = escalation.statusReason;
       }
@@ -447,6 +514,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     });
     ledger.push(first);
     await ports.history.record({ size: first.size, tier: first.tier, result: first.result, costNanos: first.estimatedCostNanos });
+    await recordSpend(first);
     let latest = first;
     if (first.result !== 'passed') {
       const escalation = await decideEscalation({
@@ -481,6 +549,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         });
         ledger.push(latest);
         await ports.history.record({ size: latest.size, tier: latest.tier, result: latest.result, costNanos: latest.estimatedCostNanos });
+        await recordSpend(latest);
       } else {
         latest.resultReason = escalation.statusReason;
       }
