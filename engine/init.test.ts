@@ -220,6 +220,6 @@ describe('runInit', () => {
     expect(setConfig?.args).toContain(JSON.stringify({ postCreate: ['make setup'] }));
     expect(result.doctor[0]).toMatchObject({ product: 'AO daemon', status: 'connected' });
     expect(JSON.parse(readFileSync(installRecordPath(result.configPath), 'utf8'))).toMatchObject({ projectCreated: true, addedSetupCommand: 'make setup', version: 1 });
-    await expect(runInit({ cwd: repo, command, readLine: async () => { throw new Error('must not prompt'); } })).rejects.toThrow('will not overwrite');
+    expect((await runInit({ cwd: repo, command, yes: true, print: () => {} })).applied).toBe(false);
   });
 });
