@@ -1,0 +1,98 @@
+# Draft backlog for https://github.com/Vaibhaav-Tiwari/fly-doom-jev.
+# Do not file these as issues until the user approves them. The checks below
+# are based on a scratch clone at f99b54c, where `make test` passed.
+version: 1
+kind: tally-draft-backlog
+
+repo:
+  slug: Vaibhaav-Tiwari/fly-doom-jev
+  baseBranch: main
+  observedCommit: f99b54c
+
+test:
+  setupCommand: make setup
+  command: make test
+  notes: Fresh clone test result from lane A was 90 passed in 7.53s.
+
+tasks:
+  - id: FDJ-1
+    title: Add replay loader coverage for malformed recording files
+    size: small
+    label: tally
+    body: |
+      The replay loader already rejects a recording with no header, but it does
+      not have focused coverage for malformed JSONL rows or frame metadata with
+      a missing pattern. Add defensive tests and the smallest loader changes
+      needed so a bad recording reports a clear exception instead of failing
+      later in the API.
+    passCheck: .venv/bin/python -m pytest tests/unit/test_recording.py -q
+
+  - id: FDJ-2
+    title: Include goal fields in encoded state tests
+    size: small
+    label: tally
+    body: |
+      `EnvironmentState` has a `goal` field for E1M1 strategy, but the unit
+      tests only assert the older threat and serialization fields. Add coverage
+      proving that a goal dict can be attached, serialized, and omitted for
+      ordinary arena observations without breaking the existing schema version.
+    passCheck: .venv/bin/python -m pytest tests/unit/test_state_encoder.py -q
+
+  - id: FDJ-3
+    title: Test POST /new rejects unknown live scenarios
+    size: small
+    label: tally
+    body: |
+      The live API validates scenario names in `request_new_episode`, but there
+      is no direct API-level test for a bad `POST /new` body. Add a small test
+      around the FastAPI route or the loop method so an unknown scenario returns
+      a clear error and leaves the current scenario unchanged.
+    passCheck: .venv/bin/python -m pytest tests/unit/test_jev_live.py -q
+
+  - id: FDJ-4
+    title: Preserve recording summary when both summary and episode_end rows exist
+    size: medium
+    label: tally
+    body: |
+      `load_recording` treats both `summary` and `episode_end` rows as the
+      recording summary. Make the behavior explicit and deterministic when a
+      file contains both rows, then add a regression test that documents which
+      one wins and why. Keep the public replay response shape unchanged.
+    passCheck: .venv/bin/python -m pytest tests/unit/test_recording.py tests/integration/test_closed_loop.py -q
+
+  - id: FDJ-5
+    title: Add action-weighting regression for missing MOVEMENT_INTENT metadata
+    size: medium
+    label: tally
+    body: |
+      `jev_action_weights` reads optional movement-intent probabilities from
+      decision metadata. Add coverage for decisions that have probabilities but
+      no `choice_probabilities` key, and make the implementation tolerate that
+      shape without changing the existing weighting semantics.
+    passCheck: .venv/bin/python -m pytest tests/unit/test_weighting.py tests/unit/test_jev.py -q
+
+  - id: FDJ-6
+    title: Make plasticity checkpoint errors actionable
+    size: medium
+    label: tally
+    body: |
+      A corrupt or incompatible plasticity checkpoint should fail with a message
+      that names the checkpoint path and provenance mismatch instead of a raw
+      NumPy exception. Add tests for corrupt checkpoint data and mismatched
+      config hashes, then keep the fresh-start fallback for ordinary provenance
+      mismatch.
+    passCheck: .venv/bin/python -m pytest tests/unit/test_plasticity.py -q
+
+  - id: FDJ-7
+    title: Add deterministic featured-recording generation for the static showcase
+    size: medium
+    difficultyNote: looks medium but is hard
+    label: tally
+    body: |
+      The project now serves a static GitHub Pages showcase from curated
+      recordings. Add a deterministic packaging path that writes `featured.json`
+      in a stable order, verifies every referenced recording and frame exists,
+      and fails loudly when a curated bundle is incomplete. This looks medium
+      because it is packaging code, but it crosses replay metadata, static
+      assets, and CLI behavior.
+    passCheck: .venv/bin/python -m pytest tests/unit/test_recording.py tests/unit/test_hf_export.py -q

@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { COMMANDS, main, parseCli } from './main.js';
 
@@ -64,11 +67,53 @@ describe('main', () => {
     expect(c.err.join('\n')).toContain('deploy');
   });
 
-  it('runs each stub command and says it is not implemented yet', async () => {
-    for (const command of COMMANDS) {
+  it('runs the commands that are still stubs and says they are not implemented yet', async () => {
+    for (const command of ['init', 'doctor'] as const) {
       const c = capture();
       expect(await main([command], c.io)).toBe(0);
       expect(c.out.join('\n')).toContain('not implemented yet');
     }
+  });
+
+  it('requires --dry-run for run until real workers are implemented', async () => {
+    const c = capture();
+    expect(await main(['run'], c.io)).toBe(2);
+    expect(c.err.join('\n')).toContain('--dry-run');
+  });
+
+  it('runs demo and reports the generated files', async () => {
+    const c = capture();
+    expect(await main(['demo'], c.io)).toBe(0);
+    expect(c.out.join('\n')).toContain('ledger.json');
+    expect(c.out.join('\n')).toContain('attempts');
+  });
+
+  it('runs a dry-run from a file backlog', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-cli-'));
+    const configPath = join(dir, 'tally.yaml');
+    writeFileSync(
+      configPath,
+      `version: 1
+repo: { path: ".", baseBranch: "main" }
+test: { command: "npm test" }
+backlog: { source: "file", file: "backlog.yaml" }
+tiers:
+  - name: cheap
+    harness: claude-code
+    provider: litellm
+    model: nova-micro
+    price: { inputUsdPerMTok: 0.035, cachedInputUsdPerMTok: 0.00875, outputUsdPerMTok: 0.14 }
+    ceilingFraction: 1
+ceilings:
+  bySizeUsd: { small: 1, medium: 2, large: 3 }
+budget: { source: config, usd: 10 }
+integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
+`,
+    );
+    writeFileSync(join(dir, 'backlog.yaml'), 'tasks:\n  - id: T1\n    title: Tiny fix\n    size: small\n');
+    const c = capture();
+
+    expect(await main(['run', '--dry-run', '--config', configPath], c.io)).toBe(0);
+    expect(c.out.join('\n')).toContain('1 tasks, 1 attempts');
   });
 });
