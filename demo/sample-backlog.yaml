@@ -2,6 +2,9 @@
 # This file is intentionally self-contained: `tally demo` can replay the
 # scripted outcomes below without GitHub, Agent Orchestrator, neatlogs, Entire,
 # cfo.ai, or API keys.
+# Current routed story: T1-T4 pass on cheap, T5 stops on cheap then passes on
+# middle, T6 fails on cheap then passes on middle, and T7 fails on top. That is
+# 7 tasks and 9 paid attempts.
 version: 1
 kind: tally-demo-backlog
 
@@ -27,7 +30,7 @@ tasks:
     outcomes: [passed]
     scriptedOutcome:
       route: cheap
-      decision: Small arithmetic fix with a focused unit test, so the cheap tier should finish it inside the small ceiling.
+      decision: No usable history exists for cheap on small, so the prior and cost rule start this focused one-file task on cheap.
       attempts:
         - tier: cheap
           result: passed
@@ -45,7 +48,7 @@ tasks:
     outcomes: [passed]
     scriptedOutcome:
       route: cheap
-      decision: Template-only change with existing coverage, so the cheapest model is the right first attempt.
+      decision: History has only one cheap small attempt, so the prior still sends this template-only change to cheap.
       attempts:
         - tier: cheap
           result: passed
@@ -63,7 +66,7 @@ tasks:
     outcomes: [passed]
     scriptedOutcome:
       route: cheap
-      decision: The affected code path is narrow and the test names the exact idempotency case, so start cheap.
+      decision: Small tasks with tests have enough cheap success history now, so this narrow idempotency fix starts on cheap.
       attempts:
         - tier: cheap
           result: passed
@@ -81,7 +84,7 @@ tasks:
     outcomes: [passed]
     scriptedOutcome:
       route: cheap
-      decision: Observed history says medium export tasks have been cheap enough to try on the cheap tier first.
+      decision: No usable medium history exists yet, but the prior expected-cost rule makes a capped cheap attempt worth trying.
       attempts:
         - tier: cheap
           result: passed
@@ -99,7 +102,7 @@ tasks:
     outcomes: [stopped, passed]
     scriptedOutcome:
       route: cheap
-      decision: History makes this look cheap enough for a capped cheap attempt before escalating.
+      decision: History has only one medium cheap attempt, so the prior expected-cost rule still starts this on cheap.
       attempts:
         - tier: cheap
           result: stopped
@@ -108,7 +111,7 @@ tasks:
         - tier: middle
           result: passed
           handoff: entire-handoff
-          decision: The cheap attempt hit its ceiling; continue the same branch on the middle tier with the Entire handoff.
+          decision: Cheap stopped at its ceiling, so continue the same branch on middle with the Entire handoff.
           tokens: { uncachedInput: 43800, cachedInput: 12100, output: 2180 }
 
   - id: T6
@@ -123,7 +126,7 @@ tasks:
     outcomes: [failed, passed]
     scriptedOutcome:
       route: cheap
-      decision: Recent history says refund work can start cheap, but the ceiling should catch hidden state-machine risk.
+      decision: Medium cheap history now passes the expected-cost rule, so start cheap and let escalation catch hidden state risk.
       attempts:
         - tier: cheap
           result: failed
@@ -132,7 +135,7 @@ tasks:
         - tier: middle
           result: passed
           handoff: entire-handoff
-          decision: The failing cheap attempt exposed a hidden state-machine edge; continue with the middle tier and the failure context.
+          decision: Cheap failed its tests, so continue on middle with the failure context and Entire handoff.
           tokens: { uncachedInput: 52600, cachedInput: 13400, output: 2860 }
 
   - id: T7

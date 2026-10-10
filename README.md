@@ -10,19 +10,36 @@ seven-task simulated demo backlog, and `tally run --dry-run` writes run state
 plus a ledger from a file-backed backlog. The real AO worker path is wired and
 ready for a gated one-task smoke run.
 
-## Setup
+## Quickstart
 
 Needs Node 20 or later.
 
 ```bash
 npm install
-npm test          # unit tests
-npm run build     # compile to dist/
-node bin/tally.js --help
+npm run build
+npm run tally -- demo --dashboard
+npm run tally -- demo --live --dashboard
+npm run tally -- dashboard
+npm run tally -- doctor --config demo/tally.yaml
+npm run tally -- run --dry-run --plan --config demo/tally.yaml
+npm run tally -- login cfoai
+npm run tally -- market --limit 5
 ```
 
-During development, `npm run tally -- <command>` runs the CLI from source. After
-`npm run build`, `node bin/tally.js <command>` runs the compiled package entry.
+The first two commands install and compile Tally. The remaining commands show
+the full fake-worker demo, the read-only live-integration demo, the standalone
+dashboard, integration checks, a dry-run plan, cfo.ai login, and the CrustData
+market search. Run them one at a time; dashboard commands keep serving until
+you stop them. Commands that call external services report the missing login or
+API key instead of printing secrets. During development, `npm run tally --
+<command>` runs the CLI from source. After `npm run build`,
+`node bin/tally.js <command>` runs the compiled package entry.
+
+For routine validation, run:
+
+```bash
+npm test
+```
 
 ## Commands
 
