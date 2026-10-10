@@ -739,6 +739,12 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         source: budgetSource,
         limitSource: options.budgetUsd === undefined ? budgetSource : 'cli',
         systemOfRecord: config.integrations.cfoai && ports.cfoai ? 'cfoai' : 'ledger',
+        ...((config.budget.source === 'cfoai' || config.integrations.cfoai) && config.budget.cfoai
+          ? { cfoai: {
+            ...(config.budget.cfoai.pageUrl ? { pageUrl: config.budget.cfoai.pageUrl } : {}),
+            ...(config.budget.cfoai.tableUrl ? { tableUrl: config.budget.cfoai.tableUrl } : {}),
+          } }
+          : {}),
         limitNanos: budgetLimitNanos,
         spentNanos: ledgerSpend(ledger),
       },
