@@ -134,6 +134,7 @@ body.unread .sheet > section, body.unread .run, body.unread .foot { display: non
 .comparison { min-width: 760px; }
 .comparison td { border-top: 1px solid var(--rule-soft); }
 .comparison tbody tr:first-child td { border-top: 0; }
+.comparison-scope { margin: 8px 0 10px; max-width: 100ch; color: var(--ink-2); font-size: 15px; font-style: italic; }
 .spread-mid { display: block; font: italic 400 13px/1.35 var(--serif); color: var(--ink-2); }
 
 .budget-figs { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 12px; font-size: 17px; }

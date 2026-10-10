@@ -91,9 +91,10 @@ async function readRun(folder) {
 }
 
 async function readRunState(folder) {
-  const run = await readJson(`${folder}run.json`);
+  const [run, ledger] = await Promise.all([readJson(`${folder}run.json`), readJson(`${folder}ledger.json`)]);
   if (!run || !Array.isArray(run.tasks) || !run.budget) throw new Error('run.json is not a Tally run');
-  return run;
+  if (!Array.isArray(ledger)) throw new Error('ledger.json is not a list of attempts');
+  return { run, ledger: ledger.filter((row) => row.runId === run.runId || !row.runId) };
 }
 
 function runOptionFrom(value) {
@@ -133,10 +134,46 @@ const passedCount = (run) => run.tasks.filter((task) => task.status === 'passed'
 const perMergedPr = (run) => (passedCount(run) > 0 ? run.budget.spentNanos / passedCount(run) : null);
 const passRate = (run) => (run.tasks.length > 0 ? passedCount(run) / run.tasks.length : 0);
 
-function runSummary(run) {
+const sampleRepos = new Set(['acme/payments-service', 'demo/invoice-ledger']);
+const nonRealCostSources = new Set(['simulated', 'ao-estimate']);
+
+function explicitRunKind(run) {
+  const raw = run.dataKind ?? run.runKind ?? run.kind ?? run.costKind ?? run.sourceKind;
+  if (typeof raw !== 'string') return null;
+  const kind = raw.toLowerCase();
+  if (['real', 'real-run', 'live'].includes(kind)) return 'real';
+  if (['simulated', 'simulation', 'dry-run', 'dryrun'].includes(kind)) return 'simulated';
+  if (['sample', 'fixture', 'demo', 'replay'].includes(kind)) return kind;
+  return null;
+}
+
+function taskIdsKey(run) {
+  return run.tasks.map((task) => task.taskId).sort().join('|');
+}
+
+function costKind(run, ledger, source = {}) {
+  const explicit = explicitRunKind(run);
+  if (source.sample || explicit === 'sample' || explicit === 'fixture' || sampleRepos.has(run.repo)) return 'sample';
+  if (source.replaying || explicit === 'replay') return 'replay';
+  if (run.dryRun || explicit === 'simulated') return 'simulated';
+  if (explicit === 'real') return 'real';
+  return ledger.length > 0 && ledger.every((row) => row.costSource && !nonRealCostSources.has(row.costSource)) ? 'real' : 'simulated';
+}
+
+function comparableKey(run, ledger, source = {}) {
+  return `${run.repo ?? ''}::${taskIdsKey(run)}::${costKind(run, ledger, source)}`;
+}
+
+function runSummary(state, source = {}) {
+  const run = state.run ?? state;
+  const ledger = state.ledger ?? [];
   return {
     runId: run.runId,
     mode: run.mode,
+    repo: run.repo,
+    taskIds: taskIdsKey(run),
+    kind: costKind(run, ledger, source),
+    key: comparableKey(run, ledger, source),
     passed: passedCount(run),
     total: run.tasks.length,
     passRate: passRate(run),
@@ -212,18 +249,19 @@ function sourceLabel(source) {
   return activeData.includes('/latest/') || activeData.endsWith('/latest/') ? `Reading latest run files from ${activeData}` : `Reading run files from ${activeData}`;
 }
 
-function dataKind(run, source) {
-  if (source.sample) return 'sample data';
-  if (source.replaying) return 'replay data';
-  if (run.dryRun) return 'simulated dry run';
-  return 'real run';
+function dataKind(run, ledger, source) {
+  const kind = costKind(run, ledger, source);
+  if (kind === 'real') return 'real run';
+  if (kind === 'sample') return 'sample or fixture data';
+  if (kind === 'replay') return 'replay data';
+  return run.dryRun ? 'simulated dry run' : 'simulated data';
 }
 
-function drawDataSource(run, source) {
-  draw('data-source', `<span class="data-label">${esc(dataKind(run, source))}</span> Data source: <span class="fig">${esc(sourceLabel(source))}</span>`);
+function drawDataSource(run, ledger, source) {
+  draw('data-source', `<span class="data-label">${esc(dataKind(run, ledger, source))}</span> Data source: <span class="fig">${esc(sourceLabel(source))}</span>`);
 }
 
-function drawRunPicker(source) {
+function drawRunPicker(run, source) {
   const node = document.getElementById('run-picker');
   node.hidden = false;
   if (source.sample) {
@@ -242,18 +280,34 @@ function drawRunPicker(source) {
     draw('run-picker', '<p class="picker-note">Run picker found no recorded runs yet.</p>');
     return;
   }
+  const normalize = (path) => {
+    try {
+      return asFolder(new URL(path, location.href).pathname);
+    } catch {
+      return asFolder(path);
+    }
+  };
+  const activePath = normalize(activeData);
+  const displayed = runs.find((item) => item.id === run.runId || normalize(item.path) === activePath);
+  const displayedInIndex = Boolean(displayed);
   const options = runs
     .map((run) => {
       const meta = [run.status, run.mode, run.updatedAt ? new Date(run.updatedAt).toLocaleString() : null].filter(Boolean).join(' - ');
       const label = `${run.label}${meta ? ` - ${meta}` : ''}`;
-      return `<option value="${esc(run.path)}" ${asFolder(run.path) === activeData ? 'selected' : ''}>${esc(label)}</option>`;
+      return `<option value="${esc(run.path)}" ${displayed?.path === run.path ? 'selected' : ''}>${esc(label)}</option>`;
     })
     .join('');
+  const missingOption = displayedInIndex
+    ? ''
+    : `<option value="${esc(activeData)}" selected>${esc(run.runId)} - displayed run is not in ${esc(config.runsIndex)}</option>`;
+  const note = displayedInIndex
+    ? `${runs.length} ${runs.length === 1 ? 'run' : 'runs'} indexed from <span class="fig">${esc(config.runsIndex)}</span>`
+    : `Showing <span class="fig">${esc(run.runId)}</span> from <span class="fig">${esc(activeData)}</span>; it is not listed in <span class="fig">${esc(config.runsIndex)}</span>.`;
   draw(
     'run-picker',
     `<label for="run-select">Recorded run</label>
-     <select id="run-select">${options}</select>
-     <span class="picker-note">${runs.length} ${runs.length === 1 ? 'run' : 'runs'} indexed from <span class="fig">${esc(config.runsIndex)}</span></span>`,
+     <select id="run-select">${missingOption}${options}</select>
+     <span class="picker-note">${note}</span>`,
   );
   const select = document.getElementById('run-select');
   if (select && !select.__tallyBound) {
@@ -312,25 +366,38 @@ function drawComparison(run, source) {
   const node = document.getElementById('comparison-section');
   const baseline = source.baseline?.run ?? null;
   const repeatRuns = source.comparisonRuns ?? [];
+  const current = runSummary({ run, ledger: source.ledger ?? [] }, source);
+  const compatible = repeatRuns.filter((item) => item.key === current.key);
+  const tallyRepeats = compatible.filter((item) => item.mode === 'tally');
+  const baselineRepeats = compatible.filter((item) => item.mode === 'baseline');
   if (!baseline && repeatRuns.length === 0) {
     node.hidden = true;
     draw('comparison', '');
     return;
   }
   node.hidden = false;
-  const rows = [runSummary(run), baseline ? runSummary(baseline) : null].filter(Boolean);
-  const repeatGroups = ['tally', 'baseline']
+  const rows = [current, baseline ? runSummary(source.baseline) : null].filter(Boolean);
+  const repeatGroups = [
+    ['tally', tallyRepeats],
+    ['baseline', baselineRepeats],
+  ]
     .map((mode) => {
-      const group = repeatRuns.filter((item) => item.mode === mode);
+      const group = mode[1];
       if (group.length === 0) return '';
+      const modeName = mode[0];
+      const runList = group.map((item) => item.runId).join(', ');
       return `<tr>
-        <td>${mode === 'baseline' ? 'Baseline repeats' : 'Tally repeats'}<span class="l-note">${group.length} ${group.length === 1 ? 'run' : 'runs'}</span></td>
+        <td>${modeName === 'baseline' ? 'Baseline repeats' : 'Tally repeats'}<span class="l-note">${group.length} ${group.length === 1 ? 'run' : 'runs'}: ${esc(runList)}</span></td>
         <td class="num fig">${spread(group.map((item) => item.perMerged), usd)}</td>
         <td class="num fig">${spread(group.map((item) => item.passRate), pct)}</td>
         <td class="num fig">${spread(group.map((item) => item.totalCost), usd)}</td>
       </tr>`;
     })
     .join('');
+  const comparedRuns = compatible.map((item) => item.runId).join(', ');
+  const scope = `<p class="comparison-scope">Compared only <span class="fig">${esc(current.repo)}</span> runs with task ids <span class="fig">${esc(current.taskIds.replaceAll('|', ', '))}</span> and kind <span class="fig">${esc(current.kind)}</span>.${
+    comparedRuns ? ` Runs in this set: <span class="fig">${esc(comparedRuns)}</span>.` : ''
+  } ${baselineRepeats.length === 0 ? 'No comparable baseline yet.' : ''}</p>`;
   const body = rows
     .map(
       (item) => `<tr>
@@ -343,7 +410,7 @@ function drawComparison(run, source) {
     .join('');
   draw(
     'comparison',
-    `<div class="scroll"><table class="comparison">
+    `${scope}<div class="scroll"><table class="comparison">
       <thead><tr><th>Run set</th><th class="num">Cost per merged PR</th><th class="num">Pass rate</th><th class="num">Total cost</th></tr></thead>
       <tbody>${body}${repeatGroups}</tbody>
     </table></div>`,
@@ -632,10 +699,16 @@ function drawFoot(source) {
 
 function drawAll(state, source) {
   state = withLiveCosts(state, { liveCeilingSec: config.liveCeilingSec });
+  source = { ...source, ledger: state.ledger };
+  const currentKey = comparableKey(state.run, state.ledger, source);
+  const baselineKey = source.baseline ? comparableKey(source.baseline.run, source.baseline.ledger ?? []) : null;
+  if (source.baseline && baselineKey !== currentKey) {
+    source = { ...source, baseline: null, baselineIgnored: source.baseline.run.runId };
+  }
   drawRun(state.run);
   drawNotice(state.run, source);
-  drawDataSource(state.run, source);
-  drawRunPicker(source);
+  drawDataSource(state.run, state.ledger, source);
+  drawRunPicker(state.run, source);
   drawHeadline(state.run, source.baseline);
   drawBudget(state.run, state.ledger);
   drawComparison(state.run, source);
