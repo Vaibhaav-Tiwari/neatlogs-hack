@@ -13,6 +13,10 @@ function liveCost(row, nowMs, liveCeilingSec) {
 }
 
 export function withLiveCosts(state, options = {}) {
+  if (options.replay) return {
+    ...state,
+    ledger: state.ledger.map(row => ({ ...row, displayCostNanos: row.estimatedCostNanos ?? 0, displayIsLiveEstimate: false, displayIsReplay: true })),
+  };
   if (state.run.status !== 'running') return state;
   const nowMs = options.nowMs ?? Date.now();
   const liveCeilingSec = options.liveCeilingSec ?? 180;
