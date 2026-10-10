@@ -160,11 +160,11 @@ export interface ExperimentOptions {
   ports?: Partial<RealRunPorts>;
 }
 export async function runExperiment(options: ExperimentOptions): Promise<{ summary: ExperimentSummary; summaryPath: string }> {
+  if (!options.dryRun) throw new RunError(['real experiments are parked; use --dry-run until real execution is explicitly enabled']);
   const repeats = options.repeats ?? 2;
   if (!Number.isInteger(repeats) || repeats < 1) throw new RunError(['--repeats must be a positive integer']);
   const configPath = resolve(options.configPath);
   const config = loadConfig(configPath);
-  if (!options.dryRun && options.budgetUsd === undefined) throw new RunError(['real experiments require an explicit --budget aggregate safety cap']);
   if (!options.dryRun && !config.test.timeoutSec) throw new RunError(['real experiments require test.timeoutSec for a bounded wall-clock wait']);
   const repoPath = resolve(dirname(configPath), config.repo.path);
   let baseCommit = options.baseCommit;

@@ -101,7 +101,7 @@ describe('experiment', () => {
     expect(observed).toBe(true);
   }, 5000);
 
-  it('requires an explicit real budget before any worker is started', async () => {
-    await expect(runExperiment({ configPath, dryRun: false })).rejects.toThrow('explicit --budget');
+  it('gates real execution before reading configuration or spawning', async () => {
+    await expect(runExperiment({ configPath: '/missing', dryRun: false, budgetUsd: 10 })).rejects.toThrow('real experiments are parked');
   });
 });
