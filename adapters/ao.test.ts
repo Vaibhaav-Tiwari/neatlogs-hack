@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { AoCliAdapter, type CommandRunner, usageFromAoPayload } from './ao.js';
 
 describe('usageFromAoPayload', () => {
+  it('does not kill twice when adapter and engine both close the session', async () => {
+    let kills = 0;
+    const adapter = new AoCliAdapter({ command: async () => { kills += 1; return { stdout: '', stderr: '' }; } });
+    await adapter.stop('worker', 'input stalled');
+    await adapter.stop('worker', 'attempt finished');
+    expect(kills).toBe(1);
+  });
   it('maps AO usage totals into the shared live usage shape', () => {
     expect(
       usageFromAoPayload({

@@ -308,6 +308,22 @@ describe('runRealTally', () => {
     expect(worker.starts).toHaveLength(1);
     expect(worker.starts[0]?.prompt).toContain('If a check outside your task fails, report it; do not fix it.');
   });
+  it.each(['passed', 'verification-error', 'publish-error', 'needs-input'] as const)('closes the worker on %s and records usage after closure', async (scenario) => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const settled = { uncachedInput: 1200, cachedInput: 2000, output: 400, total: 3600 };
+    worker.settledUsageFor = async () => ({ tokens: worker.stopped.length ? settled : tokens, estimatedCostNanos: 123 });
+    if (scenario === 'publish-error') worker.publishPr = async () => { throw new Error('push refused'); };
+    if (scenario === 'needs-input') worker.wait = async () => ({ status: 'needs_input', checkoutPath: '/tmp/worker', branch: 'task', prUrl: null, resultReason: 'worker asked for input' });
+    const verifier: VerifierPort = { verify: async () => {
+      if (scenario === 'verification-error') throw new Error('verifier unavailable');
+      return { passed: true, reason: null };
+    } };
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier, publisher: worker, usage: worker, sessions: worker } });
+    expect(worker.stopped).toEqual(worker.starts.map((_, i) => `session-${i + 1}`));
+    expect(result.ledger.every((row) => row.tokens.total === settled.total)).toBe(true);
+  });
   it('sizes, routes, spawns, verifies, escalates once and writes valid output', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();

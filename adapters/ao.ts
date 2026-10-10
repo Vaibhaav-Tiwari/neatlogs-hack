@@ -110,6 +110,7 @@ export function usageFromAoPayload(payload: unknown): LiveUsage | null {
 }
 
 export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPort {
+  private readonly stoppedSessions = new Set<string>();
   private readonly command: CommandRunner;
   private readonly fetchImpl: typeof fetch;
   private readonly usageBaseUrl: string;
@@ -225,7 +226,9 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
   }
 
   async stop(sessionId: string, _reason: string): Promise<void> {
+    if (this.stoppedSessions.has(sessionId)) return;
     await this.command('ao', ['session', 'kill', sessionId], { cwd: this.options.cwd });
+    this.stoppedSessions.add(sessionId);
   }
 
   private async session(sessionId: string): Promise<AoSessionJson> {
