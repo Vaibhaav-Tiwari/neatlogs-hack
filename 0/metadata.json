@@ -1,0 +1,58 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KPCWHF0NVDR8495NC70GAQ",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T19:59:49.430261Z",
+  "branch": "ao/neatlogs-hack-5/stopped-session-evidence",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/entire-checkpoints.test.ts",
+    "adapters/entire-checkpoints.ts",
+    "agent/ports.ts",
+    "engine/real.test.ts",
+    "engine/real.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "3c071198e405",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 2991204,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 123783296,
+    "output_tokens": 362074,
+    "api_call_count": 933
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T19:59:49.140486Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 10,
+    "total_committed": 0,
+    "total_lines_changed": 10,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 122,
+      "user_lines_removed": 10,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "adapters/entire-checkpoints.test.ts": 22,
+        "adapters/entire-checkpoints.ts": 20,
+        "agent/ports.ts": 2,
+        "engine/real.test.ts": 37,
+        "engine/real.ts": 41
+      },
+      "user_removed_per_file": {
+        "engine/real.ts": 10
+      }
+    }
+  ]
+}
