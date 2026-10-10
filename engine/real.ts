@@ -4,6 +4,7 @@ import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
 import type {
   BudgetPort,
+  CheckpointPort,
   HandoffPort,
   LiveUsagePort,
   PriceHistoryPort,
@@ -18,6 +19,7 @@ import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
 import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
+import { EntireCheckpointAdapter } from '../adapters/entire-checkpoints.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
 import { FilePriceHistory } from '../adapters/history-file.js';
 import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
@@ -79,6 +81,7 @@ export interface RealRunPorts {
   sessions: SessionControlPort;
   history: PriceHistoryPort & PriceHistoryWriterPort;
   handoff?: HandoffPort;
+  checkpoints?: CheckpointPort;
   trace?: TracePort;
   cfoai?: CfoaiBudgetPort;
   publisher: PublishPort;
@@ -124,6 +127,12 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     : config.integrations.cfoai || config.budget.source === 'cfoai'
       ? new CfoaiBudgetAdapter({ config: config.budget.cfoai })
       : undefined;
+  const entireCheckpoints =
+    config.integrations.entire && (!hasPort(overrides, 'handoff') || !hasPort(overrides, 'checkpoints'))
+      ? new EntireCheckpointAdapter({ repoPath })
+      : undefined;
+  const handoff = overrides.handoff ?? entireCheckpoints;
+  const checkpoints = overrides.checkpoints ?? entireCheckpoints;
   return {
     intake: overrides.intake ?? new ConfigBacklogIntake(),
     signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals),
@@ -133,7 +142,8 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     sessions: overrides.sessions ?? ao,
     history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
     publisher: overrides.publisher ?? new GitHubPublisher(),
-    ...(overrides.handoff ? { handoff: overrides.handoff } : {}),
+    ...(handoff ? { handoff } : {}),
+    ...(checkpoints ? { checkpoints } : {}),
     ...(trace ? { trace } : {}),
     ...(cfoai ? { cfoai } : {}),
   };
@@ -241,6 +251,10 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
 
 function zeroTokens(): TokenUsage {
   return { uncachedInput: 0, cachedInput: 0, output: 0, total: 0 };
+}
+
+function hasUsage(tokens: TokenUsage): boolean {
+  return tokens.total > 0 || tokens.uncachedInput > 0 || tokens.cachedInput > 0 || tokens.output > 0;
 }
 
 function statusFrom(result: AttemptResult): TaskState['status'] {
@@ -377,6 +391,8 @@ async function runAttempt(input: {
   let estimatedCostNanos = 0;
   let costSource: LedgerRow['costSource'] = 'list-price';
   let prUrl: string | null = null;
+  let checkpointId: string | null = null;
+  let checkpointUrl: string | null = null;
 
   if (first.kind === 'watch' && first.verdict.action === 'stop') {
     abort.abort();
@@ -442,6 +458,18 @@ async function runAttempt(input: {
       }
     }
   }
+  if (!input.dryRun && input.ports.checkpoints) {
+    const branch = workerResult?.branch ?? started.branch;
+    const checkoutPath = workerResult?.checkoutPath ?? started.checkoutPath;
+    try {
+      const checkpoint = await input.ports.checkpoints.checkpointFor({ sessionId: started.sessionId, branch, checkoutPath });
+      checkpointId = checkpoint?.checkpointId ?? null;
+      checkpointUrl = checkpoint?.checkpointUrl ?? null;
+    } catch {
+      checkpointId = null;
+      checkpointUrl = null;
+    }
+  }
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -467,11 +495,59 @@ async function runAttempt(input: {
     prUrl: input.dryRun ? null : prUrl,
     traceId: input.traceId,
     traceUrl: null,
-    checkpointId: null,
-    checkpointUrl: null,
+    checkpointId,
+    checkpointUrl,
     decision: input.decision,
     startedAt,
     endedAt: input.now().toISOString(),
+  };
+}
+
+function handoffSummaryLedgerRow(input: {
+  runId: string;
+  task: BacklogTask;
+  previous: LedgerRow;
+  decision: {
+    handoffSummaryCostNanos: number;
+    handoffSummaryCostSource: LedgerRow['costSource'];
+    handoffSummaryTokens: TokenUsage;
+    checkpointId: string | null;
+    checkpointUrl: string | null;
+  };
+  traceId: string | null;
+  now: () => Date;
+}): LedgerRow | null {
+  if (input.decision.handoffSummaryCostNanos <= 0 && !hasUsage(input.decision.handoffSummaryTokens)) return null;
+  const timestamp = input.now().toISOString();
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    attemptId: `${attemptId(input.runId, input.task.taskId, input.previous.attempt + 1)}:handoff`,
+    runId: input.runId,
+    taskId: `${input.task.taskId}:handoff`,
+    taskTitle: `${input.task.title} - Entire handoff summary`,
+    attempt: input.previous.attempt + 1,
+    size: input.previous.size,
+    tier: 'entire-handoff',
+    model: 'entire checkpoint explain',
+    harness: 'entire',
+    sessionId: input.previous.sessionId,
+    branch: input.previous.branch,
+    tokens: input.decision.handoffSummaryTokens,
+    estimatedCostNanos: input.decision.handoffSummaryCostNanos,
+    costSource: input.decision.handoffSummaryCostSource,
+    ceilingNanos: 0,
+    result: 'passed',
+    resultReason: 'Entire checkpoint summary generated for escalation',
+    escalatedFrom: input.previous.attemptId,
+    handoff: 'entire-handoff',
+    prUrl: null,
+    traceId: input.traceId,
+    traceUrl: null,
+    checkpointId: input.decision.checkpointId,
+    checkpointUrl: input.decision.checkpointUrl,
+    decision: `Entire generated a checkpoint handoff summary for ${input.task.taskId} before escalation.`,
+    startedAt: timestamp,
+    endedAt: timestamp,
   };
 }
 
@@ -566,6 +642,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           tier: interrupted.tier,
           result: interrupted.result,
           sessionId: interrupted.sessionId,
+          branch: interrupted.branch,
+          checkpointId: interrupted.checkpointId,
         },
         config,
         ports: { budget, handoff: ports.handoff, trace: ports.trace },
@@ -573,6 +651,11 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       });
       const escalationTraceId = lastTraceId(ports.trace);
       if (escalation.action === 'escalate') {
+        const summaryRow = handoffSummaryLedgerRow({ runId, task, previous: interrupted, decision: escalation, traceId: escalationTraceId, now });
+        if (summaryRow) {
+          ledger.push(summaryRow);
+          await recordSpend(summaryRow);
+        }
         latest = await runAttempt({
           runId,
           task,
@@ -658,6 +741,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           tier: first.tier,
           result: first.result,
           sessionId: first.sessionId,
+          branch: first.branch,
+          checkpointId: first.checkpointId,
         },
         config,
         ports: { budget, handoff: ports.handoff, trace: ports.trace },
@@ -665,6 +750,11 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       });
       const escalationTraceId = lastTraceId(ports.trace);
       if (escalation.action === 'escalate') {
+        const summaryRow = handoffSummaryLedgerRow({ runId, task, previous: first, decision: escalation, traceId: escalationTraceId, now });
+        if (summaryRow) {
+          ledger.push(summaryRow);
+          await recordSpend(summaryRow);
+        }
         latest = await runAttempt({
           runId,
           task,

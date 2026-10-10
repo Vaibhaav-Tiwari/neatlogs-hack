@@ -5,7 +5,7 @@
  * one.
  */
 import { ceilingNanos } from '../schema/money.js';
-import type { AttemptResult, Handoff, TallyConfig, TaskSize, Tier } from '../schema/types.js';
+import type { AttemptResult, CostSource, Handoff, TallyConfig, TaskSize, Tier, TokenUsage } from '../schema/types.js';
 import type { BudgetPort, HandoffPort, TraceAttributes, TracePort } from './ports.js';
 import { usd } from './router.js';
 import { traceDecision } from './trace.js';
@@ -22,6 +22,8 @@ export interface FinishedAttempt {
   result: AttemptResult;
   /** Null for simulated attempts. */
   sessionId: string | null;
+  branch?: string | null;
+  checkpointId?: string | null;
 }
 
 export interface EscalateDecision {
@@ -37,6 +39,11 @@ export interface EscalateDecision {
   handoff: Exclude<Handoff, 'none'>;
   /** Text to give the stronger tier; null when it restarts from the issue. */
   handoffSummary: string | null;
+  handoffSummaryCostNanos: number;
+  handoffSummaryCostSource: CostSource;
+  handoffSummaryTokens: TokenUsage;
+  checkpointId: string | null;
+  checkpointUrl: string | null;
   /** One plain-English sentence for the dashboard and the ledger row. */
   reason: string;
 }
@@ -112,12 +119,25 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
 
   let handoff: EscalateDecision['handoff'] = 'restart';
   let handoffSummary: string | null = null;
+  let handoffSummaryCostNanos = 0;
+  let handoffSummaryCostSource: CostSource = 'ao-estimate';
+  let handoffSummaryTokens: TokenUsage = { uncachedInput: 0, cachedInput: 0, output: 0, total: 0 };
+  let checkpointId: string | null = previous.checkpointId ?? null;
+  let checkpointUrl: string | null = null;
   if (previous.sessionId && input.ports.handoff) {
     try {
-      const found = await input.ports.handoff.summaryFor(previous.sessionId);
+      const found = await input.ports.handoff.summaryFor(previous.sessionId, {
+        branch: previous.branch,
+        checkpointId: previous.checkpointId,
+      });
       if (found && found.summary.trim() !== '') {
         handoff = found.type;
-        handoffSummary = found.summary;
+        handoffSummary = found.branch ? `Continue from failed branch ${found.branch}.\n\n${found.summary}` : found.summary;
+        handoffSummaryCostNanos = Math.max(0, Math.round(found.summaryCostNanos ?? 0));
+        handoffSummaryCostSource = found.summaryCostSource ?? 'ao-estimate';
+        handoffSummaryTokens = found.summaryTokens ?? handoffSummaryTokens;
+        checkpointId = found.checkpointId ?? checkpointId;
+        checkpointUrl = found.checkpointUrl ?? null;
       }
     } catch {
       // No summary: the stronger tier starts from the issue.
@@ -137,6 +157,11 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
     escalatedFrom: previous.attemptId,
     handoff,
     handoffSummary,
+    handoffSummaryCostNanos,
+    handoffSummaryCostSource,
+    handoffSummaryTokens,
+    checkpointId,
+    checkpointUrl,
     reason: `${from} attempt ${outcome}, so it escalates one tier to ${next.name} capped at ${usd(ceiling)}, ${how} with ${usd(remaining)} of budget left.`,
   };
 }
@@ -159,6 +184,7 @@ export async function decideEscalation(input: EscalationInput): Promise<Escalati
         action: decision.action,
         tier: decision.action === 'escalate' ? decision.tier.name : null,
         handoff: decision.action === 'escalate' ? decision.handoff : null,
+        checkpointId: decision.action === 'escalate' ? decision.checkpointId : null,
         reason: decision.reason,
       });
       return decision;
