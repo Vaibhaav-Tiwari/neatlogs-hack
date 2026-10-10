@@ -445,6 +445,53 @@ function attemptCountCell(task, attempts, awaiting) {
   return `<span class="attempt-count">${esc(countText)}</span>${extra ? `<span class="attempt-list">Ledger rows: ${esc(extra)}</span>` : ''}`;
 }
 
+const IMPACT_LABELS = {
+  expectedCostNanos: 'expected cost',
+  topCostNanos: 'top-tier cost',
+  savingsNanos: 'saved',
+  avoidedCostNanos: 'avoided',
+  costDeltaNanos: 'cost delta',
+  passRateDelta: 'pass-rate delta',
+  confidenceDelta: 'confidence delta',
+};
+
+function impactValue(key, value) {
+  if (!Number.isFinite(value)) return null;
+  if (key.endsWith('Nanos')) return usd(value);
+  if (key.endsWith('Rate') || key.endsWith('Delta') || Math.abs(value) <= 1) return `${Math.round(value * 100)}%`;
+  return count(value);
+}
+
+function taskImpact(task, attempts) {
+  const sources = [task.impact, task.impactNumbers, task.routingImpact, task.routing?.impact].filter(Boolean);
+  const flat = {
+    expectedCostNanos: task.expectedCostNanos,
+    topCostNanos: task.topCostNanos,
+    savingsNanos: task.savingsNanos,
+    avoidedCostNanos: task.avoidedCostNanos,
+    costDeltaNanos: task.costDeltaNanos,
+    passRateDelta: task.passRateDelta,
+    confidenceDelta: task.confidenceDelta,
+  };
+  sources.push(flat);
+  const items = [];
+  for (const source of sources) {
+    for (const [key, raw] of Object.entries(source)) {
+      if (!Object.hasOwn(IMPACT_LABELS, key)) continue;
+      const value = impactValue(key, Number(raw));
+      if (!value) continue;
+      items.push(`<span><b>${esc(IMPACT_LABELS[key])}</b> ${esc(value)}</span>`);
+    }
+  }
+  const changed =
+    task.historyChangedDecision === true ||
+    task.historyChanged === true ||
+    task.routing?.historyChangedDecision === true ||
+    task.routing?.historyChanged === true ||
+    attempts.some((row) => row.historyChangedDecision === true || row.historyChanged === true || row.routing?.historyChangedDecision === true);
+  return `${changed ? '<span class="history-mark">history changed route</span>' : ''}${items.length ? `<span class="impact">${items.join('')}</span>` : ''}`;
+}
+
 function finalRouteCell(task, attempts, awaiting) {
   const stopped = attempts.find((row) => row.result === 'stopped');
   const last = attempts[attempts.length - 1];
@@ -481,6 +528,7 @@ function drawTasks(run, ledger) {
         <td class="task">
           <p class="title">${esc(task.title)}</p>
           <p class="refs">${[esc(task.taskId), issue, pr].filter(Boolean).join('<span class="gap"></span>')}</p>
+          ${taskImpact(task, attempts)}
           ${task.statusReason ? `<p class="why-status">${esc(task.statusReason)}</p>` : ''}
         </td>
         <td class="size">${task.size ? esc(task.size) : '<span class="blank">unsized</span>'}</td>
