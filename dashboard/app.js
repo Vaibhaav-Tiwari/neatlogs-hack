@@ -350,6 +350,16 @@ function drawComparison(run, source) {
   );
 }
 
+function budgetSource(run) {
+  if (run.budget.source !== 'cfoai') return 'Source: tally.yaml';
+  const detail = run.integrations?.cfoai?.detail;
+  const label = 'Source: cfo.ai budget table';
+  if (typeof detail === 'string' && /^https?:\/\//.test(detail)) {
+    return `Source: <a href="${esc(detail)}" target="_blank" rel="noreferrer">cfo.ai budget table</a>`;
+  }
+  return label;
+}
+
 function drawBudget(run, ledger) {
   const { limitNanos, spentNanos } = run.budget;
   const over = spentNanos > limitNanos;
@@ -364,7 +374,7 @@ function drawBudget(run, ledger) {
     })
     .join('');
   const limitAt = ((limitNanos / scale) * 100).toFixed(3);
-  const source = run.budget.source === 'cfoai' ? 'budget read from cfo.ai' : 'budget set in tally.yaml';
+  const source = budgetSource(run);
   draw(
     'budget',
     `<h2>Budget</h2>
@@ -375,7 +385,8 @@ function drawBudget(run, ledger) {
      <div class="bar ${over ? 'is-over' : ''}" role="img" aria-label="${usd(spentNanos)} spent of ${usd(limitNanos)}">
        ${segments}<i class="limit" style="left:${limitAt}%"></i>
      </div>
-     <p class="bar-scale"><span>$0</span><span>${usd(limitNanos)}, ${source}</span></p>
+     <p class="bar-scale"><span>$0</span><span>${usd(limitNanos)} limit</span></p>
+     <p class="budget-source">${source}</p>
      <p class="bar-key">One block per attempt, in the order they ran.
        ${ledger.some((row) => row.displayIsLiveEstimate) ? '<span>Grey blocks are live estimates for attempts still running.</span>' : ''}
        ${ledger.some((row) => row.result === 'stopped') ? '<span class="key-stop">Red is money spent before a worker was stopped at its ceiling.</span>' : ''}</p>`,

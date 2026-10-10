@@ -148,6 +148,7 @@ body.unread .sheet > section, body.unread .run, body.unread .foot { display: non
 .bar .limit { display: none; position: absolute; top: -8px; bottom: -8px; width: 0; border-left: 2px dashed var(--vermilion); }
 .bar.is-over .limit { display: block; }
 .bar-scale { display: flex; justify-content: space-between; font: 400 14px/1.6 var(--mono); margin-top: 4px; }
+.budget-source { font-size: 15px; font-style: italic; color: var(--ink-2); margin-top: 4px; }
 .bar-key { font-size: 15px; font-style: italic; color: var(--ink-2); margin-top: 6px; }
 .key-stop { color: var(--vermilion); }
 
