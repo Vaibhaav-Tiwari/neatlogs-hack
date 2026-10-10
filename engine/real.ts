@@ -426,6 +426,8 @@ async function runAttempt(input: {
   let checkpointId: string | null = null;
   let checkpointUrl: string | null = null;
   let scopeWarnings: string[] = [];
+  let entireSessionId: string | null = null;
+  let resolvedCheckoutPath: string | null = null;
 
   if (first.kind === 'watch' && first.verdict.action === 'stop') {
     abort.abort();
@@ -452,6 +454,7 @@ async function runAttempt(input: {
       if (!input.dryRun && !checkoutPath && branch) {
         checkoutPath = await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch);
       }
+      resolvedCheckoutPath = checkoutPath;
       if (!input.dryRun && (!checkoutPath || !branch)) {
         result = 'error';
         resultReason = 'could not locate worker checkout';
@@ -501,11 +504,14 @@ async function runAttempt(input: {
   }
   if (!input.dryRun && input.ports.checkpoints) {
     const branch = workerResult?.branch ?? started.branch;
-    const checkoutPath = workerResult?.checkoutPath ?? started.checkoutPath;
+    const checkoutPath = resolvedCheckoutPath ?? workerResult?.checkoutPath ?? started.checkoutPath ?? (branch
+      ? await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch).catch(() => null)
+      : null);
     try {
       const checkpoint = await input.ports.checkpoints.checkpointFor({ sessionId: started.sessionId, branch, checkoutPath });
       checkpointId = checkpoint?.checkpointId ?? null;
       checkpointUrl = checkpoint?.checkpointUrl ?? null;
+      entireSessionId = checkpoint?.entireSessionId ?? null;
     } catch {
       checkpointId = null;
       checkpointUrl = null;
@@ -524,6 +530,7 @@ async function runAttempt(input: {
     model: input.tier.model,
     harness: input.tier.harness,
     sessionId: started.sessionId,
+    entireSessionId,
     branch: input.dryRun ? null : (workerResult?.branch ?? started.branch),
     tokens: tokens ?? zeroTokens(),
     estimatedCostNanos,
@@ -573,6 +580,7 @@ function handoffSummaryLedgerRow(input: {
     model: 'entire checkpoint explain',
     harness: 'entire',
     sessionId: input.previous.sessionId,
+    entireSessionId: input.previous.entireSessionId ?? null,
     branch: input.previous.branch,
     tokens: input.decision.handoffSummaryTokens,
     estimatedCostNanos: input.decision.handoffSummaryCostNanos,
@@ -767,8 +775,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       task,
       attempt: 1,
       tier: route.tier,
-      ceilingNanos: route.ceilingNanos,
-      decision: route.reason,
+      ceilingNanos: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.ceilingNanos : Math.min(route.ceilingNanos ?? Infinity, usdToNanos(task.firstAttemptCeilingUsd)),
+      decision: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.reason : `${route.reason} Deliberate first-attempt ceiling override: $${task.firstAttemptCeilingUsd.toFixed(3)} (normal ceiling remains an upper bound).`,
       escalatedFrom: null,
       handoff: 'none',
       handoffSummary: null,

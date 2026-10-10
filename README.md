@@ -85,6 +85,22 @@ npm test
 
 ## Configuration
 
+With `integrations.entire: true`, enable Entire in the target repository and
+trust its Codex hooks through `/hooks` before starting workers. Tally records
+the task commit's `Entire-Checkpoint` trailer and its native `entireSessionId`
+separately from the AO `sessionId`. Logs-only checkpoints retain conversation
+context; escalation uses a generated summary when available and otherwise
+describes the recorded files without claiming an AI summary was generated.
+When Tally publishes a verified branch, it also pushes the checkpoint refs
+named by its new commits to `origin` and to an `entire` remote when configured.
+Checkpoint upload failures are reported as publishing failures. Dry runs do
+not publish branches or checkpoints.
+
+Entire documents commit links as
+`https://entire.io/gh/<org>/<repo>/commit/<commit-sha>`. Tally keeps
+`checkpointUrl` null unless the CLI returns a URL; a local checkpoint does not
+by itself establish that a hosted link works.
+
 Tally assumes nothing about the repository it works on. The repository, test
 command, model tiers, list prices, ceilings and budget all come from
 `tally.yaml` (a tier is a name, harness, model id, provider, list price and ceiling share); see `schema/fixtures/finished-run/tally.yaml` for a complete

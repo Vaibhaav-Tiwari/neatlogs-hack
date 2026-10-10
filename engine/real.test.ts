@@ -249,7 +249,7 @@ class FakeEntireEvidence implements HandoffPort, CheckpointPort {
   summaryCalls: Array<{ sessionId: string; branch?: string | null; checkpointId?: string | null }> = [];
 
   async checkpointFor(input: { sessionId: string; branch?: string | null }) {
-    return { checkpointId: `checkpoint-${input.sessionId}`, checkpointUrl: null };
+    return { checkpointId: `checkpoint-${input.sessionId}`, checkpointUrl: null, entireSessionId: `native-${input.sessionId}` };
   }
 
   async summaryFor(sessionId: string, context: { branch?: string | null; checkpointId?: string | null } = {}) {
@@ -280,6 +280,21 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it('uses a first-attempt override to stop via the watcher and escalates with the normal ceiling', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const wait = worker.wait.bind(worker);
+    worker.wait = (sessionId) => sessionId === 'session-1' ? new Promise(() => {}) : wait(sessionId);
+    const overridingIntake: BacklogIntakePort = { tasks: async (...args) => (await intake.tasks(...args)).map((task) => ({ ...task, firstAttemptCeilingUsd: 0.001 })) };
+    const result = await runRealTally({ configPath, dryRun: true, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: overridingIntake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]), handoff: { summaryFor: async () => ({ type: 'entire-handoff', summary: 'Partial implementation: continue calc.ts.' }) } } });
+    expect(result.ledger.map((row) => row.result)).toEqual(['stopped', 'passed']);
+    expect(worker.stopped).toContain('session-1');
+    expect(worker.starts.map((start) => start.tier.name)).toEqual(['cheap', 'middle']);
+    expect(worker.starts.map((start) => start.ceilingNanos)).toEqual([usdToNanos(0.001), usdToNanos(0.5)]);
+    expect(worker.starts[1]?.prompt).toContain('Partial implementation: continue calc.ts.');
+  });
   it.each([false, true])('records scope warnings and only blocks when configured: %s', async (block) => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('aoProject: "payments"', `aoProject: "payments", blockOutOfScopeChanges: ${block}`));
@@ -373,7 +388,7 @@ describe('runRealTally', () => {
     });
 
     expect(result.ledger.map((row) => row.taskId)).toEqual(['T1', 'T1:handoff', 'T1']);
-    expect(result.ledger[0]).toMatchObject({ checkpointId: 'checkpoint-session-1', checkpointUrl: null });
+    expect(result.ledger[0]).toMatchObject({ checkpointId: 'checkpoint-session-1', checkpointUrl: null, sessionId: 'session-1', entireSessionId: 'native-session-1' });
     expect(result.ledger[1]).toMatchObject({
       attemptId: `${result.runState.runId}:T1:2:handoff`,
       tier: 'entire-handoff',
@@ -515,6 +530,7 @@ describe('runRealTally', () => {
     const { dir, configPath } = fixture();
     const worker = new BranchOnlyWorker();
     const worktrees = new FakeWorktrees('/tmp/resolved-worker-checkout');
+    const checkpointCalls: unknown[] = [];
 
     const result = await runRealTally({
       configPath,
@@ -532,13 +548,18 @@ describe('runRealTally', () => {
         sessions: worker,
         publisher: worker,
         worktrees,
+        checkpoints: { checkpointFor: async (context) => {
+          checkpointCalls.push(context);
+          return { checkpointId: 'trailer-checkpoint', checkpointUrl: null, entireSessionId: 'native-codex' };
+        } },
       },
     });
 
     expect(worktrees.calls).toEqual([{ repoPath: dir, branch: 'tally/t1-1' }]);
     expect(worker.commitChecks).toMatchObject([{ checkoutPath: '/tmp/resolved-worker-checkout', branch: 'tally/t1-1' }]);
     expect(worker.publishPaths).toEqual(['/tmp/resolved-worker-checkout']);
-    expect(result.ledger[0]).toMatchObject({ result: 'passed', prUrl: 'https://github.com/acme/payments-service/pull/1' });
+    expect(checkpointCalls).toEqual([{ sessionId: 'session-1', branch: 'tally/t1-1', checkoutPath: '/tmp/resolved-worker-checkout' }]);
+    expect(result.ledger[0]).toMatchObject({ result: 'passed', prUrl: 'https://github.com/acme/payments-service/pull/1', checkpointId: 'trailer-checkpoint', entireSessionId: 'native-codex' });
   });
 
   it('records a missing worker checkout as an error without verification or escalation', async () => {

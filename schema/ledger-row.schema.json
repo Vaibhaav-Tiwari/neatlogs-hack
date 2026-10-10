@@ -47,6 +47,7 @@
     "model": { "type": "string", "minLength": 1 },
     "harness": { "type": "string", "minLength": 1 },
     "sessionId": { "type": ["string", "null"] },
+    "entireSessionId": { "type": ["string", "null"] },
     "branch": { "type": ["string", "null"] },
     "tokens": {
       "type": "object",

@@ -23,6 +23,8 @@ export interface BacklogTask {
   outcomes: AttemptResult[];
   /** Richer dry-run script, when the backlog provides one. */
   scriptedAttempts?: ScriptedAttempt[];
+  /** Deliberate first-attempt ceiling for demos; escalation uses normal tier ceilings. */
+  firstAttemptCeilingUsd?: number;
 }
 
 export class BacklogError extends Error {
@@ -149,6 +151,10 @@ function normaliseTask(value: unknown, index: number, problems: string[]): Backl
   }
   if (taskId === undefined || title === undefined || typeof size !== 'string' || !SIZES.has(size as TaskSize)) return null;
   const outcomes = parseOutcomes(task.outcomes, problems, prefix);
+  const override = task.firstAttemptCeilingUsd;
+  if (override !== undefined && (typeof override !== 'number' || !Number.isFinite(override) || override <= 0)) {
+    problems.push(`${prefix}.firstAttemptCeilingUsd must be a positive finite number`);
+  }
   return {
     taskId,
     title,
@@ -157,6 +163,7 @@ function normaliseTask(value: unknown, index: number, problems: string[]): Backl
     issueUrl: stringAt(task, ['issueUrl', 'url']) ?? null,
     size: size as TaskSize,
     outcomes,
+    ...(typeof override === 'number' ? { firstAttemptCeilingUsd: override } : {}),
     scriptedAttempts: parseScriptedAttempts(task, outcomes, problems, prefix),
   };
 }

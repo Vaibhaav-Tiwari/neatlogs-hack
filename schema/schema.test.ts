@@ -80,6 +80,11 @@ describe('money helpers', () => {
 });
 
 describe('ledger row schema', () => {
+  it('accepts optional native Entire session evidence without changing the AO session', () => {
+    expect(validateLedgerRow({ ...typedRow, sessionId: 'ao-worker', entireSessionId: 'codex-native' }).ok).toBe(true);
+    expect(validateLedgerRow({ ...typedRow, entireSessionId: null }).ok).toBe(true);
+    expect(validateLedgerRow({ ...typedRow, entireSessionId: 7 }).ok).toBe(false);
+  });
   it('accepts a row that satisfies the TypeScript type', () => {
     expect(validateLedgerRow(typedRow)).toEqual({ ok: true, errors: [] });
   });

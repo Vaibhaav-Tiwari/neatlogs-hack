@@ -671,7 +671,7 @@ function drawLedger(run, ledger) {
       const suspect = isSuspectPass(row, run);
       const groupStart = !seenTasks.has(row.taskId);
       seenTasks.add(row.taskId);
-      const links = [link(row.prUrl, 'PR'), aoSessionEvidence(row.sessionId), checkpointEvidence(row), traceEvidence(row)].filter(Boolean);
+      const links = [link(row.prUrl, 'PR'), aoSessionEvidence(row.sessionId), idEvidence('Entire session', row.entireSessionId), checkpointEvidence(row), traceEvidence(row)].filter(Boolean);
       const tokenSplit = `${count(row.tokens.uncachedInput)} in, ${count(row.tokens.cachedInput)} cached, ${count(row.tokens.output)} out`;
       return `<tr class="a-${esc(kind)} ${suspect ? 'a-suspect' : ''} ${groupStart ? 'group-start' : ''}">
         <td class="fig">${esc(row.taskId)}/${row.attempt}</td>

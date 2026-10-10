@@ -11,6 +11,7 @@
     "model": "claude-haiku-4-5-20251001",
     "harness": "claude-code",
     "sessionId": "payments-service-41",
+    "entireSessionId": "fixture-codex-session-41",
     "branch": "tally/run-20261011-0830/t1",
     "tokens": {
       "uncachedInput": 60000,

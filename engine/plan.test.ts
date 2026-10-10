@@ -1,6 +1,6 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { planTally } from './plan.js';
 
@@ -45,6 +45,18 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 }
 
 describe('planTally', () => {
+  it('shows the deliberate first attempt override and rejects invalid values', async () => {
+    const configPath = fixture();
+    const path = join(dirname(configPath), 'backlog.yaml');
+    const body = readFileSync(path, 'utf8');
+    writeFileSync(path, `${body}    firstAttemptCeilingUsd: 0.01\n`);
+    const options = { configPath, dryRun: true, baseline: false };
+    const plan = await planTally(options);
+    expect(plan[0]?.ceilingNanos).toBe(10_000_000);
+    expect(plan[0]?.decision).toContain('Deliberate first-attempt ceiling override');
+    writeFileSync(path, `${body}    firstAttemptCeilingUsd: -1\n`);
+    await expect(planTally(options)).rejects.toThrow('positive finite number');
+  });
   it('sizes and routes without worker ports', async () => {
     const plan = await planTally({
       configPath: fixture(),
