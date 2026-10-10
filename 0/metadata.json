@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KHP00WHQP50ZFSA6DJVQZ6",
+  "session_id": "01a125ae-c722-75d0-93f1-147e3e8f6ffa",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T18:37:24.579693Z",
+  "branch": "ao/neatlogs-hack-6/dashboard-real-data-fixes",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/styles.css"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "7b5e05ceaabb",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1834199,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 70453120,
+    "output_tokens": 176717,
+    "api_call_count": 521
+  },
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T18:37:24.394403Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 74,
+    "human_modified": 21,
+    "human_removed": 0,
+    "total_committed": 74,
+    "total_lines_changed": 95,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
