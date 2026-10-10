@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { CheckpointPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
+import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
 import { usdToNanos, validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
@@ -239,6 +239,18 @@ class FakeEntireEvidence implements HandoffPort, CheckpointPort {
   }
 }
 
+class FakeRecall implements CheckpointRecallPort {
+  async recallFor() {
+    return {
+      checkpointId: '01M4FAIL',
+      checkpointUrl: null,
+      summary: 'A cheap attempt failed on this area before.',
+      files: ['calc.ts'],
+      failed: true,
+    };
+  }
+}
+
 describe('runRealTally', () => {
   it('sizes, routes, spawns, verifies, escalates once and writes valid output', async () => {
     const { dir, configPath } = fixture();
@@ -343,6 +355,32 @@ describe('runRealTally', () => {
     expect(entireEvidence.summaryCalls).toEqual([{ sessionId: 'session-1', branch: 'tally/t1-1', checkpointId: 'checkpoint-session-1' }]);
     expect(result.runState.budget.spentNanos).toBe(result.ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0));
     expect(validateLedger(result.ledger).ok).toBe(true);
+  });
+
+  it('lowers routing confidence when Entire recalls a prior failure on the same files', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: true, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'recall'),
+      latestRunDir: join(dir, 'latest'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        recall: new FakeRecall(),
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+      },
+    });
+
+    expect(result.ledger[0]!.decision).toContain('a prior checkpoint failed on calc.ts before');
   });
 
   it('prompts workers to stay in their AO worktree and leave setup and publishing to Tally/AO by default', async () => {
