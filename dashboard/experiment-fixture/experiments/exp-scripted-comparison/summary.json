@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "exp-scripted-comparison",
+  "status": "finished",
+  "real": false,
+  "repo": "demo/invoice-ledger",
+  "baseCommit": "scripted",
+  "taskIds": [
+    "E1",
+    "E2"
+  ],
+  "repeatsPlanned": 2,
+  "startedAt": "2026-10-11T01:00:00Z",
+  "endedAt": "2026-10-11T01:04:00Z",
+  "budget": {
+    "capNanos": 60000000000,
+    "spentNanos": 52000000000
+  },
+  "modes": {
+    "baseline": {
+      "runs": [
+        {
+          "runId": "sample-baseline-1",
+          "repeat": 1,
+          "path": "./experiment-fixture/sample-baseline-1/",
+          "status": "finished",
+          "tasks": 2,
+          "passed": 2,
+          "failed": 0,
+          "skipped": 0,
+          "attempts": 2,
+          "totalCostNanos": 10000000000,
+          "costPerPassedTaskNanos": 5000000000,
+          "passRate": 1,
+          "neatlogsSessionId": null
+        },
+        {
+          "runId": "sample-baseline-2",
+          "repeat": 2,
+          "path": "./experiment-fixture/sample-baseline-2/",
+          "status": "finished",
+          "tasks": 2,
+          "passed": 2,
+          "failed": 0,
+          "skipped": 0,
+          "attempts": 2,
+          "totalCostNanos": 12000000000,
+          "costPerPassedTaskNanos": 6000000000,
+          "passRate": 1,
+          "neatlogsSessionId": null
+        }
+      ],
+      "totalCostNanos": {
+        "min": 10000000000,
+        "median": 11000000000,
+        "max": 12000000000
+      },
+      "costPerPassedTaskNanos": {
+        "min": 5000000000,
+        "median": 5500000000,
+        "max": 6000000000
+      },
+      "passRate": {
+        "min": 1,
+        "median": 1,
+        "max": 1
+      }
+    },
+    "tally": {
+      "runs": [
+        {
+          "runId": "sample-tally-1",
+          "repeat": 1,
+          "path": "./experiment-fixture/sample-tally-1/",
+          "status": "finished",
+          "tasks": 2,
+          "passed": 1,
+          "failed": 1,
+          "skipped": 0,
+          "attempts": 2,
+          "totalCostNanos": 14000000000,
+          "costPerPassedTaskNanos": 14000000000,
+          "passRate": 0.5,
+          "neatlogsSessionId": null
+        },
+        {
+          "runId": "sample-tally-2",
+          "repeat": 2,
+          "path": "./experiment-fixture/sample-tally-2/",
+          "status": "finished",
+          "tasks": 2,
+          "passed": 1,
+          "failed": 1,
+          "skipped": 0,
+          "attempts": 2,
+          "totalCostNanos": 16000000000,
+          "costPerPassedTaskNanos": 16000000000,
+          "passRate": 0.5,
+          "neatlogsSessionId": null
+        }
+      ],
+      "totalCostNanos": {
+        "min": 14000000000,
+        "median": 15000000000,
+        "max": 16000000000
+      },
+      "costPerPassedTaskNanos": {
+        "min": 14000000000,
+        "median": 15000000000,
+        "max": 16000000000
+      },
+      "passRate": {
+        "min": 0.5,
+        "median": 0.5,
+        "max": 0.5
+      }
+    }
+  },
+  "perTask": [
+    {
+      "taskId": "E1",
+      "baseline": [
+        {
+          "runId": "sample-baseline-1",
+          "repeat": 1,
+          "tier": "top",
+          "model": "sample-top",
+          "result": "passed",
+          "attempts": 1,
+          "costNanos": 5000000000
+        },
+        {
+          "runId": "sample-baseline-2",
+          "repeat": 2,
+          "tier": "top",
+          "model": "sample-top",
+          "result": "passed",
+          "attempts": 1,
+          "costNanos": 6000000000
+        }
+      ],
+      "tally": [
+        {
+          "runId": "sample-tally-1",
+          "repeat": 1,
+          "tier": "cheap",
+          "model": "sample-cheap",
+          "result": "passed",
+          "attempts": 1,
+          "costNanos": 7000000000
+        },
+        {
+          "runId": "sample-tally-2",
+          "repeat": 2,
+          "tier": "cheap",
+          "model": "sample-cheap",
+          "result": "passed",
+          "attempts": 1,
+          "costNanos": 8000000000
+        }
+      ]
+    },
+    {
+      "taskId": "E2",
+      "baseline": [
+        {
+          "runId": "sample-baseline-1",
+          "repeat": 1,
+          "tier": "top",
+          "model": "sample-top",
+          "result": "passed",
+          "attempts": 1,
+          "costNanos": 5000000000
+        },
+        {
+          "runId": "sample-baseline-2",
+          "repeat": 2,
+          "tier": "top",
+          "model": "sample-top",
+          "result": "passed",
+          "attempts": 1,
+          "costNanos": 6000000000
+        }
+      ],
+      "tally": [
+        {
+          "runId": "sample-tally-1",
+          "repeat": 1,
+          "tier": "cheap",
+          "model": "sample-cheap",
+          "result": "failed",
+          "attempts": 1,
+          "costNanos": 7000000000
+        },
+        {
+          "runId": "sample-tally-2",
+          "repeat": 2,
+          "tier": "cheap",
+          "model": "sample-cheap",
+          "result": "failed",
+          "attempts": 1,
+          "costNanos": 8000000000
+        }
+      ]
+    }
+  ],
+  "comparison": {
+    "totalCostChangePct": 36.36363636363635,
+    "costPerPassedTaskChangePct": 172.72727272727272,
+    "passRateChangePoints": -50,
+    "note": "Medians of finished repeats; this scripted example deliberately shows Tally losing."
+  }
+}
