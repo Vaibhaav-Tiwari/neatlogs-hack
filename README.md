@@ -14,6 +14,7 @@ runs use Agent Orchestrator and record their attempts and evidence separately.
 Prerequisites before you install:
 
 - Node 20 or later and npm.
+- Git for installation from GitHub or a source checkout.
 - For real runs: Agent Orchestrator installed and running, with at least one
   signed-in coding agent it can start.
 - For real runs: GitHub CLI installed and signed in with `gh auth login`.
@@ -23,16 +24,27 @@ AO account, coding-agent login or GitHub credentials.
 
 Three ways in:
 
-1. **GitHub (available now):** `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack`.
-   Installation builds the CLI automatically.
+1. **GitHub (available now):** `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack#release`.
+   The `release` branch includes the compiled CLI and records its source commit
+   in `release-source.json`; no TypeScript or manual build is needed. The main
+   branch is source-only and is not the global-install target.
 2. **npm (not released yet):** after release, `npm install -g tally-agents`.
 3. **Source checkout:** `git clone https://github.com/Vaibhaav-Tiwari/neatlogs-hack`,
-   enter `neatlogs-hack`, and run `npm install`.
+   enter `neatlogs-hack`, and run `npm install` followed by `npm run build`.
    Then use `node bin/tally.js` in place of `tally` in the commands below.
-   `npm install` builds the CLI through its prepare script.
+   After editing TypeScript sources, run `npm run build` again. Generated
+   `dist/` files are not committed to main.
 
 The npm package is named `tally-agents`; the installed command is still
 `tally`.
+
+Maintainers can build a release tree with
+`npm run release:branch -- --source origin/main --out /tmp/tally-release`.
+Add `--push` to update the dedicated `release` branch (never publishes to npm).
+The main-push workflow builds and smoke-checks that tree before updating it.
+`npm run test:git-install` checks the GitHub `#release` URL with an empty cache
+and temporary global prefix, then checks version, help, demo and dashboard
+outside the checkout. Pass another Git URL after `--` to check a candidate.
 
 ## Quickstart
 
