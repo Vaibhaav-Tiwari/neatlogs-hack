@@ -73,7 +73,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
   const config = loadConfig(options.configPath);
   if (!options.dryRun) await validateRealRunConfig(config, options.configPath, options.preflightRunner);
   const configDir = dirname(options.configPath);
-  const dryRunPorts = options.dryRun ? createDryRunPorts() : {};
+  const dryRunPorts = options.dryRun ? createDryRunPorts({ config, configPath: options.configPath }) : {};
   const signals =
     options.signals ??
     dryRunPorts.signals ??

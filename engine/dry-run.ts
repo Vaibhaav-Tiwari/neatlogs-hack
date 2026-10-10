@@ -1,9 +1,9 @@
+import { basename } from 'node:path';
 import { costNanos } from '../schema/money.js';
 import type { TallyConfig, TaskSize, Tier, TokenUsage } from '../schema/types.js';
 import { PriceHistory } from '../agent/history.js';
 import type { HandoffSummary, LiveUsage, LiveUsagePort, SessionControlPort, SizingSignals, SizingSignalsPort } from '../agent/ports.js';
 import type { VerifierPort, VerifyInput, VerifyResult } from '../adapters/verifier.js';
-import type { BacklogIntakePort } from '../adapters/github.js';
 import { type BacklogTask, loadFileBacklog, type ScriptedAttempt } from './backlog.js';
 import type { RealRunPorts, WorkerPort, WorkerResult, WorkerStartInput } from './real.js';
 
@@ -20,22 +20,8 @@ interface DrySession {
   resolve?: (result: WorkerResult) => void;
 }
 
-class DryRunState implements BacklogIntakePort, SizingSignalsPort, WorkerPort, LiveUsagePort, SessionControlPort, VerifierPort {
+class DryRunState implements WorkerPort, LiveUsagePort, SessionControlPort, VerifierPort {
   private readonly sessions = new Map<string, DrySession>();
-  private readonly tasksById = new Map<string, BacklogTask>();
-
-  async tasks(config: TallyConfig, configPath: string): Promise<BacklogTask[]> {
-    const tasks = loadFileBacklog(config, configPath);
-    this.tasksById.clear();
-    for (const task of tasks) this.tasksById.set(task.taskId, task);
-    return tasks;
-  }
-
-  async signalsFor(task: { taskId: string }): Promise<SizingSignals | null> {
-    const size = this.tasksById.get(task.taskId)?.size;
-    if (!size) return null;
-    return signalsForSize(size);
-  }
 
   async start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string | null; checkoutPath: string | null }> {
     const scripts = input.task.scriptedAttempts ?? input.task.outcomes.map((result) => ({ result, resultReason: null, tokens: zeroTokens(), handoff: null, decision: null }));
@@ -114,6 +100,27 @@ function signalsForSize(size: TaskSize): SizingSignals {
   return { filesTouched: 9, dependents: 12, testsPresent: false, source: 'code-search' };
 }
 
+class ScriptedSizingSignals implements SizingSignalsPort {
+  private readonly tasksById: Map<string, BacklogTask>;
+
+  constructor(config: TallyConfig, configPath: string) {
+    this.tasksById = new Map(loadFileBacklog(config, configPath).map((task) => [task.taskId, task]));
+  }
+
+  async signalsFor(task: { taskId: string }): Promise<SizingSignals | null> {
+    const size = this.tasksById.get(task.taskId)?.size;
+    return size ? signalsForSize(size) : null;
+  }
+
+  status() {
+    return { status: 'ok' as const, detail: 'not used: sample tasks carry scripted sizing' };
+  }
+}
+
+function usesSampleBacklog(config: TallyConfig): boolean {
+  return config.backlog.source === 'file' && config.backlog.file !== undefined && basename(config.backlog.file) === 'sample-backlog.yaml';
+}
+
 function meteredTokens(tokens: TokenUsage, tier: Tier, ceilingNanos: number | null, result: string): TokenUsage {
   if (result !== 'stopped' || ceilingNanos === null || costNanos(tokens, tier.price) >= ceilingNanos) return tokens;
   const outputPriceNanos = tier.price.outputUsdPerMTok * 1000;
@@ -130,11 +137,14 @@ function zeroTokens(): TokenUsage {
   return { uncachedInput: 0, cachedInput: 0, output: 0, total: 0 };
 }
 
-export function createDryRunPorts(): Partial<RealRunPorts> {
+export function createDryRunPorts(options: { config?: TallyConfig; configPath?: string } = {}): Partial<RealRunPorts> {
   const dryRun = new DryRunState();
+  const scriptedSignals =
+    options.config && options.configPath && (!options.config.integrations.entire || usesSampleBacklog(options.config))
+      ? new ScriptedSizingSignals(options.config, options.configPath)
+      : undefined;
   return {
-    intake: dryRun,
-    signals: dryRun,
+    ...(scriptedSignals ? { signals: scriptedSignals } : {}),
     worker: dryRun,
     verifier: dryRun,
     usage: dryRun,
