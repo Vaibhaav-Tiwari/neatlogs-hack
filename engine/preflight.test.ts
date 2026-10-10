@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from './config.js';
-import { validateRealRunConfig } from './preflight.js';
+import { validateRealRunConfig, workerAutoModeFixCommand } from './preflight.js';
 import { runTally } from './run.js';
 
 function writeConfig(extraRepo = '') {
@@ -49,5 +49,42 @@ describe('real run preflight', () => {
         throw new Error('not found');
       }),
     ).rejects.toThrow('ao project add');
+  });
+
+  it('requires the target AO project worker to run in auto mode before spawning', async () => {
+    const { configPath } = writeConfig(', aoProject: "fly-doom-jev"');
+    const projectConfig = {
+      canonicalRepoURL: 'https://github.com/Vaibhaav-Tiwari/fly-doom-jev',
+      defaultBranch: 'main',
+      agentConfig: { permissions: 'auto' },
+      worker: { agent: 'claude-code', agentConfig: {} },
+      orchestrator: { agentConfig: {} },
+    };
+
+    await expect(
+      validateRealRunConfig(loadConfig(configPath), configPath, async () => ({
+        stdout: JSON.stringify({ project: { config: projectConfig } }),
+        stderr: '',
+      })),
+    ).rejects.toThrow(
+      `worker permission mode is unset; unattended Tally workers can stall before running setup, tests, git push, or gh pr create; fix: ${workerAutoModeFixCommand('fly-doom-jev', projectConfig)}`,
+    );
+  });
+
+  it('accepts worker-scoped auto mode for a real run', async () => {
+    const { configPath } = writeConfig(', aoProject: "fly-doom-jev"');
+    await expect(
+      validateRealRunConfig(loadConfig(configPath), configPath, async () => ({
+        stdout: JSON.stringify({
+          project: {
+            config: {
+              agentConfig: { permissions: 'default' },
+              worker: { agent: 'claude-code', agentConfig: { permissions: 'auto' } },
+            },
+          },
+        }),
+        stderr: '',
+      })),
+    ).resolves.toBeUndefined();
   });
 });

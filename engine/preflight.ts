@@ -26,6 +26,70 @@ function defaultRunner(file: string, args: string[]) {
   return execFileAsync(file, args);
 }
 
+interface AoProjectResponse {
+  project?: {
+    config?: unknown;
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function quoteShell(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function withWorkerAutoMode(config: unknown): Record<string, unknown> {
+  const base = isRecord(config) ? { ...config } : {};
+  const worker = isRecord(base.worker) ? { ...base.worker } : {};
+  const agentConfig = isRecord(worker.agentConfig) ? { ...worker.agentConfig } : {};
+  agentConfig.permissions = 'auto';
+  worker.agentConfig = agentConfig;
+  base.worker = worker;
+  return base;
+}
+
+export function workerAutoModeFixCommand(projectId: string, projectConfig: unknown): string {
+  const fixed = withWorkerAutoMode(projectConfig);
+  return `ao project set-config ${projectId} --config-json ${quoteShell(JSON.stringify(fixed))}`;
+}
+
+export function workerPermissionMode(projectConfig: unknown): string | null {
+  if (!isRecord(projectConfig)) return null;
+  const worker = isRecord(projectConfig.worker) ? projectConfig.worker : {};
+  const workerAgentConfig = isRecord(worker.agentConfig) ? worker.agentConfig : {};
+  const workerPermission = workerAgentConfig.permissions;
+  if (typeof workerPermission === 'string') return workerPermission;
+  return null;
+}
+
+export interface WorkerPermissionCheck {
+  ok: boolean;
+  mode: string | null;
+  detail: string;
+  fix: string;
+}
+
+export function checkWorkerAutoMode(projectId: string, projectConfig: unknown): WorkerPermissionCheck {
+  const mode = workerPermissionMode(projectConfig);
+  const fix = workerAutoModeFixCommand(projectId, projectConfig);
+  if (mode === 'auto') {
+    return { ok: true, mode, detail: 'worker permission mode is auto', fix };
+  }
+  const label = mode ?? 'unset';
+  return {
+    ok: false,
+    mode,
+    detail: `worker permission mode is ${label}; unattended Tally workers can stall before running setup, tests, git push, or gh pr create`,
+    fix,
+  };
+}
+
+function parseAoProject(stdout: string): AoProjectResponse {
+  return JSON.parse(stdout) as AoProjectResponse;
+}
+
 export async function validateRealRunConfig(config: TallyConfig, configPath: string, runner: PreflightRunner = defaultRunner): Promise<void> {
   const problems: string[] = [];
   if (!config.repo.aoProject) problems.push('repo.aoProject is required for real runs so AO knows where to spawn workers');
@@ -34,12 +98,19 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
   const resolvedBacklog = backlogPath(config, configPath);
   if (resolvedBacklog && !existsSync(resolvedBacklog)) problems.push(`backlog.file does not exist: ${resolvedBacklog}`);
   if (config.repo.aoProject) {
+    let project: AoProjectResponse | null = null;
     try {
-      await runner('ao', ['project', 'get', config.repo.aoProject, '--json']);
+      project = parseAoProject((await runner('ao', ['project', 'get', config.repo.aoProject, '--json'])).stdout);
     } catch {
       problems.push(
         `repo.aoProject "${config.repo.aoProject}" is not registered in AO; fix: ao project add --path ${resolvedRepo} --id ${config.repo.aoProject}`,
       );
+    }
+    if (project) {
+      const permission = checkWorkerAutoMode(config.repo.aoProject, project.project?.config);
+      if (!permission.ok) {
+        problems.push(`${permission.detail}; fix: ${permission.fix}`);
+      }
     }
   }
   if (problems.length > 0) throw new ConfigError(configPath, problems);

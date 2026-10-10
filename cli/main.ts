@@ -237,8 +237,8 @@ async function dashboardCommand(options: CliOptions, io: CliIO): Promise<number>
   return 0;
 }
 
-async function doctorCommand(_options: CliOptions, io: CliIO): Promise<number> {
-  const lines = await runDoctor();
+async function doctorCommand(options: CliOptions, io: CliIO): Promise<number> {
+  const lines = await runDoctor({ configPath: options.config });
   for (const line of lines) {
     io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
   }
