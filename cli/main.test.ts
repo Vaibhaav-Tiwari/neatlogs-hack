@@ -55,6 +55,7 @@ describe('parseCli', () => {
     expect(parseCli(['traces'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['traces', 'drain'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['traces', 'drain', '--run', '../latest'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['traces', 'drain', '--run', 'run-1', '--dry-run'])).toMatchObject({ kind: 'error' });
   });
 
   it('defaults the config path and leaves budget unset', () => {

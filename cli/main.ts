@@ -151,6 +151,7 @@ export function parseCli(argv: string[]): ParsedCli {
   } else if (name === 'traces') {
     if (extra.length !== 1 || extra[0] !== 'drain' || !values.run) return { kind: 'error', message: 'traces expects drain --run <id>' };
     if (!/^[a-zA-Z0-9_-]+$/.test(values.run)) return { kind: 'error', message: 'Invalid run id' };
+    if (values['dry-run'] || values.plan) return { kind: 'error', message: 'traces drain verifies real delivery; --dry-run and --plan are not supported' };
   } else if (extra.length > 0) {
     return { kind: 'error', message: `unexpected argument "${extra[0]}"` };
   }

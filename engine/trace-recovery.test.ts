@@ -19,6 +19,15 @@ function fixture() {
 }
 
 describe('recoverRunTraces', () => {
+  it('refreshes latest only when it points at the verified run', async () => {
+    const { root, outputDir, run, ledger } = fixture();
+    const latest = join(root, 'latest'); mkdirSync(latest);
+    writeFileSync(join(latest, 'run.json'), JSON.stringify(run));
+    writeFileSync(join(latest, 'ledger.json'), JSON.stringify(ledger));
+    await recoverRunTraces({ runId: run.runId, outputDir, drain: { drainWorker: async () => {} }, reader: { verifyFor: async () => 'a'.repeat(32) } });
+    expect(readFileSync(join(latest, 'run.json'), 'utf8')).toBe(readFileSync(join(outputDir, 'run.json'), 'utf8'));
+    expect(readFileSync(join(latest, 'ledger.json'), 'utf8')).toBe(readFileSync(join(outputDir, 'ledger.json'), 'utf8'));
+  });
   it('updates only verified finished-run status and keeps decision trace ids unchanged', async () => {
     const { root, outputDir, ledger } = fixture();
     const latest = join(root, 'latest'); mkdirSync(latest);

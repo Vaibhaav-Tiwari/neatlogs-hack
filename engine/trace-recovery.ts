@@ -35,13 +35,14 @@ export async function recoverRunTraces(options: {
   const traceIds: string[] = [];
   for (const row of workers) {
     await drain.drainWorker({ checkoutPath: null, entireSessionId: row.entireSessionId });
-    if (drain.status?.().status === 'missing') throw new Error('Worker batches remain pending; saved status was not changed');
+    if (drain.status && drain.status().status !== 'ok') throw new Error('Worker batches remain pending; saved status was not changed');
     const id = await reader.verifyFor({ runId: row.runId, taskId: row.taskId, attempt: row.attempt, nativeSessionId: row.entireSessionId!, traceId: row.workerTraceId });
     if (!id) throw new Error(`Worker trace read-back failed for ${row.taskId} attempt ${row.attempt}; saved status was not changed`);
     row.workerTraceId = id;
     traceIds.push(id);
   }
   const completed = (options.now ?? (() => new Date()))().toISOString();
+  run.updatedAt = completed;
   run.integrations.neatlogs = { status: 'ok', detail: `Worker trace delivery completed after the run at ${completed}; read-back verified: ${[...new Set(traceIds)].join(', ')}.` };
   if (!validateRunState(run).ok || !validateLedger(ledger).ok) throw new Error('Recovered evidence failed schema validation');
   if (readFileSync(runPath, 'utf8') !== originalRun || readFileSync(ledgerPath, 'utf8') !== originalLedger) throw new Error('Saved run changed during recovery; refusing to overwrite');

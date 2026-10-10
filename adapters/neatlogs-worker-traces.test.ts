@@ -20,14 +20,15 @@ describe('NeatlogsWorkerTraceReader', () => {
     expect(calls).toHaveLength(3);
   });
 
-  it.each(['session', 'run', 'task', 'attempt', 'spans', 'detail'])('does not verify a %s mismatch or incomplete response', async fault => {
+  it.each(['session', 'run', 'task', 'attempt', 'id', 'spans', 'empty', 'detail'])('does not verify a %s mismatch or incomplete response', async fault => {
     const candidate = { ...trace, ...(fault === 'session' ? { sessionId: 'other' } : {}) };
     if (fault === 'run') candidate.workflowName = candidate.workflowName.replace('run-1', 'run-other');
     if (fault === 'task') candidate.workflowName = candidate.workflowName.replace('T1,', 'T2,');
     if (fault === 'attempt') candidate.workflowName = candidate.workflowName.replace('attempt 1:', 'attempt 2:');
+    if (fault === 'id') candidate.traceId = 'b'.repeat(32);
     const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async input => {
       if (String(input).includes('?')) return json({ traces: [trace] });
-      if (String(input).endsWith('/spans')) return fault === 'spans' ? json({}, 409) : json({ spans: [{}] });
+      if (String(input).endsWith('/spans')) return fault === 'spans' ? json({}, 409) : json({ spans: fault === 'empty' ? [] : [{}] });
       return fault === 'detail' ? json({}, 404) : json(candidate);
     } });
     expect(await reader.verifyFor(context)).toBeNull();

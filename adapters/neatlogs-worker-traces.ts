@@ -49,7 +49,7 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
         for (const id of candidates) {
           if (!/^[0-9a-f]{32}$/i.test(id)) continue;
           const detail = await this.read(`/traces/${id}`) as { data?: TraceRecord } | null;
-          if (!detail?.data || !matches(detail.data, context)) continue;
+          if (!detail?.data || detail.data.traceId !== id || !matches(detail.data, context)) continue;
           const spans = await this.read(`/traces/${id}/spans`) as { data?: { spans?: unknown[] } } | null;
           // A trace-list stub/app shell is not delivery proof. Killed turns may have
           // zero aggregate tokens yet still have readable tool spans.
