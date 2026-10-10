@@ -17,13 +17,14 @@ test:
 tasks:
   - id: T1
     title: Round invoice totals to cents before writing ledger rows
-    expectedSize: small
+    size: small
     issueNumber: 101
     description: |
       The invoice writer currently stores floating point totals directly in
       ledger rows. Update it so subtotal, tax, and total are rounded to two
       decimal places before persistence, without changing the tax rate.
     passCheck: npm test -- --run tests/invoice-rounding.test.ts
+    outcomes: [passed]
     scriptedOutcome:
       route: cheap
       decision: Small arithmetic fix with a focused unit test, so the cheap tier should finish it inside the small ceiling.
@@ -34,13 +35,14 @@ tasks:
 
   - id: T2
     title: Show customer name in the receipt email subject
-    expectedSize: small
+    size: small
     issueNumber: 102
     description: |
       Receipt emails say "Your receipt is ready" for every customer. Include the
       customer display name in the subject while preserving the existing body
       template and fallback for missing names.
     passCheck: npm test -- --run tests/receipt-email.test.ts
+    outcomes: [passed]
     scriptedOutcome:
       route: cheap
       decision: Template-only change with existing coverage, so the cheapest model is the right first attempt.
@@ -51,13 +53,14 @@ tasks:
 
   - id: T3
     title: Reject duplicate webhook deliveries by event id
-    expectedSize: small
+    size: small
     issueNumber: 103
     description: |
       Payment webhooks can be delivered more than once. Add an idempotency guard
       keyed by the provider event id so duplicate deliveries do not create
       duplicate ledger entries.
     passCheck: npm test -- --run tests/webhook-idempotency.test.ts
+    outcomes: [passed]
     scriptedOutcome:
       route: cheap
       decision: The affected code path is narrow and the test names the exact idempotency case, so start cheap.
@@ -68,13 +71,14 @@ tasks:
 
   - id: T4
     title: Add CSV export for the monthly ledger
-    expectedSize: medium
+    size: medium
     issueNumber: 104
     description: |
       Add a monthly CSV export endpoint for ledger rows. The file must include
       invoice id, customer, status, subtotal, tax, total, and paid_at, sorted by
       paid_at ascending.
     passCheck: npm test -- --run tests/monthly-export.test.ts
+    outcomes: [passed]
     scriptedOutcome:
       route: middle
       decision: This touches route handling, query filtering, and formatting, so the middle tier is cheaper than risking a stopped cheap attempt.
@@ -85,13 +89,14 @@ tasks:
 
   - id: T5
     title: Cache exchange rates without serving stale conversions
-    expectedSize: medium
+    size: medium
     issueNumber: 105
     description: |
       Exchange-rate lookups are slow. Add a cache with a ten minute TTL, but
       make sure a failed refresh keeps the last good rate only when it is still
       inside the TTL.
     passCheck: npm test -- --run tests/exchange-rate-cache.test.ts
+    outcomes: [stopped, passed]
     scriptedOutcome:
       route: cheap
       decision: It looks like a bounded cache change, so the cheap tier gets a capped attempt before escalation.
@@ -108,13 +113,14 @@ tasks:
 
   - id: T6
     title: Reconcile partial refunds against the original invoice
-    expectedSize: medium
+    size: medium
     issueNumber: 106
     description: |
       Partial refunds should reduce recognized revenue and mark the invoice as
       partially_refunded without deleting the original payment row. Add the
       reconciliation logic and cover a partial refund followed by full refund.
     passCheck: npm test -- --run tests/refund-reconciliation.test.ts
+    outcomes: [failed, passed]
     scriptedOutcome:
       route: middle
       decision: Refund reconciliation crosses state transitions and accounting totals, so begin at the middle tier.
@@ -125,13 +131,14 @@ tasks:
 
   - id: T7
     title: Support tax rules for every country in one change
-    expectedSize: large
+    size: large
     issueNumber: 107
     description: |
       Add correct tax calculation for every country, including regional rules,
       filing thresholds, exemptions, and future law changes, with no external
       tax provider and no product decision about supported countries.
     passCheck: npm test -- --run tests/global-tax-rules.test.ts
+    outcomes: [failed]
     scriptedOutcome:
       route: top
       decision: The request is underspecified and broad, so the strongest tier is the only reasonable attempt; it may still fail.

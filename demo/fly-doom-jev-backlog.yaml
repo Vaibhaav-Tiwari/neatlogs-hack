@@ -17,8 +17,9 @@ test:
 tasks:
   - id: FDJ-1
     title: Add replay loader coverage for malformed recording files
-    expectedSize: small
-    description: |
+    size: small
+    label: tally
+    body: |
       The replay loader already rejects a recording with no header, but it does
       not have focused coverage for malformed JSONL rows or frame metadata with
       a missing pattern. Add defensive tests and the smallest loader changes
@@ -28,8 +29,9 @@ tasks:
 
   - id: FDJ-2
     title: Include goal fields in encoded state tests
-    expectedSize: small
-    description: |
+    size: small
+    label: tally
+    body: |
       `EnvironmentState` has a `goal` field for E1M1 strategy, but the unit
       tests only assert the older threat and serialization fields. Add coverage
       proving that a goal dict can be attached, serialized, and omitted for
@@ -38,8 +40,9 @@ tasks:
 
   - id: FDJ-3
     title: Test POST /new rejects unknown live scenarios
-    expectedSize: small
-    description: |
+    size: small
+    label: tally
+    body: |
       The live API validates scenario names in `request_new_episode`, but there
       is no direct API-level test for a bad `POST /new` body. Add a small test
       around the FastAPI route or the loop method so an unknown scenario returns
@@ -48,8 +51,9 @@ tasks:
 
   - id: FDJ-4
     title: Preserve recording summary when both summary and episode_end rows exist
-    expectedSize: medium
-    description: |
+    size: medium
+    label: tally
+    body: |
       `load_recording` treats both `summary` and `episode_end` rows as the
       recording summary. Make the behavior explicit and deterministic when a
       file contains both rows, then add a regression test that documents which
@@ -58,8 +62,9 @@ tasks:
 
   - id: FDJ-5
     title: Add action-weighting regression for missing MOVEMENT_INTENT metadata
-    expectedSize: medium
-    description: |
+    size: medium
+    label: tally
+    body: |
       `jev_action_weights` reads optional movement-intent probabilities from
       decision metadata. Add coverage for decisions that have probabilities but
       no `choice_probabilities` key, and make the implementation tolerate that
@@ -68,8 +73,9 @@ tasks:
 
   - id: FDJ-6
     title: Make plasticity checkpoint errors actionable
-    expectedSize: medium
-    description: |
+    size: medium
+    label: tally
+    body: |
       A corrupt or incompatible plasticity checkpoint should fail with a message
       that names the checkpoint path and provenance mismatch instead of a raw
       NumPy exception. Add tests for corrupt checkpoint data and mismatched
@@ -79,8 +85,10 @@ tasks:
 
   - id: FDJ-7
     title: Add deterministic featured-recording generation for the static showcase
-    expectedSize: medium-hard
-    description: |
+    size: medium
+    difficultyNote: looks medium but is hard
+    label: tally
+    body: |
       The project now serves a static GitHub Pages showcase from curated
       recordings. Add a deterministic packaging path that writes `featured.json`
       in a stable order, verifies every referenced recording and frame exists,
