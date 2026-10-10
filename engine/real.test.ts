@@ -295,6 +295,19 @@ describe('runRealTally', () => {
     expect(worker.starts.map((start) => start.ceilingNanos)).toEqual([usdToNanos(0.001), usdToNanos(0.5)]);
     expect(worker.starts[1]?.prompt).toContain('Partial implementation: continue calc.ts.');
   });
+  it('records CLI limit provenance separately from live cfo.ai accounting', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), false, usdToNanos(10));
+    let reads = 0;
+    cfoai.budgetLimitNanos = async () => { reads += 1; return usdToNanos(40); };
+    const result = await runRealTally({ configPath, budgetUsd: 1, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker, cfoai } });
+    expect(result.runState.budget).toMatchObject({ limitSource: 'cli', systemOfRecord: 'cfoai', limitNanos: usdToNanos(1) });
+    expect(reads).toBe(1);
+    expect(worker.starts).toHaveLength(1);
+    expect(cfoai.writes).toEqual([result.runState.budget.spentNanos]);
+  });
   it.each([false, true])('records scope warnings and only blocks when configured: %s', async (block) => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('aoProject: "payments"', `aoProject: "payments", blockOutOfScopeChanges: ${block}`));

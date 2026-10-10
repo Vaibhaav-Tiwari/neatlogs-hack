@@ -632,12 +632,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
   let budgetSource: BudgetSource = 'config';
   let committedBeforeRunNanos = 0;
-  if (options.budgetUsd === undefined && config.budget.source === 'cfoai' && ports.cfoai) {
+  if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
     try {
       const [limit, currentSpend] = await Promise.all([ports.cfoai.budgetLimitNanos(), ports.cfoai.currentSpendNanos?.() ?? Promise.resolve(0)]);
-      budgetLimitNanos = limit;
-      committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
-      budgetSource = 'cfoai';
+      if (options.budgetUsd === undefined && config.budget.source === 'cfoai') {
+        budgetLimitNanos = limit;
+        committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
+        budgetSource = 'cfoai';
+      }
     } catch {
       budgetSource = 'config';
     }
@@ -678,6 +680,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       endedAt,
       budget: {
         source: budgetSource,
+        limitSource: options.budgetUsd === undefined ? budgetSource : 'cli',
+        systemOfRecord: config.integrations.cfoai && ports.cfoai ? 'cfoai' : 'ledger',
         limitNanos: budgetLimitNanos,
         spentNanos: ledgerSpend(ledger),
       },

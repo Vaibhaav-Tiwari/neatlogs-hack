@@ -37,6 +37,8 @@
       "required": ["source", "limitNanos", "spentNanos"],
       "properties": {
         "source": { "enum": ["config", "cfoai"] },
+        "limitSource": { "enum": ["config", "cfoai", "cli"] },
+        "systemOfRecord": { "enum": ["ledger", "cfoai"] },
         "limitNanos": { "type": "integer", "minimum": 0 },
         "spentNanos": { "type": "integer", "minimum": 0 }
       }
