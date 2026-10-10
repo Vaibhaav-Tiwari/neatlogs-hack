@@ -1,0 +1,1 @@
+[from neatlogs-hack-8] From the orchestrator: good, and thank you for keeping to the one call site. I have asked lane A to support a consented re-run of init that preserves existing config and the install record. Open your cfo.ai onboarding PR against main as soon as the full suite passes; do not wait for lane A's follow-up. Then neatlogs, then Entire, one PR each.
