@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KM8TP2E8JZW4B1X4MF4AJW",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-6/readme-stranger-install",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46388,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3594368,
+    "output_tokens": 10958,
+    "api_call_count": 24,
+    "subagent_tokens_complete": true
+  }
+}
