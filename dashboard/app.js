@@ -6,7 +6,8 @@ import { displayedCost, isRunning, withLiveCosts } from './live-state.js';
 import { createCodeGraph } from './code-graph.js';
 import { experimentMarkup, experimentMatches, validExperiment } from './experiment-view.js';
 import { budgetPageUrl } from './budget-link.js';
-import { installSessionCopy, sessionEvidence } from './session-evidence.js';
+import { copyableIdEvidence, installSessionCopy, sessionEvidence } from './session-evidence.js';
+import { reasonText } from './reason-text.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -62,8 +63,7 @@ const link = (url, text) => {
   return href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(text)}</a>` : '';
 };
 
-const idEvidence = (label, value) =>
-  value ? `<span class="evidence-id">${esc(label)} <code tabindex="0" title="Select to copy">${esc(value)}</code></span>` : '';
+const idEvidence = copyableIdEvidence;
 
 function aoSessionEvidence(sessionId) {
   // A browser URL or query parameter cannot establish that the host handles AO links.
@@ -136,7 +136,7 @@ function draw(id, html) {
 }
 
 const passedCount = (run) => run.tasks.filter((task) => task.status === 'passed').length;
-const perMergedPr = (run) => (passedCount(run) > 0 ? run.budget.spentNanos / passedCount(run) : null);
+const perPassedTask = (run) => (passedCount(run) > 0 ? run.budget.spentNanos / passedCount(run) : null);
 const passRate = (run) => (run.tasks.length > 0 ? passedCount(run) / run.tasks.length : 0);
 
 const sampleRepos = new Set(['acme/payments-service', 'demo/invoice-ledger']);
@@ -185,7 +185,7 @@ function runSummary(state, source = {}) {
     total: run.tasks.length,
     passRate: passRate(run),
     totalCost: run.budget.spentNanos,
-    perMerged: perMergedPr(run),
+    perPassed: perPassedTask(run),
   };
 }
 
@@ -335,11 +335,11 @@ function drawRunPicker(run, source) {
 
 function drawHeadline(run, baseline) {
   const passed = passedCount(run);
-  const each = perMergedPr(run);
+  const each = perPassedTask(run);
   const done = run.tasks.filter((task) => ['passed', 'failed', 'skipped'].includes(task.status)).length;
   let compare = '';
   if (baseline) {
-    const baseEach = perMergedPr(baseline.run);
+    const baseEach = perPassedTask(baseline.run);
     if (baseEach === null) {
       compare = `<p class="compare">Baseline run ${esc(baseline.run.runId)} has no passed task to compare with yet.</p>`;
     } else {
@@ -363,7 +363,7 @@ function drawHeadline(run, baseline) {
   }
   draw(
     'headline',
-    `<h2>Cost per merged pull request</h2>
+    `<h2>Cost per passed task</h2>
      <p class="big fig">${each === null ? '<span class="none">none yet</span>' : usd(each)}</p>
      <p class="marks">${tallyMarks(passed)}<span>${passed} of ${run.tasks.length} tasks passed${done < run.tasks.length ? `, ${run.tasks.length - done} still open` : ''}</span></p>
      ${compare}`,
@@ -414,7 +414,7 @@ function drawComparison(run, source) {
       const runList = group.map((item) => `${item.runId}${item.repeat !== null ? ` (repeat ${item.repeat})` : ''}`).join(', ');
       return `<tr>
         <td>${modeName === 'baseline' ? 'Baseline repeats' : 'Tally repeats'}<span class="l-note">${group.length} ${group.length === 1 ? 'run' : 'runs'}: ${esc(runList)}</span></td>
-        <td class="num fig">${spread(group.map((item) => item.perMerged), usd)}</td>
+        <td class="num fig">${spread(group.map((item) => item.perPassed), usd)}</td>
         <td class="num fig">${spread(group.map((item) => item.passRate), pct)}</td>
         <td class="num fig">${spread(group.map((item) => item.totalCost), usd)}</td>
       </tr>`;
@@ -428,7 +428,7 @@ function drawComparison(run, source) {
     .map(
       (item) => `<tr>
         <td>${item.mode === 'baseline' ? 'Baseline' : 'Tally'}<span class="l-note">${esc(item.runId)}</span></td>
-        <td class="num fig">${item.perMerged === null ? '<span class="blank">none</span>' : usd(item.perMerged)}</td>
+        <td class="num fig">${item.perPassed === null ? '<span class="blank">none</span>' : usd(item.perPassed)}</td>
         <td class="num fig">${pct(item.passRate)}<span class="l-note">${item.passed}/${item.total} passed</span></td>
         <td class="num fig">${usd(item.totalCost)}</td>
       </tr>`,
@@ -621,7 +621,7 @@ function taskDecision(attempts) {
   const first = attempts[0];
   const last = attempts[attempts.length - 1];
   const carry = attempts.length > 1 && last?.escalatedFrom ? `<p class="carried">Latest attempt continues the previous work.</p>` : '';
-  return `${carry}<p>${esc(first.decision)}</p>${last?.attempt !== first.attempt ? `<p class="reason">Final decision: ${esc(last.decision)}</p>` : ''}${last?.resultReason ? `<p class="reason ${last.result === 'stopped' ? 'over' : ''}">${esc(last.resultReason)}</p>` : ''}`;
+  return `${carry}<p>${esc(first.decision)}</p>${last?.attempt !== first.attempt ? `<p class="reason">Final decision: ${esc(last.decision)}</p>` : ''}${last?.resultReason ? `<p class="reason ${last.result === 'stopped' ? 'over' : ''}">${reasonText(last.resultReason)}</p>` : ''}`;
 }
 
 const taskGraphs = new Map();
@@ -658,7 +658,7 @@ function drawLedger(run, ledger) {
             <div><dt>Attempts</dt><dd>${attemptCountCell(task, attempts, awaiting)}</dd></div>
             <div class="task-total"><dt>Total cost</dt><dd>${costCell(attempts.reduce((sum,row)=>sum+displayedCost(row),0), null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</dd></div></dl>
         </header>
-        <div class="ledger-decision"><span class="decision-label">Why</span>${taskDecision(attempts)}${task.statusReason ? `<p class="why-status">${esc(task.statusReason)}</p>` : ''}</div>
+        <div class="ledger-decision"><span class="decision-label">Why</span>${taskDecision(attempts)}${task.statusReason ? `<p class="why-status">${reasonText(task.statusReason)}</p>` : ''}</div>
         ${keys.has(`${run.runId}:${task.taskId}`) ? `<div data-graph-slot="${esc(task.taskId)}"></div>` : ''}
         ${attemptTable(run, attempts)}
       </article>`;
@@ -702,7 +702,7 @@ function attemptTable(run, ledger) {
         }</td>
         <td class="num fig" data-label="Ceiling">${row.ceilingNanos == null ? '<span class="blank">uncapped</span>' : usd(row.ceilingNanos)}</td>
         <td class="num fig" data-label="Time">${running ? `since ${clock(row.startedAt)}` : minutes(row.startedAt, row.endedAt ?? row.startedAt)}</td>
-        <td class="l-result" data-label="Result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${suspect ? '<span class="suspect">suspect pass</span>' : ''}${row.resultReason ? `<span class="l-note">${esc(row.resultReason)}</span>` : ''}</td>
+        <td class="l-result" data-label="Result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${suspect ? '<span class="suspect">suspect pass</span>' : ''}${row.resultReason ? `<span class="l-note">${reasonText(row.resultReason)}</span>` : ''}</td>
         <td class="l-links" data-label="Evidence">${links.length ? links.join(' ') : '<span class="blank">none yet</span>'}${suspect ? '<span class="l-note over">Missing PR/branch evidence or has zero cost with non-zero tokens.</span>' : ''}</td></tr>`;
     })
     .join('');

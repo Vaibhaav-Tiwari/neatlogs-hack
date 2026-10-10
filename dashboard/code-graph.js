@@ -131,7 +131,9 @@ export function createCodeGraph(task) {
     const shown = nodes.length;
     details.querySelector('.graph-caption').textContent = `${totals.filesTouched ?? 0} target ${totals.filesTouched === 1 ? 'file' : 'files'}, ${totals.dependents ?? 0} ${totals.dependents === 1 ? 'dependent' : 'dependents'}, ${totals.testsPresent ? 'tests present' : 'no tests found'} → ${task.size ?? 'unsized'}.${limited || shown < (task.impact.nodes?.length ?? 0) ? ` Showing ${shown}${Number.isFinite(totals.nodes) ? ` of ${totals.nodes}` : ''} nodes; ${limited ? 'slice truncated' : 'relations grouped'}, totals cover the full graph.` : ''}`;
     details.querySelector('summary').textContent = `Code graph · ${task.taskId} · ${task.impact.totals?.filesTouched ?? 0} target ${task.impact.totals?.filesTouched === 1 ? 'file' : 'files'}`;
-    details.querySelector('.graph-query').textContent = `${task.impact.source === 'scripted' ? 'Sample graph' : task.impact.source === 'entire-graph' ? 'Entire code graph' : 'Code search'}${task.impact.query ? ` · ${task.impact.query}` : ''}`;
+    const queryLine = details.querySelector('.graph-query');
+    queryLine.textContent = `${task.impact.source === 'scripted' ? 'Sample graph' : task.impact.source === 'entire-graph' ? 'Entire code graph' : 'Code search'} · ${task.title}`;
+    queryLine.title = task.impact.query ?? '';
     svg.setAttribute('aria-label', `Code impact for ${task.title}`);
     const timeline = details.querySelector('.graph-attempts');
     const signature = JSON.stringify(attempts.map((row) => [row.attempt, row.tier, row.result, row.endedAt]));

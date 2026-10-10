@@ -3,7 +3,7 @@
 A CFO for a fleet of coding agents. Give it a backlog and a budget. It sizes
 each task, sends it to the cheapest model likely to finish it, stops any task
 that overruns its spend ceiling, hands failed work to a stronger model, and
-ends with a ledger tying every dollar to a merged PR.
+ends with a ledger tying spend to each attempt, its test result and any opened PR.
 
 Status: early build, available from GitHub. The npm package `tally-agents`
 has not been released yet. The seven-task demo uses simulated workers; real
