@@ -55,6 +55,8 @@ export interface LedgerRow {
   harness: string;
   /** Agent Orchestrator session id; null for simulated attempts. */
   sessionId: string | null;
+  /** Native Entire/Codex session id, separate from the AO worker session. */
+  entireSessionId?: string | null;
   branch: string | null;
   tokens: TokenUsage;
   estimatedCostNanos: number;

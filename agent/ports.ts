@@ -127,6 +127,7 @@ export interface HandoffPort {
 export interface CheckpointInfo {
   checkpointId: string;
   checkpointUrl: string | null;
+  entireSessionId?: string | null;
 }
 
 export interface CheckpointPort {

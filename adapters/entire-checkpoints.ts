@@ -42,6 +42,8 @@ interface ExplainEnvelope {
   url?: unknown;
   web_url?: unknown;
   html_url?: unknown;
+  files_touched?: unknown;
+  sessions?: Array<{ session_id?: unknown }>;
 }
 
 function defaultCommand(file: string, args: string[], options?: { cwd?: string }): Promise<CommandResult> {
@@ -100,7 +102,7 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
 
   async checkpointFor(context: HandoffContext & { sessionId: string }): Promise<CheckpointInfo | null> {
     const found = await this.findCheckpoint(context);
-    return found ? { checkpointId: found.checkpointId, checkpointUrl: found.checkpointUrl } : null;
+    return found ? { checkpointId: found.checkpointId, checkpointUrl: found.checkpointUrl, entireSessionId: found.entireSessionId ?? null } : null;
   }
 
   async summaryFor(sessionId: string, context: HandoffContext = {}): Promise<HandoffSummary | null> {
@@ -116,7 +118,15 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
       : await this.command('entire', ['checkpoint', 'explain', found.checkpointId, '--short', '--no-pager'], { cwd: context.checkoutPath ?? this.repoPath }).catch(
           () => null,
         );
-    const summary = trimSummary(`${generated?.stdout ?? fallback?.stdout ?? ''}\n${generated?.stderr ?? fallback?.stderr ?? ''}`);
+    let summary = trimSummary(generated?.stdout ?? fallback?.stdout ?? '');
+    if (!summary || /not generated yet|run .*checkpoint explain.*--generate/i.test(summary)) {
+      const metadata = await this.command('entire', ['checkpoint', 'explain', found.checkpointId, '--json', '--no-pager'], {
+        cwd: context.checkoutPath ?? this.repoPath,
+      }).catch(() => null);
+      const parsed = metadata ? parseJson<ExplainEnvelope>(metadata.stdout) : null;
+      const files = Array.isArray(parsed?.files_touched) ? parsed.files_touched.filter((file): file is string => typeof file === 'string') : [];
+      summary = files.length ? `Checkpoint ${found.checkpointId} on branch ${found.branch ?? context.branch ?? '(unknown)'} records changes to ${files.join(', ')}; inspect those changes and rerun the failed tests before continuing.` : '';
+    }
     if (!summary) return null;
     return {
       type: 'entire-handoff',
@@ -131,8 +141,16 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
 
   private async findCheckpoint(context: HandoffContext & { sessionId: string }): Promise<(CheckpointInfo & { branch: string | null }) | null> {
     if (context.checkpointId) return this.explain(context.checkpointId, context);
+    // AO session ids differ from Codex session ids; the task commit is authoritative.
+    if (context.branch || context.checkoutPath) {
+      const log = await this.command('git', ['log', '-1', '--format=%B', '--end-of-options', context.branch ?? 'HEAD', '--'], {
+        cwd: context.checkoutPath ?? this.repoPath,
+      }).catch(() => null);
+      const trailer = log ? trailerFrom(log.stdout) : null;
+      if (trailer) return this.explain(trailer, context);
+    }
     const session = await this.sessionInfo(context.sessionId, context.checkoutPath);
-    const sessionCheckpoint = checkpointId(session ?? {});
+    const sessionCheckpoint = text(session?.last_checkpoint_id) ?? checkpointId(session ?? {});
     if (sessionCheckpoint) return this.explain(sessionCheckpoint, { ...context, branch: text(session?.branch) ?? context.branch ?? null });
 
     const pending = await this.checkpointList(['checkpoint', 'list', '--pending', '--json'], context.checkoutPath);
@@ -143,11 +161,6 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
     const condensedMatch = latestForSession(condensed, context.sessionId);
     if (condensedMatch) return this.explain(checkpointId(condensedMatch)!, { ...context, branch: text(condensedMatch.branch) ?? context.branch ?? null });
 
-    if (context.checkoutPath) {
-      const log = await this.command('git', ['log', '-1', '--format=%B'], { cwd: context.checkoutPath }).catch(() => null);
-      const trailer = log ? trailerFrom(log.stdout) : null;
-      if (trailer) return this.explain(trailer, context);
-    }
     return null;
   }
 
@@ -171,6 +184,7 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
       checkpointId: checkpoint,
       checkpointUrl: parsed ? checkpointUrl(parsed) : null,
       branch: text(parsed?.branch) ?? context.branch ?? null,
+      entireSessionId: text(parsed?.sessions?.[parsed.sessions.length - 1]?.session_id),
     };
   }
 }
