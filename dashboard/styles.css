@@ -80,6 +80,15 @@ h1 { font: 700 54px/0.95 var(--serif); letter-spacing: 0; }
   font: 400 14px/1.45 var(--mono);
   color: var(--ink-2);
 }
+.data-label {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-weight: 600;
+  text-transform: uppercase;
+}
 .run-picker {
   display: flex;
   align-items: center;
@@ -242,10 +251,18 @@ th.num, td.num { text-align: right; }
 }
 .l-result .status { font-size: 15px; }
 .ledger tr.a-stopped td:first-child { box-shadow: inset 4px 0 0 var(--vermilion); padding-left: 12px; }
+.ledger tr.a-suspect td:first-child { box-shadow: inset 4px 0 0 var(--vermilion); padding-left: 12px; }
 .ledger tfoot td { border-top: 1px solid var(--rule); font-style: italic; padding-top: 9px; padding-bottom: 9px; }
 .ledger tfoot .fig { font-style: normal; font-weight: 600; }
 .ledger tfoot .total { text-decoration: underline double; text-underline-offset: 4px; }
 .empty { font-style: italic; color: var(--ink-2); padding: 22px 4px; }
+.suspect {
+  display: block;
+  margin-top: 4px;
+  color: var(--vermilion);
+  font: 600 13px/1.3 var(--mono);
+  text-transform: uppercase;
+}
 
 .foot { margin-top: 28px; font-size: 14.5px; color: var(--ink-2); font-style: italic; max-width: 100ch; }
 .foot .fig { font-style: normal; font-size: 13.5px; }

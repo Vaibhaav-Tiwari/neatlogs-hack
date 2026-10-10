@@ -174,8 +174,15 @@ function sourceLabel(source) {
   return activeData.includes('/latest/') || activeData.endsWith('/latest/') ? `Reading latest run files from ${activeData}` : `Reading run files from ${activeData}`;
 }
 
-function drawDataSource(source) {
-  draw('data-source', `Data source: <span class="fig">${esc(sourceLabel(source))}</span>`);
+function dataKind(run, source) {
+  if (source.sample) return 'sample data';
+  if (source.replaying) return 'replay data';
+  if (run.dryRun) return 'simulated dry run';
+  return 'real run';
+}
+
+function drawDataSource(run, source) {
+  draw('data-source', `<span class="data-label">${esc(dataKind(run, source))}</span> Data source: <span class="fig">${esc(sourceLabel(source))}</span>`);
 }
 
 function drawRunPicker(source) {
@@ -422,17 +429,26 @@ function drawTasks(run, ledger) {
   );
 }
 
+function isSuspectPass(row, run) {
+  if (row.result !== 'passed') return false;
+  const hasTokens = (row.tokens?.total ?? 0) > 0;
+  const zeroCostWithTokens = hasTokens && displayedCost(row) === 0;
+  const missingWorkEvidence = !run.dryRun && row.costSource !== 'simulated' && !row.prUrl && !row.branch;
+  return zeroCostWithTokens || missingWorkEvidence;
+}
+
 function drawLedger(run, ledger) {
   const seenTasks = new Set();
   const rows = ledger
     .map((row) => {
       const running = isRunning(row);
       const kind = running ? 'running' : row.result;
+      const suspect = isSuspectPass(row, run);
       const groupStart = !seenTasks.has(row.taskId);
       seenTasks.add(row.taskId);
       const links = [link(row.prUrl, 'PR'), aoSessionEvidence(row.sessionId), checkpointEvidence(row), traceEvidence(row)].filter(Boolean);
       const tokenSplit = `${count(row.tokens.uncachedInput)} in, ${count(row.tokens.cachedInput)} cached, ${count(row.tokens.output)} out`;
-      return `<tr class="a-${esc(kind)} ${groupStart ? 'group-start' : ''}">
+      return `<tr class="a-${esc(kind)} ${suspect ? 'a-suspect' : ''} ${groupStart ? 'group-start' : ''}">
         <td class="fig">${esc(row.taskId)}/${row.attempt}</td>
         <td class="l-task"><span class="l-task-id">${esc(row.taskId)}</span>${esc(row.taskTitle)}${row.escalatedFrom ? '<span class="l-note">continues the attempt above it</span>' : ''}</td>
         <td><span class="fig">${esc(row.model)}</span><span class="l-note">${esc(row.tier)} tier, ${esc(row.harness)}</span></td>
@@ -442,8 +458,8 @@ function drawLedger(run, ledger) {
         }</td>
         <td class="num fig">${usd(row.ceilingNanos)}</td>
         <td class="num fig">${running ? `since ${clock(row.startedAt)}` : minutes(row.startedAt, row.endedAt ?? row.startedAt)}</td>
-        <td class="l-result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${row.resultReason && row.result !== 'stopped' ? `<span class="l-note">${esc(row.resultReason)}</span>` : ''}</td>
-        <td class="l-links">${links.length ? links.join(' ') : '<span class="blank">none yet</span>'}</td></tr>`;
+        <td class="l-result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${suspect ? '<span class="suspect">suspect pass</span>' : ''}${row.resultReason && row.result !== 'stopped' ? `<span class="l-note">${esc(row.resultReason)}</span>` : ''}</td>
+        <td class="l-links">${links.length ? links.join(' ') : '<span class="blank">none yet</span>'}${suspect ? '<span class="l-note over">Missing PR/branch evidence or has zero cost with non-zero tokens.</span>' : ''}</td></tr>`;
     })
     .join('');
   const tokens = ledger.reduce((sum, row) => sum + row.tokens.total, 0);
@@ -479,7 +495,7 @@ function drawAll(state, source) {
   state = withLiveCosts(state, { liveCeilingSec: config.liveCeilingSec });
   drawRun(state.run);
   drawNotice(state.run, source);
-  drawDataSource(source);
+  drawDataSource(state.run, source);
   drawRunPicker(source);
   drawHeadline(state.run, source.baseline);
   drawBudget(state.run, state.ledger);
