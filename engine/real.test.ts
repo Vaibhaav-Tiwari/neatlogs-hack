@@ -280,6 +280,23 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it.each([
+    { dryRun: false, enabled: true }, { dryRun: true, enabled: true }, { dryRun: false, enabled: false },
+  ])('drains Codex traces after closing real workers only: %j', async ({ dryRun, enabled }) => {
+    const { dir, configPath } = fixture(`neatlogs: ${enabled}, entire: false, cfoai: false, slack: false`);
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('harness: claude-code', 'harness: codex'));
+    const worker = new FakeWorker();
+    const contexts: unknown[] = [];
+    const result = await runRealTally({ configPath, dryRun, baseline: false, outputDir: join(dir, 'drain'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, trace: new FakeTrace(),
+        history: { lookup: async () => null, record: async () => {} },
+        worktrees: { checkoutPathFor: async () => '/worker' },
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        workerTraceDrain: { drainWorker: async (context) => { expect(worker.stopped).toContain('session-1'); contexts.push(context); } },
+      } });
+    expect(contexts.length).toBe(!dryRun && enabled ? 1 : 0);
+    expect(result.runState.status).toBe('finished');
+  });
   it('uses a first-attempt override to stop via the watcher and escalates with the normal ceiling', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
