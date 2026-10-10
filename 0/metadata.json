@@ -3,74 +3,36 @@
   "checkpoint_id": "01M4KD9GPT3QHPBEFFMVC3X6PB",
   "session_id": "01a125af-3ac6-7c02-a43b-a467b6fc3d3a",
   "strategy": "manual-commit",
-  "created_at": "2026-10-10T17:20:42.499364Z",
+  "created_at": "2026-10-10T17:25:43.566545Z",
   "branch": "ao/neatlogs-hack-2/fdj-run-and-final-slice",
   "checkpoints_count": 1,
   "files_touched": [
     "adapters/ao.test.ts",
-    "adapters/ao.ts",
-    "adapters/publisher.test.ts",
-    "adapters/publisher.ts",
-    "cli/main.test.ts",
-    "engine/preflight.test.ts",
-    "engine/preflight.ts",
-    "engine/real.test.ts",
-    "engine/real.ts",
-    "engine/run.test.ts",
-    "schema/tally-config.schema.json",
-    "schema/types.ts"
+    "adapters/ao.ts"
   ],
   "agent": "Codex",
   "model": "gpt-5.5",
   "turn_id": "2a23c1a32844",
-  "compact_transcript_start": 0,
+  "checkpoint_transcript_start": 5359,
+  "transcript_lines_at_start": 5359,
+  "compact_transcript_start": 629,
   "token_usage": {
-    "input_tokens": 2344213,
+    "input_tokens": 53851,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 75850752,
-    "output_tokens": 225495,
-    "api_call_count": 582
+    "cache_read_tokens": 3223680,
+    "output_tokens": 7206,
+    "api_call_count": 19
   },
   "initial_attribution": {
-    "calculated_at": "2026-10-10T17:20:42.222673Z",
-    "agent_lines": 30,
-    "agent_removed": 17,
-    "human_added": 0,
+    "calculated_at": "2026-10-10T17:25:43.208752Z",
+    "agent_lines": 56,
+    "agent_removed": 2,
+    "human_added": 427,
     "human_modified": 0,
-    "human_removed": 26,
-    "total_committed": 30,
-    "total_lines_changed": 73,
-    "agent_percentage": 64.38356164383562,
+    "human_removed": 0,
+    "total_committed": 483,
+    "total_lines_changed": 520,
+    "agent_percentage": 11.153846153846155,
     "metric_version": 2
-  },
-  "prompt_attributions": [
-    {
-      "checkpoint_number": 1,
-      "user_lines_added": 533,
-      "user_lines_removed": 26,
-      "agent_lines_added": 0,
-      "agent_lines_removed": 0,
-      "user_added_per_file": {
-        "adapters/ao.test.ts": 107,
-        "adapters/ao.ts": 55,
-        "adapters/publisher.test.ts": 55,
-        "adapters/publisher.ts": 86,
-        "engine/preflight.test.ts": 28,
-        "engine/preflight.ts": 13,
-        "engine/real.test.ts": 123,
-        "engine/real.ts": 59,
-        "schema/tally-config.schema.json": 3,
-        "schema/types.ts": 4
-      },
-      "user_removed_per_file": {
-        "adapters/ao.test.ts": 1,
-        "adapters/ao.ts": 7,
-        "engine/preflight.test.ts": 1,
-        "engine/preflight.ts": 1,
-        "engine/real.test.ts": 4,
-        "engine/real.ts": 11,
-        "schema/tally-config.schema.json": 1
-      }
-    }
-  ]
+  }
 }
