@@ -33,7 +33,10 @@ interface AoSessionJson {
     checkoutPath?: string | null;
     path?: string | null;
     prs?: { url?: string | null }[];
-    activity?: { state?: string };
+    activity?: { state?: string; reason?: string | null; message?: string | null; detail?: string | null };
+    reason?: string | null;
+    message?: string | null;
+    detail?: string | null;
   };
 }
 
@@ -57,6 +60,28 @@ function tokensFromTotals(totals: Record<string, unknown>): TokenUsage {
   const output = tokenNumber(totals.outputTokens);
   const uncachedInput = tokenNumber(totals.uncachedInputTokens ?? input - cachedInput);
   return { uncachedInput, cachedInput, output, total: uncachedInput + cachedInput + output };
+}
+
+function isNeedsInput(value: string | undefined): boolean {
+  return value === 'needs_input' || value === 'waiting_input';
+}
+
+function textValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function needsInputReason(session: AoSessionJson['session']): string {
+  const status = textValue(session?.status) ?? 'unknown';
+  const activity = textValue(session?.activity?.state);
+  const detail =
+    textValue(session?.reason) ??
+    textValue(session?.message) ??
+    textValue(session?.detail) ??
+    textValue(session?.activity?.reason) ??
+    textValue(session?.activity?.message) ??
+    textValue(session?.activity?.detail);
+  const state = activity && activity !== status ? `${status}/${activity}` : status;
+  return detail ? `worker asked for input: ${detail}` : `worker asked for input: AO session entered ${state}`;
 }
 
 export function usageFromAoPayload(payload: unknown): LiveUsage | null {
@@ -103,6 +128,15 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
       if (state?.isTerminated || status === 'terminated') {
         return this.resultFrom(state, 'terminated');
       }
+      if (isNeedsInput(state?.status) || isNeedsInput(state?.activity?.state)) {
+        const reason = needsInputReason(state);
+        try {
+          await this.stop(sessionId, reason);
+        } catch {
+          // The ledger still records the needs-input state; a later cleanup can see the session id.
+        }
+        return this.resultFrom(state, 'needs_input', reason);
+      }
       if (status === 'idle' || state?.activity?.state === 'idle') {
         return this.resultFrom(state, 'idle');
       }
@@ -125,13 +159,14 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     return JSON.parse(stdout) as AoSessionJson;
   }
 
-  private resultFrom(session: AoSessionJson['session'], status: WorkerResult['status']): WorkerResult {
+  private resultFrom(session: AoSessionJson['session'], status: WorkerResult['status'], resultReason: string | null = null): WorkerResult {
     const prUrl = session?.prs?.find((pr) => typeof pr.url === 'string')?.url ?? null;
     return {
       status,
       branch: session?.branch ?? null,
       checkoutPath: session?.checkoutPath ?? session?.worktreePath ?? session?.path ?? null,
       prUrl,
+      resultReason,
     };
   }
 }

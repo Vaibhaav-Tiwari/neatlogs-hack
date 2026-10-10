@@ -105,7 +105,7 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
   const remaining = Math.max(0, await input.ports.budget.remainingNanos());
   if (ceiling > remaining) {
     return giveUp(
-      'failed: no budget to escalate',
+      `failed: no budget to escalate (next ceiling ${usd(ceiling)}, budget left ${usd(remaining)})`,
       `${from} attempt ${outcome}, but the ${usd(ceiling)} ceiling on ${next.name} does not fit the ${usd(remaining)} of budget left, so it is not escalated.`,
     );
   }

@@ -6,7 +6,7 @@ import type { SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, T
 import { usdToNanos, validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
-import { runRealTally, type CfoaiBudgetPort, type WorkerPort, type WorkerStartInput } from './real.js';
+import { runRealTally, type CfoaiBudgetPort, type WorkerPort, type WorkerResult, type WorkerStartInput } from './real.js';
 
 const fixedNow = () => new Date('2026-10-11T03:00:00.000Z');
 
@@ -88,7 +88,7 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
     return { sessionId: `session-${this.starts.length}`, branch: `tally/t1-${this.starts.length}`, checkoutPath: `/tmp/tally-${this.starts.length}` };
   }
 
-  async wait(sessionId: string) {
+  async wait(sessionId: string): Promise<WorkerResult> {
     const index = Number(sessionId.split('-')[1]);
     return { status: 'idle' as const, branch: `tally/t1-${index}`, checkoutPath: `/tmp/tally-${index}`, prUrl: `https://github.com/acme/payments-service/pull/${index}` };
   }
@@ -99,6 +99,19 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
 
   async stop(sessionId: string) {
     this.stopped.push(sessionId);
+  }
+}
+
+class NeedsInputWorker extends FakeWorker {
+  async wait(sessionId: string): Promise<WorkerResult> {
+    const index = Number(sessionId.split('-')[1]);
+    return {
+      status: 'needs_input',
+      branch: `tally/t1-${index}`,
+      checkoutPath: `/tmp/tally-${index}`,
+      prUrl: null,
+      resultReason: 'worker asked for input: AO session entered needs_input/waiting_input',
+    };
   }
 }
 
@@ -208,6 +221,70 @@ describe('runRealTally', () => {
     expect(validateRunState(JSON.parse(readFileSync(result.runStatePath, 'utf8'))).ok).toBe(true);
     expect(validateLedger(JSON.parse(readFileSync(result.ledgerPath, 'utf8'))).ok).toBe(true);
     expect(JSON.parse(readFileSync(join(dir, 'latest', 'run.json'), 'utf8'))).toMatchObject({ runId: result.runState.runId });
+  });
+
+  it('prompts workers to stay in their AO worktree, run setup, and open an unmerged PR', async () => {
+    const { dir, configPath } = fixture();
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('test: { command: "npm test" }', 'test: { setupCommand: "npm ci", command: "npm test" }'));
+    const worker = new FakeWorker();
+
+    await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'prompt'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+      },
+    });
+
+    const prompt = worker.starts[0]!.prompt;
+    expect(prompt).toContain('Work only in the current working directory');
+    expect(prompt).toContain('Never read or write any other checkout or path outside this worktree');
+    expect(prompt).toContain('First run this setup command from the current working directory: npm ci');
+    expect(prompt).toContain('open a pull request against the default branch, and do not merge it');
+    expect(prompt).not.toContain('/tmp/');
+  });
+
+  it('records a worker needs-input state as an error without running verification or escalating', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new NeedsInputWorker();
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'needs-input'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier,
+        usage: worker,
+        sessions: worker,
+      },
+    });
+
+    expect(verifier.calls).toBe(0);
+    expect(result.ledger).toHaveLength(1);
+    expect(result.ledger[0]).toMatchObject({
+      result: 'error',
+      resultReason: 'worker asked for input: AO session entered needs_input/waiting_input',
+    });
+    expect(result.runState.tasks[0]).toMatchObject({
+      status: 'failed',
+      statusReason: 'worker asked for input: AO session entered needs_input/waiting_input',
+      attempts: 1,
+      escalated: false,
+    });
   });
 
   it('resumes from an existing successful ledger row without spawning again', async () => {
