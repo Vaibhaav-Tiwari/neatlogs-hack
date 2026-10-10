@@ -63,6 +63,17 @@
     },
     "estimatedCostNanos": { "type": "integer", "minimum": 0 },
     "costSource": { "enum": ["list-price", "ao-estimate", "simulated"] },
+    "priceNote": { "type": "string" },
+    "price": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputUsdPerMTok", "cachedInputUsdPerMTok", "outputUsdPerMTok"],
+      "properties": {
+        "inputUsdPerMTok": { "type": "number", "minimum": 0 },
+        "cachedInputUsdPerMTok": { "type": "number", "minimum": 0 },
+        "outputUsdPerMTok": { "type": "number", "minimum": 0 }
+      }
+    },
     "ceilingNanos": { "type": "integer", "minimum": 0 },
     "result": { "enum": ["passed", "failed", "stopped", "error"] },
     "resultReason": { "type": ["string", "null"] },

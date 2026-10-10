@@ -175,8 +175,34 @@ command, model tiers, list prices, ceilings and budget all come from
 example and `schema/tally-config.schema.json` for the rules.
 
 Money in the ledger and run state is stored as integer nanos of USD
-(1 USD = 1,000,000,000). Cost is always tokens multiplied by the list price in
-`tally.yaml`.
+(1 USD = 1,000,000,000). List-price estimates multiply aggregate tokens by the
+configured rates in `tally.yaml`; they are normalized estimates, not invoices.
+New ledger rows snapshot those rates in `price` and record their source and
+verification status in `priceNote`. Unknown models/providers or rates that
+disagree with the verified snapshot are labelled unverified. Operator-supplied
+`tiers[].priceNote` is retained as a config note, not independently verified.
+
+### Codex Tier Prices
+
+Official base text rates checked 2026-10-11, USD per million tokens:
+
+| Model | Input | Cached Input | Output | Source |
+|---|---:|---:|---:|---|
+| gpt-5.6-luna | 0.20 | 0.02 | 1.20 | [OpenAI](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
+| gpt-5.6-terra | 2.00 | 0.20 | 12.00 | [OpenAI](https://developers.openai.com/api/docs/models/gpt-5.6-terra) |
+| gpt-5.6-sol | 4.00 | 0.40 | 20.00 | [OpenAI](https://developers.openai.com/api/docs/models/gpt-5.6-sol) |
+
+```yaml
+tiers:
+  - { name: cheap, harness: codex, sessionMode: tui, provider: openai, model: gpt-5.6-luna, price: { inputUsdPerMTok: 0.2, cachedInputUsdPerMTok: 0.02, outputUsdPerMTok: 1.2 }, ceilingFraction: 0.2 }
+  - { name: middle, harness: codex, sessionMode: tui, provider: openai, model: gpt-5.6-terra, price: { inputUsdPerMTok: 2, cachedInputUsdPerMTok: 0.2, outputUsdPerMTok: 12 }, ceilingFraction: 0.5 }
+  - { name: top, harness: codex, sessionMode: tui, provider: openai, model: gpt-5.6-sol, price: { inputUsdPerMTok: 4, cachedInputUsdPerMTok: 0.4, outputUsdPerMTok: 20 }, ceilingFraction: 1 }
+```
+
+Per-request prompts above 272K input tokens have input/output uplifts;
+cache writes also have an uplift. AO's aggregate token buckets cannot resolve
+these adjustments. Sol's published promotional rates last at least through
+2026-11-21; recheck before subsequent runs. Historical costs are not repriced.
 
 For dry runs, set `backlog.source: file` and point `backlog.file` at YAML like:
 

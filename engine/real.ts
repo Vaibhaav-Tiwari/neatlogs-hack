@@ -39,6 +39,7 @@ import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, 
 import { type BacklogTask } from './backlog.js';
 import { loadConfig } from './config.js';
 import { writeRunFiles } from './output.js';
+import { tierPriceNote } from './pricing.js';
 import type { RunOptions, RunResult } from './run.js';
 
 const execFileAsync = promisify(execFile);
@@ -661,6 +662,8 @@ async function runSingleAttempt(input: {
     tokens: tokens ?? zeroTokens(),
     estimatedCostNanos,
     costSource,
+    price: { ...input.tier.price },
+    priceNote: `${input.dryRun ? 'Simulated usage; no spend. ' : ''}${tierPriceNote(input.tier)}`,
     ceilingNanos: input.ceilingNanos ?? 0,
     result,
     resultReason,
@@ -714,6 +717,7 @@ function handoffSummaryLedgerRow(input: {
     tokens: input.decision.handoffSummaryTokens,
     estimatedCostNanos: input.decision.handoffSummaryCostNanos,
     costSource: input.decision.handoffSummaryCostSource,
+    priceNote: 'Unverified: Entire-generated summary cost reported by the handoff adapter; no model list price supplied.',
     ceilingNanos: 0,
     result: 'passed',
     resultReason: 'Entire checkpoint summary generated for escalation',

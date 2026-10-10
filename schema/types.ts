@@ -63,6 +63,10 @@ export interface LedgerRow {
   tokens: TokenUsage;
   estimatedCostNanos: number;
   costSource: CostSource;
+  /** Snapshot of the configured rates used for this attempt, not a retrospective repricing. */
+  price?: TierPrice;
+  /** Source, verification status and limitations of the cost estimate. */
+  priceNote?: string;
   /** Spend ceiling that applied to this attempt. */
   ceilingNanos: number;
   result: AttemptResult;
@@ -182,8 +186,10 @@ export interface Tier {
   model: string;
   /** Who serves and bills the model, e.g. anthropic, openai, litellm, bedrock. */
   provider: string;
-  /** Published list price. Cost is always tokens x this. */
+  /** Configured base list price used for normalized token-cost estimates. */
   price: TierPrice;
+  /** Optional operator-supplied provenance; recorded alongside Tally's verification. */
+  priceNote?: string;
   /** Share of the size ceiling this tier may spend, in (0, 1]. */
   ceilingFraction: number;
 }
