@@ -9,6 +9,7 @@ import { budgetPageUrl, budgetProvenance } from './budget-link.js';
 import { attemptAmounts, attemptReason } from './cost-format.js';
 import { copyableIdEvidence, installSessionCopy, sessionEvidence } from './session-evidence.js';
 import { reasonText } from './reason-text.js';
+import { ledgerEmptyState } from './empty-state.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -164,7 +165,8 @@ function costKind(run, ledger, source = {}) {
   if (source.replaying || explicit === 'replay') return 'replay';
   if (run.dryRun || explicit === 'simulated') return 'simulated';
   if (explicit === 'real') return 'real';
-  return ledger.length > 0 && ledger.every((row) => row.costSource && !nonRealCostSources.has(row.costSource)) ? 'real' : 'simulated';
+  // A run that is not a dry run and has no attempts yet is a real run that has spent nothing, not a simulation.
+  return ledger.every((row) => row.costSource && !nonRealCostSources.has(row.costSource)) ? 'real' : 'simulated';
 }
 
 function comparableKey(run, ledger, source = {}) {
@@ -667,7 +669,7 @@ function drawLedger(run, ledger) {
 
   const total = ledger.reduce((sum,row)=>sum+displayedCost(row),0);
   const note = ledger.some(row=>row.displayIsLiveEstimate) ? 'includes live estimates' : Math.abs(total-run.budget.spentNanos)>1 ? `<span class="over">does not match reported budget spend ${usd(run.budget.spentNanos)}</span>` : 'agrees with budget spent';
-  draw('ledger', `${body || '<p class="empty">No work recorded yet.</p>'}<div class="ledger-total"><span>${run.tasks.length} ${run.tasks.length === 1 ? 'task' : 'tasks'} · ${ledger.length} ${ledger.length === 1 ? 'attempt' : 'attempts'}</span><span class="fig">${count(ledger.reduce((sum,row)=>sum+row.tokens.total,0))} tokens</span><strong class="fig">Total ${usd(total)}</strong><span>${note}</span></div>`);
+  draw('ledger', `${ledgerEmptyState(run, ledger)}${body}<div class="ledger-total"><span>${run.tasks.length} ${run.tasks.length === 1 ? 'task' : 'tasks'} · ${ledger.length} ${ledger.length === 1 ? 'attempt' : 'attempts'}</span><span class="fig">${count(ledger.reduce((sum,row)=>sum+row.tokens.total,0))} tokens</span><strong class="fig">Total ${usd(total)}</strong><span>${note}</span></div>`);
   for (const task of graphTasks) {
     const graph = taskGraphs.get(`${run.runId}:${task.taskId}`);
     const slot = [...document.getElementById('ledger').querySelectorAll('[data-graph-slot]')].find((node) => node.dataset.graphSlot === task.taskId);
