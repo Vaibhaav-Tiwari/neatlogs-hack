@@ -9,6 +9,8 @@ window.TALLY_DASHBOARD = {
   intervalMs: 2000,
   // AO project id used to make session ids clickable inside AO Desktop.
   aoProject: 'neatlogs-hack',
+  // Seconds a running row takes to visually approach its attempt ceiling.
+  liveCeilingSec: 180,
   // Shown only when `?demo` is present, or when `?replay` has no explicit data.
   sample: '../schema/fixtures/finished-run/',
 };
