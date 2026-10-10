@@ -345,6 +345,36 @@ describe('runRealTally', () => {
     expect(resumed.runState.tasks[0]!.changedFiles).toEqual(result.runState.tasks[0]!.changedFiles);
     expect(resumed.runState.baseCommit).toBe('run-base');
   });
+
+  it('uses the experiment base pin for run, attempts and actual-file diffs', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const diffs: Array<string | null | undefined> = [];
+    let baseReads = 0;
+    worker.changedFiles = async (input?: { baseCommit?: string | null }) => { diffs.push(input?.baseCommit); return ['calc.ts']; };
+    const result = await runRealTally({ configPath, requiredBaseCommit: 'experiment-pin', dryRun: false, baseline: false,
+      outputDir: join(dir, 'pinned'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: false, reason: 'test failed' }, { passed: true, reason: null }]),
+        handoff: { summaryFor: async () => ({ type: 'entire-handoff', summary: 'Continue calc.', branch: 'failed-branch' }) },
+        worktrees: { checkoutPathFor: async () => dir, commitFor: async () => { baseReads += 1; return baseReads === 1 ? 'experiment-pin' : 'later-base'; } } } });
+    expect(result.runState.baseCommit).toBe('experiment-pin');
+    expect(result.ledger.map((row) => row.baseCommit)).toEqual(['experiment-pin', 'experiment-pin']);
+    expect(diffs.length).toBeGreaterThan(0);
+    expect(diffs.every((base) => base === 'experiment-pin')).toBe(true);
+    expect(result.runState.tasks[0]!.changedFiles).toEqual(['calc.ts']);
+    expect(baseReads).toBe(1);
+  });
+
+  it.each(['different-base', null])('rejects the experiment pin before spawning when the base resolves to %s', async (resolved) => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    await expect(runRealTally({ configPath, requiredBaseCommit: 'experiment-pin', dryRun: false, baseline: false,
+      outputDir: join(dir, 'mismatch'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([]), worktrees: { checkoutPathFor: async () => dir, commitFor: async () => resolved } } })).rejects.toThrow(/Required base commit experiment-pin does not match resolved main base/);
+    expect(worker.starts).toEqual([]);
+  });
   it.each([false, true])('records scope warnings and only blocks when configured: %s', async (block) => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('aoProject: "payments"', `aoProject: "payments", blockOutOfScopeChanges: ${block}`));

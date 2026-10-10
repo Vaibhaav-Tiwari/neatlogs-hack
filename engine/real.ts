@@ -399,12 +399,13 @@ async function runAttempt(input: {
   now: () => Date;
   dryRun: boolean;
   baseCommit?: string | null;
+  requiredBaseCommit?: string;
   continueBranch?: string | null;
   onChangedFiles?: (files: string[]) => void;
 }): Promise<LedgerRow> {
   const startedAt = input.now().toISOString();
   const repoPath = resolve(dirname(input.configPath), input.config.repo.path);
-  const attemptBase = input.dryRun ? null : await input.ports.worktrees.commitFor?.(repoPath, input.continueBranch ?? input.config.repo.baseBranch).catch(() => null) ?? input.baseCommit ?? null;
+  const attemptBase = input.requiredBaseCommit ?? (input.dryRun ? null : await input.ports.worktrees.commitFor?.(repoPath, input.continueBranch ?? input.config.repo.baseBranch).catch(() => null) ?? input.baseCommit ?? null);
   const started = await input.ports.worker.start({
     task: input.task,
     attempt: input.attempt,
@@ -685,7 +686,18 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     return task.taskId === options.only || String(task.issueNumber) === options.only;
   });
   const savedRun = existsSync(resolve(outputDir, 'run.json')) ? JSON.parse(readFileSync(resolve(outputDir, 'run.json'), 'utf8')) as RunState : null;
-  const baseCommit = savedRun?.baseCommit ?? (options.dryRun ? null : await ports.worktrees.commitFor?.(resolve(dirname(options.configPath), config.repo.path), config.repo.baseBranch).catch(() => null) ?? null);
+  const resolvedBase = options.requiredBaseCommit !== undefined || (!savedRun?.baseCommit && !options.dryRun)
+    ? await ports.worktrees.commitFor?.(resolve(dirname(options.configPath), config.repo.path), config.repo.baseBranch).catch(() => null) ?? null
+    : null;
+  if (options.requiredBaseCommit !== undefined) {
+    if (resolvedBase !== options.requiredBaseCommit) {
+      throw new Error(`Required base commit ${options.requiredBaseCommit} does not match resolved ${config.repo.baseBranch} base ${resolvedBase ?? '(unavailable)'}; no workers were started.`);
+    }
+    if (savedRun?.baseCommit && savedRun.baseCommit !== options.requiredBaseCommit) {
+      throw new Error(`Saved run base ${savedRun.baseCommit} does not match required base commit ${options.requiredBaseCommit}; no workers were started.`);
+    }
+  }
+  const baseCommit = options.requiredBaseCommit ?? savedRun?.baseCommit ?? resolvedBase;
   const taskStates = tasks.map((task) => {
     const saved = savedRun?.tasks.find((state) => state.taskId === task.taskId);
     return { ...initialTaskState(task), ...(saved?.impact ? { impact: saved.impact } : {}), ...(saved?.changedFiles ? { changedFiles: saved.changedFiles } : {}) };
@@ -778,6 +790,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             now,
             dryRun: options.dryRun,
             baseCommit,
+            requiredBaseCommit: options.requiredBaseCommit,
             continueBranch: escalation.handoffBranch,
             onChangedFiles: changedFor(index),
           });
@@ -849,6 +862,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       now,
       dryRun: options.dryRun,
       baseCommit,
+      requiredBaseCommit: options.requiredBaseCommit,
       onChangedFiles: changedFor(index),
     });
     ledger.push(first);
@@ -898,6 +912,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           now,
           dryRun: options.dryRun,
           baseCommit,
+          requiredBaseCommit: options.requiredBaseCommit,
           continueBranch: escalation.handoffBranch,
           onChangedFiles: changedFor(index),
         });
