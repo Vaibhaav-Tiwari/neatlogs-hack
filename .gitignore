@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+
+# secrets never live in the repo; real keys are in ~/.tally/.env
+.env
+.env.*
+*.env
+!.env.example
+
+# run output
+.tally/
+
+.DS_Store
