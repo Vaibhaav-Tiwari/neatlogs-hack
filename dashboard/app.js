@@ -6,6 +6,7 @@ import { displayedCost, isRunning, withLiveCosts } from './live-state.js';
 import { createCodeGraph } from './code-graph.js';
 import { experimentMarkup, experimentMatches, validExperiment } from './experiment-view.js';
 import { budgetPageUrl } from './budget-link.js';
+import { installSessionCopy, sessionEvidence } from './session-evidence.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -65,11 +66,11 @@ const idEvidence = (label, value) =>
   value ? `<span class="evidence-id">${esc(label)} <code tabindex="0" title="Select to copy">${esc(value)}</code></span>` : '';
 
 function aoSessionEvidence(sessionId) {
-  if (!sessionId) return '';
-  if (!config.aoProject) return idEvidence('AO session', sessionId);
-  const href = `ao://sessions/${encodeURIComponent(config.aoProject)}/${encodeURIComponent(sessionId)}`;
-  return `<a href="${esc(href)}">AO session</a>`;
+  // A browser URL or query parameter cannot establish that the host handles AO links.
+  return sessionEvidence(sessionId, { project: config.aoProject, insideAO: window.TALLY_AO_BROWSER === true });
 }
+
+installSessionCopy();
 
 function traceEvidence(row) {
   return link(row.traceUrl, 'neatlogs trace') || idEvidence('trace', row.traceId);
