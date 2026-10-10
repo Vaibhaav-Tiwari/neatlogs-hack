@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { SizingSignals, SizingSignalsPort, TaskInput } from '../agent/ports.js';
+import type { IntegrationState } from '../schema/types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -91,6 +92,10 @@ export class EntireSizingAdapter implements SizingSignalsPort {
   private readonly repoPath: string;
   private readonly runner: CommandRunner;
   private readonly topSymbols: number;
+  private graphStatus: IntegrationState = {
+    status: 'missing',
+    detail: 'Entire graph has not succeeded yet. Falling back to code search. Fix: run `entire enable` in this repository.',
+  };
 
   constructor(options: EntireSizingOptions) {
     this.repoPath = options.repoPath;
@@ -102,10 +107,20 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     const query = `${task.title}\n${task.body}`.trim();
     if (query === '') return null;
     try {
-      return await this.entireGraphSignals(query);
-    } catch {
+      const signals = await this.entireGraphSignals(query);
+      this.graphStatus = { status: 'ok', detail: null };
+      return signals;
+    } catch (e) {
+      this.graphStatus = {
+        status: 'missing',
+        detail: `Entire graph is unavailable (${(e as Error).message}). Falling back to code search. Fix: run \`entire enable\` in this repository.`,
+      };
       return this.codeSearchSignals(query);
     }
+  }
+
+  status(): IntegrationState {
+    return this.graphStatus;
   }
 
   private async entireGraphSignals(query: string): Promise<SizingSignals> {

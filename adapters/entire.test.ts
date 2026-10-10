@@ -35,8 +35,10 @@ describe('EntireSizingAdapter', () => {
       }
       return { stdout: JSON.stringify({ callers: { total: 1 }, co_changes: { total: 0 } }) };
     });
-    const signals = await new EntireSizingAdapter({ repoPath: '/repo', runner, topSymbols: 2 }).signalsFor(task);
+    const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner, topSymbols: 2 });
+    const signals = await adapter.signalsFor(task);
     expect(signals).toEqual({ filesTouched: 3, dependents: 6, testsPresent: true, source: 'entire-graph' });
+    expect(adapter.status()).toEqual({ status: 'ok', detail: null });
     expect(runner.calls.map((call) => call.args.slice(0, 3).join(' '))).toEqual([
       'graph index --repo',
       'graph search --repo',
@@ -51,8 +53,11 @@ describe('EntireSizingAdapter', () => {
       if (command === 'rg' && args.includes('validator')) return { stdout: '/repo/src/refund/validator.ts\n/repo/tests/refund.test.ts\n' };
       return new Error('no matches');
     });
-    const signals = await new EntireSizingAdapter({ repoPath: '/repo', runner }).signalsFor(task);
+    const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner });
+    const signals = await adapter.signalsFor(task);
     expect(signals).toEqual({ filesTouched: 2, dependents: 0, testsPresent: true, source: 'code-search' });
+    expect(adapter.status()).toMatchObject({ status: 'missing' });
+    expect(adapter.status().detail).toContain('entire enable');
   });
 
   it('returns null when neither graph nor code search can find anything', async () => {

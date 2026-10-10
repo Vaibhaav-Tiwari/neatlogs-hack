@@ -59,7 +59,7 @@ export class NeatlogsTraceAdapter implements TracePort {
   }
 
   status(): IntegrationState {
-    return this.offReason ? { status: 'off', detail: this.offReason } : { status: 'ok', detail: this.lastTraceIdValue };
+    return this.offReason ? { status: 'missing', detail: this.offReason } : { status: 'ok', detail: this.lastTraceIdValue };
   }
 
   lastTraceId(): string | null {

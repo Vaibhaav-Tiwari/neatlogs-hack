@@ -127,10 +127,20 @@ function traceStatus(trace: TracePort | undefined): RunState['integrations']['ne
   return withStatus?.status?.() ?? { status: 'missing', detail: 'Trace adapter is not configured.' };
 }
 
+function portStatus(port: unknown, fallback: RunState['integrations']['entire']): RunState['integrations']['entire'] {
+  const withStatus = port as { status?: () => RunState['integrations']['entire'] };
+  return withStatus.status?.() ?? fallback;
+}
+
 function integrationStates(config: TallyConfig, ports: RealRunPorts): RunState['integrations'] {
   return {
     neatlogs: config.integrations.neatlogs ? traceStatus(ports.trace) : { status: 'off', detail: null },
-    entire: config.integrations.entire ? { status: 'ok', detail: null } : { status: 'off', detail: null },
+    entire: config.integrations.entire
+      ? portStatus(ports.signals, {
+          status: 'missing',
+          detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.',
+        })
+      : { status: 'off', detail: null },
     cfoai: config.integrations.cfoai ? { status: 'missing', detail: 'CSV fallback not implemented yet.' } : { status: 'off', detail: null },
     github:
       config.backlog.source === 'github-issues'
@@ -194,6 +204,22 @@ function loadLedger(path: string): Ledger {
 function isTaskDone(rows: LedgerRow[]): boolean {
   const latest = rows[rows.length - 1];
   return latest?.result === 'passed' || (latest !== undefined && latest.attempt >= 2);
+}
+
+function stateFromRows(taskState: TaskState, rows: LedgerRow[]): TaskState {
+  const latest = rows[rows.length - 1]!;
+  return {
+    ...taskState,
+    size: latest.size,
+    status: statusFrom(latest.result),
+    statusReason: latest.resultReason,
+    attempts: latest.attempt,
+    tier: latest.tier,
+    model: latest.model,
+    spentNanos: rows.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
+    escalated: latest.escalatedFrom !== null,
+    prUrl: latest.prUrl,
+  };
 }
 
 async function runAttempt(input: {
@@ -342,19 +368,50 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   for (const [index, task] of tasks.entries()) {
     const existingRows = ledger.filter((row) => row.taskId === task.taskId);
     if (isTaskDone(existingRows)) {
-      const latest = existingRows[existingRows.length - 1]!;
-      taskStates[index] = {
-        ...taskStates[index]!,
-        size: latest.size,
-        status: statusFrom(latest.result),
-        statusReason: latest.resultReason,
-        attempts: latest.attempt,
-        tier: latest.tier,
-        model: latest.model,
-        spentNanos: existingRows.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
-        escalated: latest.escalatedFrom !== null,
-        prUrl: latest.prUrl,
-      };
+      taskStates[index] = stateFromRows(taskStates[index]!, existingRows);
+      writeCurrent('running', null);
+      continue;
+    }
+    const interrupted = existingRows[existingRows.length - 1];
+    if (interrupted && interrupted.result !== 'passed' && interrupted.attempt === 1) {
+      task.size = interrupted.size;
+      let latest = interrupted;
+      const escalation = await decideEscalation({
+        previous: {
+          attemptId: interrupted.attemptId,
+          taskId: interrupted.taskId,
+          attempt: interrupted.attempt,
+          size: interrupted.size,
+          tier: interrupted.tier,
+          result: interrupted.result,
+          sessionId: interrupted.sessionId,
+        },
+        config,
+        ports: { budget, handoff: ports.handoff, trace: ports.trace },
+      });
+      if (escalation.action === 'escalate') {
+        latest = await runAttempt({
+          runId,
+          task,
+          attempt: 2,
+          tier: escalation.tier,
+          ceilingNanos: escalation.ceilingNanos,
+          decision: escalation.reason,
+          escalatedFrom: escalation.escalatedFrom,
+          handoff: escalation.handoff,
+          handoffSummary: escalation.handoffSummary,
+          config,
+          configPath: options.configPath,
+          ports,
+          now,
+          dryRun: options.dryRun,
+        });
+        ledger.push(latest);
+        await ports.history.record({ size: latest.size, tier: latest.tier, result: latest.result, costNanos: latest.estimatedCostNanos });
+      } else {
+        interrupted.resultReason = escalation.statusReason;
+      }
+      taskStates[index] = stateFromRows(taskStates[index]!, ledger.filter((row) => row.taskId === task.taskId));
       writeCurrent('running', null);
       continue;
     }

@@ -38,7 +38,7 @@ describe('NeatlogsTraceAdapter', () => {
       called = true;
     });
     expect(called).toBe(true);
-    expect(adapter.status()).toEqual({ status: 'off', detail: 'NEATLOGS_API_KEY is missing' });
+    expect(adapter.status()).toEqual({ status: 'missing', detail: 'NEATLOGS_API_KEY is missing' });
     expect(adapter.lastTraceId()).toBeNull();
   });
 
@@ -71,6 +71,6 @@ describe('NeatlogsTraceAdapter', () => {
       },
     });
     await adapter.span('tally.route', {}, async () => {});
-    expect(adapter.status()).toEqual({ status: 'off', detail: 'neatlogs SDK is not available' });
+    expect(adapter.status()).toEqual({ status: 'missing', detail: 'neatlogs SDK is not available' });
   });
 });
