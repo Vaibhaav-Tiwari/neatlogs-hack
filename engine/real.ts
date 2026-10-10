@@ -23,6 +23,7 @@ import { AoCliAdapter } from '../adapters/ao.js';
 import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { EntireCheckpointAdapter } from '../adapters/entire-checkpoints.js';
+import { NeatlogsWorkerSpoolAdapter, type WorkerTraceDrainPort } from '../adapters/neatlogs-worker-spool.js';
 import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
 import { FilePriceHistory } from '../adapters/history-file.js';
@@ -85,6 +86,7 @@ export interface CfoaiBudgetPort extends BudgetPort {
 }
 
 export interface RealRunPorts {
+  workerTraceDrain?: WorkerTraceDrainPort;
   intake: BacklogIntakePort;
   signals: SizingSignalsPort;
   worker: WorkerPort;
@@ -168,6 +170,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
   const checkpoints = overrides.checkpoints ?? entireCheckpoints;
   const recall = overrides.recall ?? (config.integrations.entire ? new EntireCheckpointRecallAdapter({ repoPath }) : undefined);
   return {
+    ...(hasPort(overrides, 'workerTraceDrain') ? { workerTraceDrain: overrides.workerTraceDrain } : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? { workerTraceDrain: new NeatlogsWorkerSpoolAdapter() } : {}),
     intake: overrides.intake ?? new ConfigBacklogIntake(),
     signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals),
     worker: overrides.worker ?? ao,
@@ -220,7 +223,7 @@ function portStatus(port: unknown, fallback: RunState['integrations']['entire'])
 function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource }): RunState['integrations'] {
   const cfoaiStatus = ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
   return {
-    neatlogs: config.integrations.neatlogs ? traceStatus(ports.trace) : { status: 'off', detail: null },
+    neatlogs: config.integrations.neatlogs ? (ports.workerTraceDrain?.status?.().status === 'missing' ? ports.workerTraceDrain.status() : traceStatus(ports.trace)) : { status: 'off', detail: null },
     entire: config.integrations.entire
       ? portStatus(ports.signals, {
           status: 'missing',
@@ -546,6 +549,12 @@ async function runAttempt(input: {
     tokens = finalCheck.tokens;
     estimatedCostNanos = finalCheck.costNanos;
     costSource = input.dryRun ? 'simulated' : finalCheck.costSource;
+  }
+  if (!input.dryRun && input.config.integrations.neatlogs && input.tier.harness === 'codex') {
+    const branch = workerResult?.branch ?? started.branch;
+    const checkoutPath = resolvedCheckoutPath ?? workerResult?.checkoutPath ?? started.checkoutPath ?? (branch
+      ? await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch).catch(() => null) : null);
+    await input.ports.workerTraceDrain?.drainWorker({ checkoutPath, entireSessionId }).catch(() => {});
   }
 
   if (!input.dryRun && workerResult?.branch && input.onChangedFiles) {
