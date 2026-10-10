@@ -17,6 +17,16 @@ const previous = (overrides: Partial<FinishedAttempt> = {}): FinishedAttempt => 
 });
 
 const entire = () => new FakeHandoff({ type: 'entire-handoff', summary: 'Parser done; retry test still red.' });
+const entireCheckpoint = () =>
+  new FakeHandoff({
+    type: 'entire-handoff',
+    summary: 'Parser done; retry test still red.',
+    branch: 'tally/t1-1',
+    checkpointId: '01M4CHECKPOINT',
+    checkpointUrl: null,
+    summaryCostNanos: 123,
+    summaryTokens: { uncachedInput: 10, cachedInput: 20, output: 5, total: 35 },
+  });
 const NO_HANDOFF = Symbol('NO_HANDOFF');
 
 async function decide(
@@ -54,6 +64,14 @@ describe('decideEscalation', () => {
     expect(decision.reason).toBe(
       'Bronze attempt was stopped at its ceiling, so it escalates one tier to silver capped at $2.00, continuing from the Entire handoff summary with $40.00 of budget left.',
     );
+  });
+
+  it('passes the failed branch and checkpoint metadata through the handoff summary', async () => {
+    const decision = escalated(await decide(previous({ branch: 'tally/t1-1', checkpointId: '01M4CHECKPOINT' }), 40, entireCheckpoint()));
+    expect(decision.handoffSummary).toBe('Continue from failed branch tally/t1-1.\n\nParser done; retry test still red.');
+    expect(decision.checkpointId).toBe('01M4CHECKPOINT');
+    expect(decision.handoffSummaryCostNanos).toBe(123);
+    expect(decision.handoffSummaryTokens).toEqual({ uncachedInput: 10, cachedInput: 20, output: 5, total: 35 });
   });
 
   it('moves a failed attempt one tier up', async () => {

@@ -7,7 +7,7 @@
  * fail; the agent treats a thrown error or a null as "not available" and
  * falls back to a safe default instead of failing the run.
  */
-import type { AttemptResult, Handoff, TaskSize, TokenUsage } from '../schema/types.js';
+import type { AttemptResult, CostSource, Handoff, TaskSize, TokenUsage } from '../schema/types.js';
 
 /** The part of a backlog item the agent reads. */
 export interface TaskInput {
@@ -89,11 +89,35 @@ export interface HandoffSummary {
   /** Which mechanism produced the summary. Recorded on the escalated ledger row. */
   type: Exclude<Handoff, 'none' | 'restart'>;
   summary: string;
+  /** Entire checkpoint evidence for the failed attempt, when available. */
+  checkpointId?: string | null;
+  checkpointUrl?: string | null;
+  /** Branch the stronger model should continue from. */
+  branch?: string | null;
+  /** Cost of generating this summary, if the provider reports it. */
+  summaryCostNanos?: number;
+  summaryCostSource?: CostSource;
+  summaryTokens?: TokenUsage;
+}
+
+export interface HandoffContext {
+  branch?: string | null;
+  checkoutPath?: string | null;
+  checkpointId?: string | null;
 }
 
 export interface HandoffPort {
   /** Null when no summary exists; the escalation then restarts from the issue. */
-  summaryFor(sessionId: string): Promise<HandoffSummary | null>;
+  summaryFor(sessionId: string, context?: HandoffContext): Promise<HandoffSummary | null>;
+}
+
+export interface CheckpointInfo {
+  checkpointId: string;
+  checkpointUrl: string | null;
+}
+
+export interface CheckpointPort {
+  checkpointFor(context: HandoffContext & { sessionId: string }): Promise<CheckpointInfo | null>;
 }
 
 export interface LlmRequest {

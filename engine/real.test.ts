@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
+import type { CheckpointPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
 import { usdToNanos, validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
@@ -217,6 +217,28 @@ class FakeTrace implements TracePort {
   }
 }
 
+class FakeEntireEvidence implements HandoffPort, CheckpointPort {
+  summaryCalls: Array<{ sessionId: string; branch?: string | null; checkpointId?: string | null }> = [];
+
+  async checkpointFor(input: { sessionId: string; branch?: string | null }) {
+    return { checkpointId: `checkpoint-${input.sessionId}`, checkpointUrl: null };
+  }
+
+  async summaryFor(sessionId: string, context: { branch?: string | null; checkpointId?: string | null } = {}) {
+    this.summaryCalls.push({ sessionId, branch: context.branch, checkpointId: context.checkpointId });
+    return {
+      type: 'entire-handoff' as const,
+      summary: 'Attempt one changed calc.ts but left the addition test red.',
+      branch: context.branch ?? null,
+      checkpointId: context.checkpointId ?? `checkpoint-${sessionId}`,
+      checkpointUrl: null,
+      summaryCostNanos: 111,
+      summaryCostSource: 'ao-estimate' as const,
+      summaryTokens: { uncachedInput: 11, cachedInput: 22, output: 3, total: 36 },
+    };
+  }
+}
+
 describe('runRealTally', () => {
   it('sizes, routes, spawns, verifies, escalates once and writes valid output', async () => {
     const { dir, configPath } = fixture();
@@ -266,6 +288,61 @@ describe('runRealTally', () => {
     expect(validateRunState(JSON.parse(readFileSync(result.runStatePath, 'utf8'))).ok).toBe(true);
     expect(validateLedger(JSON.parse(readFileSync(result.ledgerPath, 'utf8'))).ok).toBe(true);
     expect(JSON.parse(readFileSync(join(dir, 'latest', 'run.json'), 'utf8'))).toMatchObject({ runId: result.runState.runId });
+  });
+
+  it('records Entire checkpoint ids and a separate handoff summary cost row before escalation', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: true, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+    const entireEvidence = new FakeEntireEvidence();
+    const verifier = new SequenceVerifier([
+      { passed: false, reason: 'tests failed: one assertion failed' },
+      { passed: true, reason: null },
+    ]);
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'entire-evidence'),
+      latestRunDir: join(dir, 'latest'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier,
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+        handoff: entireEvidence,
+        checkpoints: entireEvidence,
+      },
+    });
+
+    expect(result.ledger.map((row) => row.taskId)).toEqual(['T1', 'T1:handoff', 'T1']);
+    expect(result.ledger[0]).toMatchObject({ checkpointId: 'checkpoint-session-1', checkpointUrl: null });
+    expect(result.ledger[1]).toMatchObject({
+      attemptId: `${result.runState.runId}:T1:2:handoff`,
+      tier: 'entire-handoff',
+      model: 'entire checkpoint explain',
+      estimatedCostNanos: 111,
+      tokens: { uncachedInput: 11, cachedInput: 22, output: 3, total: 36 },
+      escalatedFrom: result.ledger[0]!.attemptId,
+      checkpointId: 'checkpoint-session-1',
+      resultReason: 'Entire checkpoint summary generated for escalation',
+    });
+    expect(result.ledger[2]).toMatchObject({
+      attempt: 2,
+      handoff: 'entire-handoff',
+      escalatedFrom: result.ledger[0]!.attemptId,
+      checkpointId: 'checkpoint-session-2',
+      result: 'passed',
+    });
+    expect(worker.starts[1]!.prompt).toContain('Continue from failed branch tally/t1-1.');
+    expect(worker.starts[1]!.prompt).toContain('Attempt one changed calc.ts but left the addition test red.');
+    expect(entireEvidence.summaryCalls).toEqual([{ sessionId: 'session-1', branch: 'tally/t1-1', checkpointId: 'checkpoint-session-1' }]);
+    expect(result.runState.budget.spentNanos).toBe(result.ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0));
+    expect(validateLedger(result.ledger).ok).toBe(true);
   });
 
   it('prompts workers to stay in their AO worktree and leave setup and publishing to Tally/AO by default', async () => {
