@@ -316,6 +316,21 @@ describe('runRealTally', () => {
     expect(contexts.length).toBe(!dryRun && enabled ? 1 : 0);
     expect(result.runState.status).toBe('finished');
   });
+  it('continues the watcher-stopped branch on escalation and publishes only the verified attempt', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const originalWait = worker.wait.bind(worker);
+    let finish: ((result: WorkerResult) => void) | undefined;
+    worker.wait = (id) => id === 'session-1' ? new Promise((resolve) => { finish = resolve; }) : originalWait(id).then((result) => ({ ...result, branch: 'tally/t1-1' }));
+    worker.stop = async (id) => { worker.stopped.push(id); if (id === 'session-1') finish?.({ status: 'terminated', branch: 'tally/t1-1', checkoutPath: '/tmp/tally-1', prUrl: null }); };
+    const tasks: BacklogIntakePort = { tasks: async (...args) => (await intake.tasks(...args)).map((task) => ({ ...task, firstAttemptCeilingUsd: 0.001 })) };
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: tasks, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        handoff: { summaryFor: async () => ({ type: 'entire-handoff', summary: 'Continue partial calc.ts.', branch: 'tally/t1-1' }) } } });
+    expect(result.ledger.map((row) => row.result)).toEqual(['stopped', 'passed']);
+    expect(worker.starts[1]).toMatchObject({ continueBranch: 'tally/t1-1', continueSessionId: 'session-1' });
+    expect(worker.published).toEqual([{ branch: 'tally/t1-1', taskId: 'T1' }]);
+  }, 10_000);
   it('uses a first-attempt override to stop via the watcher and escalates with the normal ceiling', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
