@@ -64,6 +64,7 @@
     "ceilingNanos": { "type": "integer", "minimum": 0 },
     "result": { "enum": ["passed", "failed", "stopped", "error"] },
     "resultReason": { "type": ["string", "null"] },
+    "scopeWarnings": { "type": "array", "items": { "type": "string" } },
     "escalatedFrom": { "type": ["string", "null"] },
     "handoff": { "enum": ["none", "restart", "entire-handoff"] },
     "prUrl": { "type": ["string", "null"], "format": "uri" },
