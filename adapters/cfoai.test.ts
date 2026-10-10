@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { usdToNanos } from '../schema/money.js';
-import { CfoaiBudgetAdapter, checkCfoaiConnection, cfoaiMonthColumn, normalizeCfoaiConfig, type CfoaiMcpClient } from './cfoai.js';
+import { CfoaiBudgetAdapter, checkCfoaiConnection, cfoaiMonthColumn, normalizeCfoaiConfig, refreshTokenRequest, type CfoaiMcpClient } from './cfoai.js';
 
 class FakeCfoaiClient implements CfoaiMcpClient {
   connected = 0;
@@ -118,6 +118,14 @@ describe('CfoaiBudgetAdapter', () => {
     await expect(adapter.currentSpendNanos()).resolves.toBe(usdToNanos(3));
   });
 
+  it('shares one MCP connection when budget and spend are read concurrently', async () => {
+    const client = new FakeCfoaiClient();
+    const adapter = new CfoaiBudgetAdapter({ client, now, config: { orgId: '103210', scenario: 'Main Scenario' } });
+
+    await expect(Promise.all([adapter.budgetLimitNanos(), adapter.currentSpendNanos()])).resolves.toEqual([usdToNanos(40), usdToNanos(3)]);
+    expect(client.connected).toBe(1);
+  });
+
   it('writes cumulative real spend with edit_table_blocks and verifies the read-back value', async () => {
     const client = new FakeCfoaiClient();
     const adapter = new CfoaiBudgetAdapter({ client, now, config: { orgId: '103210', scenario: 'Main Scenario' } });
@@ -162,6 +170,14 @@ describe('CfoaiBudgetAdapter', () => {
 });
 
 describe('checkCfoaiConnection', () => {
+  it('prepares a refresh-token request for cached Tally OAuth tokens', () => {
+    const params = refreshTokenRequest({ access_token: 'redacted', refresh_token: 'refresh-redacted', token_type: 'Bearer' }, 'read write');
+    expect(params?.get('grant_type')).toBe('refresh_token');
+    expect(params?.get('refresh_token')).toBe('refresh-redacted');
+    expect(params?.get('scope')).toBe('read write');
+    expect(refreshTokenRequest({ access_token: 'redacted', token_type: 'Bearer' })).toBeUndefined();
+  });
+
   it('uses Tally cached tokens and the cfo.ai MCP server, not another tool MCP list', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-cfoai-token-'));
     const tokenPath = join(dir, 'cfoai-oauth.json');
