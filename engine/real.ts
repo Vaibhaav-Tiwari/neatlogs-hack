@@ -17,7 +17,10 @@ import { routeTask } from '../agent/router.js';
 import { sizeTask } from '../agent/sizer.js';
 import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
+import { EntireSizingAdapter } from '../adapters/entire.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
+import { FilePriceHistory } from '../adapters/history-file.js';
+import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { CommandVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
 import type { AttemptResult, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
@@ -82,16 +85,20 @@ const nullSignals: SizingSignalsPort = {
   },
 };
 
-function defaultPorts(): RealRunPorts {
+function defaultPorts(config: TallyConfig, configPath: string): RealRunPorts {
   const ao = new AoCliAdapter();
+  const configDir = dirname(configPath);
+  const repoPath = resolve(configDir, config.repo.path);
+  const trace = config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
   return {
     intake: new ConfigBacklogIntake(),
-    signals: nullSignals,
+    signals: config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals,
     worker: ao,
     verifier: new CommandVerifier(),
     usage: ao,
     sessions: ao,
-    history: new PriceHistory(),
+    history: new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') }),
+    ...(trace ? { trace } : {}),
   };
 }
 
@@ -103,10 +110,15 @@ function repoName(config: TallyConfig): string {
   return config.repo.slug ?? config.repo.path;
 }
 
-function integrationStates(config: TallyConfig): RunState['integrations'] {
+function traceStatus(trace: TracePort | undefined): RunState['integrations']['neatlogs'] {
+  const withStatus = trace as (TracePort & { status?: () => RunState['integrations']['neatlogs'] }) | undefined;
+  return withStatus?.status?.() ?? { status: 'missing', detail: 'Trace adapter is not configured.' };
+}
+
+function integrationStates(config: TallyConfig, ports: RealRunPorts): RunState['integrations'] {
   return {
-    neatlogs: config.integrations.neatlogs ? { status: 'missing', detail: 'Adapter owned by lane B.' } : { status: 'off', detail: null },
-    entire: config.integrations.entire ? { status: 'missing', detail: 'Adapter owned by lane B.' } : { status: 'off', detail: null },
+    neatlogs: config.integrations.neatlogs ? traceStatus(ports.trace) : { status: 'off', detail: null },
+    entire: config.integrations.entire ? { status: 'ok', detail: null } : { status: 'off', detail: null },
     cfoai: config.integrations.cfoai ? { status: 'missing', detail: 'CSV fallback not implemented yet.' } : { status: 'off', detail: null },
     github:
       config.backlog.source === 'github-issues'
@@ -270,7 +282,7 @@ async function runAttempt(input: {
 
 export async function runRealTally(options: RealRunOptions): Promise<RunResult> {
   const config = loadConfig(options.configPath);
-  const ports = { ...defaultPorts(), ...options.ports };
+  const ports = { ...defaultPorts(config, options.configPath), ...options.ports };
   const now = options.now ?? (() => new Date());
   const started = now();
   const runId = runIdFrom(started);
@@ -286,6 +298,33 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     return task.taskId === options.only || String(task.issueNumber) === options.only;
   });
   const taskStates = tasks.map(initialTaskState);
+  const writeCurrent = (status: RunState['status'], endedAt: string | null): RunState => {
+    const updatedAt = now().toISOString();
+    const runState: RunState = {
+      schemaVersion: SCHEMA_VERSION,
+      runId,
+      mode,
+      dryRun: false,
+      status,
+      repo: repoName(config),
+      baseCommit: null,
+      startedAt: started.toISOString(),
+      updatedAt,
+      endedAt,
+      budget: {
+        source: config.budget.source,
+        limitNanos: usdToNanos(options.budgetUsd ?? config.budget.usd),
+        spentNanos: ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
+      },
+      tasks: taskStates,
+      integrations: integrationStates(config, ports),
+    };
+    assertValid(runState, ledger);
+    writeFileSync(runStatePath, `${JSON.stringify(runState, null, 2)}\n`);
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+    return runState;
+  };
+  writeCurrent('running', null);
 
   for (const [index, task] of tasks.entries()) {
     const existingRows = ledger.filter((row) => row.taskId === task.taskId);
@@ -303,6 +342,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         escalated: latest.escalatedFrom !== null,
         prUrl: latest.prUrl,
       };
+      writeCurrent('running', null);
       continue;
     }
     const taskInput = { taskId: task.taskId, title: task.title, body: task.body };
@@ -316,6 +356,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (route.action === 'skip') {
       state.status = 'skipped';
       state.statusReason = route.statusReason;
+      writeCurrent('running', null);
       continue;
     }
     const first = await runAttempt({
@@ -381,30 +422,11 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     state.spentNanos = rows.reduce((sum, row) => sum + row.estimatedCostNanos, 0);
     state.escalated = latest.escalatedFrom !== null;
     state.prUrl = latest.prUrl;
+    writeCurrent('running', null);
   }
 
   const endedAt = now().toISOString();
-  const runState: RunState = {
-    schemaVersion: SCHEMA_VERSION,
-    runId,
-    mode,
-    dryRun: false,
-    status: 'finished',
-    repo: repoName(config),
-    baseCommit: null,
-    startedAt: started.toISOString(),
-    updatedAt: endedAt,
-    endedAt,
-    budget: {
-      source: config.budget.source,
-      limitNanos: usdToNanos(options.budgetUsd ?? config.budget.usd),
-      spentNanos: ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
-    },
-    tasks: taskStates,
-    integrations: integrationStates(config),
-  };
-  assertValid(runState, ledger);
-  writeFileSync(runStatePath, `${JSON.stringify(runState, null, 2)}\n`);
-  writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+  const runState = writeCurrent('finished', endedAt);
+  await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
   return { runState, ledger, outputDir, runStatePath, ledgerPath };
 }
