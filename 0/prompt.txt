@@ -1,0 +1,1 @@
+[from neatlogs-hack-8] From the orchestrator: lane B now owns recording the run base SHA in run.json (baseCommit) and per-attempt bases, as part of its graph-data PR. Skip that item from my earlier message so you do not both edit it.
