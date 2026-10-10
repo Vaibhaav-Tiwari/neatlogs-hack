@@ -14,6 +14,7 @@ const wantsDemo = query.has('demo');
 const wantsReplay = query.has('replay');
 const config = {
   data: asFolder(query.get('data') ?? defaults.data ?? './'),
+  runsIndex: query.get('runsIndex') ?? defaults.runsIndex ?? '/runs/index.json',
   baseline: query.get('baseline') ?? defaults.baseline ?? null,
   intervalMs: Math.max(250, Number(query.get('interval') ?? defaults.intervalMs ?? 2000) || 2000),
   aoProject: query.get('aoProject') ?? defaults.aoProject ?? null,
@@ -24,6 +25,7 @@ const config = {
   replaySec: wantsReplay ? Math.max(5, Number(query.get('replay')) || 60) : null,
 };
 if (config.baseline) config.baseline = asFolder(config.baseline);
+let activeData = asFolder(query.get('run') ? `/runs/${query.get('run')}/` : config.data);
 
 // ---------- formatting ----------
 
@@ -88,6 +90,29 @@ async function readRun(folder) {
   return { run, ledger: ledger.filter((row) => row.runId === run.runId || !row.runId) };
 }
 
+function runOptionFrom(value) {
+  if (typeof value === 'string') return { id: value, path: `/runs/${value}/`, label: value };
+  if (!value || typeof value !== 'object') return null;
+  const id = value.id ?? value.runId ?? value.name;
+  const path = value.path ?? value.url ?? (id ? `/runs/${id}/` : null);
+  if (typeof id !== 'string' || typeof path !== 'string') return null;
+  return {
+    id,
+    path: asFolder(path),
+    label: typeof value.label === 'string' ? value.label : id,
+    status: typeof value.status === 'string' ? value.status : null,
+    mode: typeof value.mode === 'string' ? value.mode : null,
+    repo: typeof value.repo === 'string' ? value.repo : null,
+    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : null,
+  };
+}
+
+async function readRunsIndex() {
+  const index = await readJson(config.runsIndex);
+  const rawRuns = Array.isArray(index) ? index : Array.isArray(index?.runs) ? index.runs : [];
+  return rawRuns.map(runOptionFrom).filter(Boolean);
+}
+
 // ---------- drawing ----------
 
 /** Replaces a section's markup only when it changed, so links and selections survive a poll. */
@@ -136,7 +161,7 @@ function drawNotice(run, source) {
   if (source.sample) lines.push(`Sample data: this page is reading the bundled fixture at ${esc(config.sample)}, not a live Tally run.`);
   if (source.replaying) lines.push('Replay of a finished run, speeded up. Nothing is running now.');
   if (run.dryRun) lines.push('Simulated run: the workers are scripted and no money is spent.');
-  if (source.stale) lines.push(`Could not read ${esc(config.data)}run.json just now (${esc(source.stale)}). Showing the last figures read.`);
+  if (source.stale) lines.push(`Could not read ${esc(activeData)}run.json just now (${esc(source.stale)}). Showing the last figures read.`);
   const node = document.getElementById('notice');
   node.hidden = lines.length === 0;
   draw('notice', lines.join(' '));
@@ -145,12 +170,60 @@ function drawNotice(run, source) {
 function sourceLabel(source) {
   if (source.sample && source.replaying) return `Reading bundled sample fixture as a replay from ${config.sample}`;
   if (source.sample) return `Reading bundled sample fixture from ${config.sample}`;
-  if (source.replaying) return `Replaying run files from ${config.data}`;
-  return config.data.includes('/latest/') || config.data.endsWith('/latest/') ? `Reading latest run files from ${config.data}` : `Reading run files from ${config.data}`;
+  if (source.replaying) return `Replaying run files from ${activeData}`;
+  return activeData.includes('/latest/') || activeData.endsWith('/latest/') ? `Reading latest run files from ${activeData}` : `Reading run files from ${activeData}`;
 }
 
 function drawDataSource(source) {
   draw('data-source', `Data source: <span class="fig">${esc(sourceLabel(source))}</span>`);
+}
+
+function drawRunPicker(source) {
+  const node = document.getElementById('run-picker');
+  node.hidden = false;
+  if (source.sample) {
+    draw('run-picker', '<p class="picker-note">Run picker is hidden while viewing bundled sample data.</p>');
+    return;
+  }
+  if (source.runsIndexError) {
+    draw(
+      'run-picker',
+      `<p class="picker-note">Run picker unavailable: publish <span class="fig">${esc(config.runsIndex)}</span> with recorded run folders to switch runs here.</p>`,
+    );
+    return;
+  }
+  const runs = source.runs ?? [];
+  if (runs.length === 0) {
+    draw('run-picker', '<p class="picker-note">Run picker found no recorded runs yet.</p>');
+    return;
+  }
+  const options = runs
+    .map((run) => {
+      const meta = [run.status, run.mode, run.updatedAt ? new Date(run.updatedAt).toLocaleString() : null].filter(Boolean).join(' - ');
+      const label = `${run.label}${meta ? ` - ${meta}` : ''}`;
+      return `<option value="${esc(run.path)}" ${asFolder(run.path) === activeData ? 'selected' : ''}>${esc(label)}</option>`;
+    })
+    .join('');
+  draw(
+    'run-picker',
+    `<label for="run-select">Recorded run</label>
+     <select id="run-select">${options}</select>
+     <span class="picker-note">${runs.length} ${runs.length === 1 ? 'run' : 'runs'} indexed from <span class="fig">${esc(config.runsIndex)}</span></span>`,
+  );
+  const select = document.getElementById('run-select');
+  if (select && !select.__tallyBound) {
+    select.__tallyBound = true;
+    select.addEventListener('change', () => {
+      activeData = asFolder(select.value);
+      lastGood = null;
+      replayStart = null;
+      const next = new URL(location.href);
+      next.searchParams.set('data', activeData);
+      next.searchParams.delete('run');
+      history.replaceState(null, '', next);
+      tick();
+    });
+  }
 }
 
 function drawHeadline(run, baseline) {
@@ -407,6 +480,7 @@ function drawAll(state, source) {
   drawRun(state.run);
   drawNotice(state.run, source);
   drawDataSource(source);
+  drawRunPicker(source);
   drawHeadline(state.run, source.baseline);
   drawBudget(state.run, state.ledger);
   drawIntegrations(state.run);
@@ -422,7 +496,7 @@ function drawUnreadable(error) {
   node.hidden = false;
   draw(
     'notice',
-    `Nothing to show yet: ${esc(config.data)}run.json could not be read (${esc(error.message)}).
+    `Nothing to show yet: ${esc(activeData)}run.json could not be read (${esc(error.message)}).
      Start a run with <span class="fig">tally run</span> or <span class="fig">tally demo</span>, or point this page at a run folder by adding
      <span class="fig">?data=path/to/run/</span> to the address. The page must be opened over http, not as a file.`,
   );
@@ -434,14 +508,26 @@ let lastGood = null;
 let usingSample = config.useSample;
 let baseline = null;
 let replayStart = null;
+let runs = [];
+let runsIndexError = null;
+let runsIndexReadAt = 0;
 
 async function tick() {
   let stale = null;
   try {
-    lastGood = await readRun(usingSample ? config.sample : config.data);
+    lastGood = await readRun(usingSample ? config.sample : activeData);
   } catch (error) {
     if (!lastGood) return drawUnreadable(error);
     if (!usingSample) stale = error.message;
+  }
+  if (!usingSample && performance.now() - runsIndexReadAt > 5000) {
+    runsIndexReadAt = performance.now();
+    try {
+      runs = await readRunsIndex();
+      runsIndexError = null;
+    } catch (error) {
+      runsIndexError = error.message;
+    }
   }
   if (config.baseline) {
     try {
@@ -460,7 +546,7 @@ async function tick() {
     replaying = fraction < 1;
     state = frameAt(lastGood.run, lastGood.ledger, fraction);
   }
-  drawAll(state, { sample: usingSample, stale, baseline, replaying });
+  drawAll(state, { sample: usingSample, stale, baseline, replaying, runs, runsIndexError });
 }
 
 async function loop() {

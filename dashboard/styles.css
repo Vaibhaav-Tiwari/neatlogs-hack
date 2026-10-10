@@ -80,6 +80,29 @@ h1 { font: 700 54px/0.95 var(--serif); letter-spacing: 0; }
   font: 400 14px/1.45 var(--mono);
   color: var(--ink-2);
 }
+.run-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--rule-soft);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.run-picker label {
+  font: italic 400 16px/1.2 var(--serif);
+  color: var(--ink-2);
+}
+.run-picker select {
+  max-width: min(680px, 100%);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 14px/1.2 var(--mono);
+  padding: 6px 28px 6px 8px;
+}
+.picker-note { font-size: 14.5px; color: var(--ink-2); font-style: italic; }
 body.unread .sheet > section, body.unread .run, body.unread .foot { display: none; }
 
 /* ---------- headline and budget ---------- */

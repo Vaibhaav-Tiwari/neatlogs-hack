@@ -3,6 +3,8 @@
 window.TALLY_DASHBOARD = {
   // Folder holding run.json and ledger.json, relative to this page.
   data: '../.tally/runs/latest/',
+  // JSON index for the run picker. `tally dashboard` serves this as /runs/index.json.
+  runsIndex: '/runs/index.json',
   // Folder holding a baseline run to compare against, or null for none.
   baseline: null,
   // Milliseconds between reads.
