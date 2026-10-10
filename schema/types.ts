@@ -199,7 +199,7 @@ export interface TallyConfig {
     /** The budget, or the fallback when the cfo.ai scenario cannot be read. */
     usd: number;
     cfoai?: {
-      /** cfo.ai org/workspace id, e.g. "103210" for Clever Dingo. */
+      /** cfo.ai org/workspace id, e.g. "<cfoai-org-id>". */
       orgId?: string;
       scenario?: string;
       table?: string;

@@ -41,23 +41,24 @@ budget:
   source: config
   usd: 40
   # To read/write the live monthly budget in cfo.ai, set source: cfoai,
-  # integrations.cfoai: true, then run: npm run tally -- login cfoai
+  # integrations.cfoai: true, fill the placeholder fields below from your
+  # cfo.ai workspace, then run: tally login cfoai
   cfoai:
-    orgId: "103210"
-    scenario: Main Scenario
-    table: Tally agent budget
-    budgetRow: Agent budget
-    spendRow: Agent spend
-    remainingRow: Budget remaining
-    tableUrl: https://app.cfo.ai/s/p_AQKqpgYkMDBiYzMwNzQtZjA3OS00YjYwLWFlYTctM2FjYzYyMjgxMDQ5DWRlZmF1bHRfbGF5ZXI
-    spendDetailTable: Tally spend detail
-    spendDetailTableUrl: https://app.cfo.ai/s/p_AQKqpgYkZTc1ZjM5MWItYTMyZC00YjhhLWIwN2QtNWJiNjBkNzkxMzg4DWRlZmF1bHRfbGF5ZXI
+    orgId: "<cfoai-org-id>"
+    scenario: "<scenario-name>"
+    table: "<budget-table-name>"
+    budgetRow: "<budget-row-name>"
+    spendRow: "<spend-row-name>"
+    remainingRow: "<remaining-row-name>"
+    tableUrl: "https://app.cfo.ai/s/example-budget-table"
+    spendDetailTable: "<spend-detail-table-name>"
+    spendDetailTableUrl: "https://app.cfo.ai/s/example-spend-detail-table"
     tierSpendRows:
-      cheap: Tier spend - cheap
-      middle: Tier spend - middle
-      top: Tier spend - top
-    runSpendRow: Run spend - current
-    cumulativeRunSpendRow: Run spend - cumulative
+      cheap: "<cheap-tier-spend-row>"
+      middle: "<middle-tier-spend-row>"
+      top: "<top-tier-spend-row>"
+    runSpendRow: "<current-run-spend-row>"
+    cumulativeRunSpendRow: "<cumulative-run-spend-row>"
 
 concurrency: 3
 
