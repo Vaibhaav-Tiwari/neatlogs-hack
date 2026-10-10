@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KD9GPT3QHPBEFFMVC3X6PB",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/fdj-run-and-final-slice",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/ao.test.ts",
+    "adapters/ao.ts",
+    "adapters/publisher.test.ts",
+    "adapters/publisher.ts",
+    "cli/main.test.ts",
+    "engine/preflight.test.ts",
+    "engine/preflight.ts",
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "engine/run.test.ts",
+    "schema/tally-config.schema.json",
+    "schema/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2344213,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 75850752,
+    "output_tokens": 225495,
+    "api_call_count": 582
+  }
+}
