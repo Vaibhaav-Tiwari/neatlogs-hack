@@ -25,7 +25,7 @@ describe('experiment', () => {
     expect(result.summary.perTask.every((task) => task.baseline.length === 1 && task.tally.length === 1)).toBe(true);
     expect(JSON.parse(readFileSync(result.summaryPath, 'utf8'))).toEqual(result.summary);
     const baseline = result.summary.modes.baseline.runs[0]!;
-    expect(JSON.parse(readFileSync(join(runsDir, baseline.runId, 'run.json'), 'utf8'))).toMatchObject({ mode: 'baseline', repeat: 1, dryRun: true });
+    expect(JSON.parse(readFileSync(join(runsDir, baseline.runId, 'run.json'), 'utf8'))).toMatchObject({ mode: 'baseline', repeat: 1, dryRun: true, baseCommit });
     expect(result.summary.budget.spentNanos).toBe(baseline.totalCostNanos + result.summary.modes.tally.runs[0]!.totalCostNanos);
     const empty = structuredClone(result.summary);
     empty.modes.tally.runs = [];

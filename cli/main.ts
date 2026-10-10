@@ -349,6 +349,7 @@ function reportError(prefix: string, error: unknown, io: CliIO): number {
 const handlers: Record<Command, Handler> = {
   experiment: async (options, io) => {
     try {
+      if (options.plan || options.baseline || options.live) throw new RunError(['experiment runs both modes; --plan/--baseline/--live are not supported here. Use tally run --plan to preview a mode.']);
       const result = await runExperiment({ configPath: options.config, dryRun: options.dryRun, repeats: options.repeats, budgetUsd: options.budgetUsd, only: options.only });
       io.stdout(`wrote ${result.summaryPath}`);
       io.stdout(`experiment ${result.summary.status}: ${result.summary.reason ?? result.summary.experimentId}`);

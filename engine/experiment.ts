@@ -59,7 +59,7 @@ export function updateExperimentSummary(summary: ExperimentSummary, result: RunR
   const mode = summary.modes[run.mode];
   mode.runs.push({ runId: run.runId, repeat, path: `/runs/${encodeURIComponent(run.runId)}/`, status: run.status,
     tasks: run.tasks.length, passed, failed: run.tasks.filter((task) => task.status === 'failed').length,
-    skipped: run.tasks.filter((task) => task.status === 'skipped').length, attempts: result.ledger.length,
+    skipped: run.tasks.filter((task) => task.status === 'skipped').length, attempts: run.tasks.reduce((sum, task) => sum + task.attempts, 0),
     totalCostNanos: run.budget.spentNanos, costPerPassedTaskNanos: passed ? run.budget.spentNanos / passed : null,
     passRate: run.tasks.length ? passed / run.tasks.length : 0,
     neatlogsSessionId: run.integrations.neatlogs.status === 'ok' ? run.runId : null });
@@ -118,7 +118,8 @@ export class ExperimentWorker implements WorkerPort, FinalUsagePort, SessionCont
   }
   async stop(sessionId: string, reason: string) {
     if (this.closed.has(sessionId)) return;
-    await this.ports.sessions.stop(sessionId, reason);
+    try { await this.ports.sessions.stop(sessionId, reason); }
+    catch (error) { throw new RunError([`could not close experiment worker ${sessionId}: ${error instanceof Error ? error.message : String(error)}`]); }
     this.closed.add(sessionId);
   }
   async closeAll(reason: string): Promise<void> {
@@ -144,11 +145,12 @@ export class ExperimentWorker implements WorkerPort, FinalUsagePort, SessionCont
       return null;
     };
     const watched = watch();
+    let result: WorkerResult | null;
     try {
-      const result = await Promise.race([watched, this.ports.worker.wait(sessionId, options)]);
-      if (!result) throw new RunError(['experiment watcher ended before worker completion']);
-      return result;
+      result = await Promise.race([watched, this.ports.worker.wait(sessionId, options)]);
     } finally { abort.abort(); await watched; }
+    if (!result) throw new RunError(['experiment watcher ended before worker completion']);
+    return this.reason ? { ...result, status: 'experiment_stop', resultReason: this.reason } : result;
   }
 }
 
@@ -167,7 +169,7 @@ export async function runExperiment(options: ExperimentOptions): Promise<{ summa
   const repoPath = resolve(dirname(configPath), config.repo.path);
   let baseCommit = options.baseCommit;
   if (!baseCommit) {
-    try { baseCommit = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repoPath })).stdout.trim(); }
+    try { baseCommit = (await execFileAsync('git', ['rev-parse', '--verify', '--end-of-options', `${config.repo.baseBranch}^{commit}`], { cwd: repoPath })).stdout.trim(); }
     catch { throw new RunError([`could not determine experiment base commit in ${repoPath}`]); }
   }
   if (!/^[a-f0-9]{40}$/.test(baseCommit)) throw new RunError(['experiment base must be a full Git commit SHA']);
@@ -175,7 +177,7 @@ export async function runExperiment(options: ExperimentOptions): Promise<{ summa
   const tasks = (await intake.tasks(config, configPath)).filter((task) => options.only === undefined || task.taskId === options.only || String(task.issueNumber) === options.only);
   if (!tasks.length) throw new RunError(['experiment backlog contains no selected tasks']);
   const capNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
-  if (capNanos <= 0) throw new RunError(['experiment budget must be positive']);
+  if (!Number.isSafeInteger(capNanos) || capNanos <= 0) throw new RunError(['experiment budget must be positive and finite']);
   const now = options.now ?? (() => new Date());
   const started = now();
   const stamp = started.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z').replace('T', '-');
@@ -194,7 +196,8 @@ export async function runExperiment(options: ExperimentOptions): Promise<{ summa
     for (let repeat = 1; repeat <= repeats; repeat += 1) {
       for (const mode of ['baseline', 'tally'] as const) {
         if (summary.budget.spentNanos >= capNanos) { summary.status = 'stopped'; summary.reason = EXPERIMENT_CAP_REASON; break; }
-        const defaults = options.dryRun ? createDryRunPorts({ config, configPath }) : (() => {
+        const defaults = options.dryRun ? { ...createDryRunPorts({ config, configPath }),
+          worktrees: { commitFor: async () => baseCommit, checkoutPathFor: async () => null } } : (() => {
           const ao = new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, requiredBaseCommit: baseCommit });
           return { worker: ao, usage: ao, sessions: ao };
         })();
@@ -206,8 +209,8 @@ export async function runExperiment(options: ExperimentOptions): Promise<{ summa
         let result: RunResult;
         try {
           result = await runTally({ configPath, dryRun: options.dryRun, baseline: mode === 'baseline',
-            budgetUsd: nanosToUsd(capNanos - summary.budget.spentNanos), outputDir, latestRunDir: join(runsDir, 'latest'), now, runId, repeat,
-            stopRequested: () => guarded.stopReason(), ports: { ...ports, intake: { tasks: async () => tasks }, worker: guarded, usage: guarded, sessions: guarded } });
+            budgetUsd: nanosToUsd(capNanos - summary.budget.spentNanos), outputDir, latestRunDir: join(runsDir, 'latest'), now, runId, repeat, requiredBaseCommit: baseCommit,
+            stopRequested: () => guarded.stopReason(), ports: { ...ports, intake: { tasks: async () => structuredClone(tasks) }, worker: guarded, usage: guarded, sessions: guarded } });
         } catch (error) {
           await guarded.closeAll('experiment run failed');
           const runPath = join(outputDir, 'run.json');

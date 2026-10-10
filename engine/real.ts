@@ -878,6 +878,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       onChangedFiles: changedFor(index),
     });
     ledger.push(first);
+    if (first.result === 'stopped' && options.stopRequested?.()) first.resultReason = options.stopRequested()!;
     await recordHistory({ ports, row: first, dryRun: options.dryRun });
     await recordSpend(first);
     let latest = first;

@@ -146,6 +146,11 @@ describe('parseCli', () => {
 });
 
 describe('main', () => {
+  it('never starts an experiment for an unsupported --plan request', async () => {
+    const c = capture();
+    expect(await main(['experiment', '--plan'], c.io)).toBe(2);
+    expect(c.err.join('\n')).toContain('Use tally run --plan');
+  });
   it('prints usage listing every command and exits 0 for help', async () => {
     const c = capture();
     expect(await main(['--help'], c.io)).toBe(0);
