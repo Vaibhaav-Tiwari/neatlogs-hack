@@ -37,6 +37,7 @@ export interface CliOptions {
   plan: boolean;
   /** Use live read-only integrations for `tally demo`. */
   live: boolean;
+  yes?: boolean;
   /** Integration to authenticate for `tally login`. */
   loginTarget: 'cfoai' | undefined;
   /** Directory for `tally market` output. */
@@ -83,6 +84,7 @@ Options:
   --port <number>   Dashboard port (default: 5177; use 0 for any free port)
   --plan            Size and route tasks, but do not spawn workers
   --live            For demo: use live read-only integrations with fake workers
+  --yes             For init: approve the final change summary without prompting
   --output <dir>    Output directory for tally market (default: .tally/market/latest)
   --limit <number>  Result limit for tally market (default: 10)
   --keyword <text>  CrustData keyword for tally market (default: AI coding)
@@ -106,6 +108,7 @@ export function parseCli(argv: string[]): ParsedCli {
         port: { type: 'string' },
         plan: { type: 'boolean', default: false },
         live: { type: 'boolean', default: false },
+        yes: { type: 'boolean', default: false },
         output: { type: 'string' },
         limit: { type: 'string' },
         keyword: { type: 'string' },
@@ -165,6 +168,7 @@ export function parseCli(argv: string[]): ParsedCli {
       port,
       plan: values.plan,
       live: values.live,
+      ...(values.yes ? { yes: true } : {}),
       loginTarget: name === 'login' ? 'cfoai' : undefined,
       output: values.output,
       limit,
@@ -217,7 +221,11 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
 
 async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
-    const result = await runInit({ configPath: options.config });
+    const result = await runInit({ configPath: options.config, yes: options.yes, dryRun: options.dryRun, print: io.stdout });
+    if (!result.applied) {
+      io.stdout(options.dryRun ? 'Dry run: no changes made.' : 'Init cancelled: no changes made.');
+      return 0;
+    }
     io.stdout(`wrote ${result.configPath}`);
     io.stdout(`repo project ${result.projectId}`);
     io.stdout(`test ${result.testCommand}`);

@@ -68,7 +68,7 @@ npm test
 | `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`, `--plan`, `--dashboard`/`--open`. |
 | `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to light up read-only integrations while workers stay fake. |
 | `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
-| `tally init` | Detect the test command, ask for a budget and issue label, and write `tally.yaml`. |
+| `tally init` | Detect test/setup commands, ask budget and integration preferences, then display all proposed files and AO project changes before a final default-No confirmation. `--dry-run` previews without changes; `--yes` applies detected defaults without prompts. Scoped worker allow-list enforcement is not yet installed. |
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 
 ## Layout
