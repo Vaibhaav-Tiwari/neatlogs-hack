@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KGZC35MJ7FAJV7DBZMJVFJ",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/p3-init-wizard",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cli/main.test.ts",
+    "cli/main.ts",
+    "engine/init.test.ts",
+    "engine/init.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 118735,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5635200,
+    "output_tokens": 13524,
+    "api_call_count": 36
+  }
+}
