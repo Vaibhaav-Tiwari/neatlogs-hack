@@ -3,6 +3,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { contentHash, configHash, installRecordPath, type InstallRecord } from './install-record.js';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { runDoctor, type DoctorLine } from './doctor.js';
+import { tierPriceNote } from './pricing.js';
 
 export interface InitCommandResult {
   stdout: string;
@@ -36,8 +37,8 @@ export interface InitResult {
 
 const CODEx_TIERS = [
   ['cheap', 'gpt-5.6-luna', 0.2, 0.02, 1.2, 0.2],
-  ['middle', 'gpt-5.6-terra', 1, 0.1, 5, 0.5],
-  ['top', 'gpt-5.6-sol', 2, 0.2, 10, 1],
+  ['middle', 'gpt-5.6-terra', 2, 0.2, 12, 0.5],
+  ['top', 'gpt-5.6-sol', 4, 0.4, 20, 1],
 ] as const;
 
 const CLAUDE_TIERS = [
@@ -161,6 +162,7 @@ function tiersFor(agents: Set<string>) {
     provider,
     model,
     price: { inputUsdPerMTok: input, cachedInputUsdPerMTok: cached, outputUsdPerMTok: output },
+    priceNote: tierPriceNote({ model, provider, price: { inputUsdPerMTok: input, cachedInputUsdPerMTok: cached, outputUsdPerMTok: output } }),
     ceilingFraction,
   }));
 }

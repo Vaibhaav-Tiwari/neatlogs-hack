@@ -92,6 +92,12 @@ describe('runInit', () => {
     expect(config.budget).toMatchObject({ source: 'config', usd: 12.5 });
     expect(config.integrations).toMatchObject({ neatlogs: true, entire: true, cfoai: false, slack: false });
     expect(config.tiers.map((tier: { harness: string; sessionMode: string }) => `${tier.harness}:${tier.sessionMode}`)).toEqual(['codex:tui', 'codex:tui', 'codex:tui']);
+    expect(config.tiers.map((tier: { price: unknown }) => tier.price)).toEqual([
+      { inputUsdPerMTok: 0.2, cachedInputUsdPerMTok: 0.02, outputUsdPerMTok: 1.2 },
+      { inputUsdPerMTok: 2, cachedInputUsdPerMTok: 0.2, outputUsdPerMTok: 12 },
+      { inputUsdPerMTok: 4, cachedInputUsdPerMTok: 0.4, outputUsdPerMTok: 20 },
+    ]);
+    expect(config.tiers.every((tier: { priceNote: string }) => tier.priceNote.includes('Verified base list price'))).toBe(true);
     expect(calls.some((call) => call.file === 'ao' && call.args.join(' ') === `project add --path ${repo} --id ${result.projectId}`)).toBe(true);
     const setConfig = calls.find((call) => call.file === 'ao' && call.args[0] === 'project' && call.args[1] === 'set-config');
     expect(setConfig?.args).toContain(JSON.stringify({ postCreate: ['make setup'] }));

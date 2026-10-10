@@ -2,6 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { stringify as stringifyYaml } from 'yaml';
+import { loadConfig } from './config.js';
+import { CODEX_LIST_PRICES } from './pricing.js';
 import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
 import { usdToNanos, validateLedger, validateRunState, type TaskImpact, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
@@ -280,6 +283,20 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it('persists verified configured price provenance through the real loop with fake ports', async () => {
+    const { dir, configPath } = fixture();
+    const config = loadConfig(configPath);
+    Object.assign(config.tiers[0]!, { provider: 'openai', harness: 'codex', model: 'gpt-5.6-luna', price: CODEX_LIST_PRICES['gpt-5.6-luna']! });
+    writeFileSync(configPath, stringifyYaml(config));
+    const worker = new FakeWorker();
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), publisher: worker, usage: worker, sessions: worker } });
+    const rows = JSON.parse(readFileSync(result.ledgerPath, 'utf8'));
+    expect(rows[0].price).toEqual(CODEX_LIST_PRICES['gpt-5.6-luna']);
+    expect(rows[0].priceNote).toContain('Verified base list price');
+    expect(rows[0].priceNote).toContain('https://developers.openai.com/api/docs/models/gpt-5.6-luna');
+    expect(validateLedger(rows).ok).toBe(true);
+  });
   it('persists actual branch files after worker close removes its checkout', async () => {
     const { dir, configPath } = fixture();
     const checkout = join(dir, 'worker');
@@ -582,6 +599,11 @@ describe('runRealTally', () => {
       'claude-code:claude-sonnet-5-5',
     ]);
     expect(result.ledger).toHaveLength(2);
+    expect(result.ledger.map((row) => row.price)).toEqual([
+      { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0.1, outputUsdPerMTok: 5 },
+      { inputUsdPerMTok: 2, cachedInputUsdPerMTok: 0.2, outputUsdPerMTok: 10 },
+    ]);
+    expect(result.ledger.every((row) => row.priceNote?.includes('Unverified configured price'))).toBe(true);
     expect(result.ledger[1]).toMatchObject({
       attempt: 2,
       escalatedFrom: result.ledger[0]!.attemptId,

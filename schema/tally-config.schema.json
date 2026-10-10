@@ -54,6 +54,7 @@
           "sessionMode": { "type": "string", "enum": ["chat", "tui"] },
           "model": { "type": "string", "minLength": 1 },
           "provider": { "type": "string", "minLength": 1 },
+          "priceNote": { "type": "string" },
           "price": {
             "type": "object",
             "additionalProperties": false,
