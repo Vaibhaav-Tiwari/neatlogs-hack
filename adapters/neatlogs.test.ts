@@ -3,7 +3,7 @@ import { NeatlogsTraceAdapter, type NeatlogsSdk } from './neatlogs.js';
 
 class FakeNeatlogs implements NeatlogsSdk {
   initCalls: Array<{ apiKey: string; workflowName: string; tags?: string[] }> = [];
-  traceCalls: Array<{ name: string; sessionId?: string; input?: unknown }> = [];
+  traceCalls: Array<{ name: string; sessionId?: string; input?: unknown; attributes?: unknown }> = [];
   flushed = 0;
   shutDown = 0;
 
@@ -11,7 +11,7 @@ class FakeNeatlogs implements NeatlogsSdk {
     this.initCalls.push(options);
   }
 
-  async trace<T>(options: { name: string; kind: 'CHAIN'; sessionId?: string; input?: unknown }, fn: () => Promise<T>): Promise<T> {
+  async trace<T>(options: { name: string; kind: 'CHAIN'; sessionId?: string; input?: unknown; attributes?: unknown }, fn: () => Promise<T>): Promise<T> {
     this.traceCalls.push(options);
     return fn();
   }
@@ -50,6 +50,7 @@ describe('NeatlogsTraceAdapter', () => {
     });
     expect(sdk.initCalls).toEqual([{ apiKey: 'secret-key', workflowName: 'wf', tags: ['one'] }]);
     expect(sdk.traceCalls).toMatchObject([{ name: 'tally.ceiling.poll', sessionId: 'sess-1' }]);
+    expect(sdk.traceCalls[0]?.attributes).toMatchObject({ sessionId: 'sess-1', taskId: 'T1' });
     expect(JSON.stringify(sdk.initCalls)).not.toContain('NEATLOGS_API_KEY');
     expect(adapter.lastTraceId()).toBe('1234567890abcdef1234567890abcdef');
     expect(adapter.status()).toEqual({ status: 'ok', detail: '1234567890abcdef1234567890abcdef' });

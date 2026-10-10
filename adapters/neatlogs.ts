@@ -4,7 +4,7 @@ import type { TraceAttributes, TracePort, TraceSpan, TraceValue } from '../agent
 
 export interface NeatlogsSdk {
   init(options: { apiKey: string; workflowName: string; tags?: string[] }): Promise<unknown> | unknown;
-  trace<T>(options: { name: string; kind: 'CHAIN'; sessionId?: string; input?: unknown }, fn: () => Promise<T>): Promise<T>;
+  trace<T>(options: { name: string; kind: 'CHAIN'; sessionId?: string; input?: unknown; attributes?: Record<string, TraceValue> }, fn: () => Promise<T>): Promise<T>;
   injectTraceContext?(carrier: Record<string, string>): void;
   flush?(): Promise<void> | void;
   shutdown?(): Promise<void> | void;
@@ -75,10 +75,11 @@ export class NeatlogsTraceAdapter implements TracePort {
       set: (next) => Object.assign(span.attributes, next),
     };
     const sessionId = typeof attributes.sessionId === 'string' ? attributes.sessionId : undefined;
-    return sdk.trace({ name, kind: 'CHAIN', ...(sessionId ? { sessionId } : {}), input: serialisable(attributes) }, async () => {
+    const safeAttributes = serialisable(attributes);
+    return sdk.trace({ name, kind: 'CHAIN', ...(sessionId ? { sessionId } : {}), input: safeAttributes, attributes: safeAttributes }, async () => {
       const carrier: Record<string, string> = {};
       sdk.injectTraceContext?.(carrier);
-      this.lastTraceIdValue = traceIdFromCarrier(carrier) ?? this.lastTraceIdValue;
+      this.lastTraceIdValue = traceIdFromCarrier(carrier);
       return fn(span);
     });
   }

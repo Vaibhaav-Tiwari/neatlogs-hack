@@ -11,7 +11,7 @@
 import { ceilingNanos, nanosToUsd } from '../schema/money.js';
 import type { TallyConfig, TaskSize, Tier } from '../schema/types.js';
 import { DEFAULT_PRIOR_WEIGHT, estimateFor, tierRank } from './history.js';
-import type { BudgetPort, PriceHistoryPort, TaskInput, TracePort } from './ports.js';
+import type { BudgetPort, PriceHistoryPort, TaskInput, TraceAttributes, TracePort } from './ports.js';
 import type { SizeEstimate } from './sizer.js';
 import { traceDecision } from './trace.js';
 
@@ -71,6 +71,7 @@ export interface RouteInput {
   config: TallyConfig;
   ports: { history?: PriceHistoryPort; budget: BudgetPort; trace?: TracePort };
   options?: Partial<RoutingOptions>;
+  traceAttributes?: TraceAttributes;
 }
 
 export function usd(nanos: number): string {
@@ -207,7 +208,7 @@ export async function routeTask(input: RouteInput): Promise<RouteDecision> {
   return traceDecision(
     input.ports.trace,
     'tally.route',
-    { taskId: input.task.taskId, size: input.estimate.size, confidence: input.estimate.confidence },
+    { ...input.traceAttributes, taskId: input.task.taskId, size: input.estimate.size, confidence: input.estimate.confidence },
     async (span) => {
       const decision = await routeTaskCore(input);
       span.set({

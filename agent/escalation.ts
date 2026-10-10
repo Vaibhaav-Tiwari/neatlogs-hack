@@ -6,7 +6,7 @@
  */
 import { ceilingNanos } from '../schema/money.js';
 import type { AttemptResult, Handoff, TallyConfig, TaskSize, Tier } from '../schema/types.js';
-import type { BudgetPort, HandoffPort, TracePort } from './ports.js';
+import type { BudgetPort, HandoffPort, TraceAttributes, TracePort } from './ports.js';
 import { usd } from './router.js';
 import { traceDecision } from './trace.js';
 
@@ -55,6 +55,7 @@ export interface EscalationInput {
   previous: FinishedAttempt;
   config: TallyConfig;
   ports: { budget: BudgetPort; handoff?: HandoffPort; trace?: TracePort };
+  traceAttributes?: TraceAttributes;
 }
 
 const HANDOFF_NAMES: Record<Exclude<Handoff, 'none' | 'restart'>, string> = {
@@ -150,6 +151,7 @@ export async function decideEscalation(input: EscalationInput): Promise<Escalati
       attempt: input.previous.attempt,
       fromTier: input.previous.tier,
       result: input.previous.result,
+      ...input.traceAttributes,
     },
     async (span) => {
       const decision = await decideEscalationCore(input);

@@ -77,16 +77,6 @@ const scriptedEntireSignals: SizingSignalsPort & { status: () => { status: 'ok';
   },
 };
 
-class FakeTrace implements TracePort {
-  async span<T>(_name: string, _attributes: TraceAttributes, fn: (span: TraceSpan) => Promise<T>): Promise<T> {
-    return fn({ set() {} });
-  }
-
-  status() {
-    return { status: 'ok' as const, detail: 'https://app.neatlogs.com/traces/test-trace' };
-  }
-}
-
 const tokens: TokenUsage = { uncachedInput: 1000, cachedInput: 2000, output: 300, total: 3300 };
 
 class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
@@ -151,10 +141,33 @@ class FakeCfoaiBudget implements CfoaiBudgetPort {
   }
 }
 
+class FakeTrace implements TracePort {
+  spans: Array<{ name: string; attributes: TraceAttributes }> = [];
+  private next = 1;
+  private last: string | null = null;
+
+  async span<T>(name: string, attributes: TraceAttributes, fn: (span: TraceSpan) => Promise<T>): Promise<T> {
+    const record = { name, attributes: { ...attributes } };
+    this.spans.push(record);
+    this.last = String(this.next).padStart(32, '0');
+    this.next += 1;
+    return fn({ set: (next) => Object.assign(record.attributes, next) });
+  }
+
+  lastTraceId(): string | null {
+    return this.last;
+  }
+
+  status() {
+    return { status: 'ok' as const, detail: 'https://app.neatlogs.com/traces/test-trace' };
+  }
+}
+
 describe('runRealTally', () => {
   it('sizes, routes, spawns, verifies, escalates once and writes valid output', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
+    const trace = new FakeTrace();
     const verifier = new SequenceVerifier([
       { passed: false, reason: 'tests failed: one assertion failed' },
       { passed: true, reason: null },
@@ -167,7 +180,7 @@ describe('runRealTally', () => {
       outputDir: join(dir, 'out'),
       latestRunDir: join(dir, 'latest'),
       now: fixedNow,
-      ports: { intake, signals, worker, verifier, usage: worker, sessions: worker },
+      ports: { intake, signals, worker, verifier, usage: worker, sessions: worker, trace },
     });
 
     expect(worker.starts.map((start) => `${start.harness}:${start.model}`)).toEqual([
@@ -181,6 +194,12 @@ describe('runRealTally', () => {
       handoff: 'restart',
       result: 'passed',
     });
+    expect(result.ledger.map((row) => row.traceId)).toEqual(['00000000000000000000000000000002', '00000000000000000000000000000004']);
+    expect(result.ledger.map((row) => row.traceUrl)).toEqual([null, null]);
+    expect(trace.spans.filter((span) => span.name === 'tally.route' || span.name === 'tally.escalate').map((span) => span.attributes)).toMatchObject([
+      { sessionId: result.runState.runId, taskId: 'T1', attempt: 1 },
+      { sessionId: result.runState.runId, taskId: 'T1', attempt: 2 },
+    ]);
     expect(result.runState.tasks[0]).toMatchObject({ status: 'passed', attempts: 2, escalated: true });
     expect(validateRunState(JSON.parse(readFileSync(result.runStatePath, 'utf8'))).ok).toBe(true);
     expect(validateLedger(JSON.parse(readFileSync(result.ledgerPath, 'utf8'))).ok).toBe(true);
@@ -258,6 +277,7 @@ describe('runRealTally', () => {
             escalatedFrom: null,
             handoff: 'none',
             prUrl: null,
+            traceId: null,
             traceUrl: null,
             checkpointId: null,
             checkpointUrl: null,
