@@ -1,5 +1,12 @@
 # Tally
 
+Export a static dashboard snapshot with `tally publish --out site`, or choose
+recorded folders with `tally publish --out site --runs run-id-1,run-id-2`.
+The default includes real runs only. The command reads `.tally/runs`, scans
+the exported files for sensitive content, and prints their sizes. Serve the
+output directory on a static HTTP host, including under a sub-path. This
+creates local files; it does not deploy them.
+
 A CFO for a fleet of coding agents. Give it a backlog and a budget. It sizes
 each task, sends it to the cheapest model likely to finish it, stops any task
 that overruns its spend ceiling, hands failed work to a stronger model, and
