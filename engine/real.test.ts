@@ -947,4 +947,65 @@ describe('runRealTally', () => {
 
     expect(result.runState.integrations.neatlogs).toEqual({ status: 'ok', detail: 'https://app.neatlogs.com/traces/test-trace' });
   });
+
+  it.each([
+    [
+      'neatlogs',
+      'neatlogs: false, entire: true, cfoai: true, slack: false',
+      {
+        neatlogs: { status: 'off', detail: null },
+        entire: { status: 'ok', detail: 'not used: sample tasks carry scripted sizing' },
+        cfoai: { status: 'ok', detail: 'https://app.cfo.ai/s/table' },
+      },
+    ],
+    [
+      'entire',
+      'neatlogs: true, entire: false, cfoai: true, slack: false',
+      {
+        neatlogs: { status: 'ok', detail: 'https://app.neatlogs.com/traces/test-trace' },
+        entire: { status: 'off', detail: null },
+        cfoai: { status: 'ok', detail: 'https://app.cfo.ai/s/table' },
+      },
+    ],
+    [
+      'cfoai',
+      'neatlogs: true, entire: true, cfoai: false, slack: false',
+      {
+        neatlogs: { status: 'ok', detail: 'https://app.neatlogs.com/traces/test-trace' },
+        entire: { status: 'ok', detail: 'not used: sample tasks carry scripted sizing' },
+        cfoai: { status: 'off', detail: null },
+      },
+    ],
+  ] as const)('completes the real loop with %s off and reports exactly that integration state', async (_off, integrations, expected) => {
+    const { dir, configPath } = fixture(integrations);
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40));
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, `optional-${_off}`),
+      now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
+      ports: {
+        intake,
+        signals: scriptedEntireSignals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+        trace: new FakeTrace(),
+        cfoai,
+      },
+    });
+
+    expect(result.runState.status).toBe('finished');
+    expect(result.runState.tasks[0]).toMatchObject({ status: 'passed' });
+    expect(result.ledger).toHaveLength(1);
+    expect(result.runState.integrations.neatlogs).toEqual(expected.neatlogs);
+    expect(result.runState.integrations.entire).toEqual(expected.entire);
+    expect(result.runState.integrations.cfoai).toEqual(expected.cfoai);
+  });
 });
