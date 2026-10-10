@@ -1,5 +1,65 @@
 import { describe, expect, it } from 'vitest';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AoCliAdapter, type CommandRunner, usageFromAoPayload } from './ao.js';
+
+describe('AO branch continuation', () => {
+  it('replays tracked and untracked edits on the same branch before sending the task', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'tally-continuation-test-'));
+    const old = join(root, 'old');
+    const next = join(root, 'next');
+    const branch = 'tally/task';
+    const exec = promisify(execFile);
+    const git = (args: string[], cwd = root) => exec('git', args, { cwd });
+    let delivered = false;
+    try {
+      await git(['init', '-b', 'main']);
+      await writeFile(join(root, 'tracked.txt'), 'original\n');
+      await git(['add', 'tracked.txt']);
+      await git(['-c', 'user.name=Tally test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'base']);
+      await git(['worktree', 'add', '-b', branch, old]);
+      await writeFile(join(old, 'tracked.txt'), 'partial implementation\n');
+      await writeFile(join(old, 'new-test.txt'), 'partial test\n');
+      const command: CommandRunner = async (file, args, options) => {
+        if (file === 'git') return exec(file, args, { cwd: options?.cwd, encoding: 'utf8' });
+        if (args[0] === 'spawn') {
+          expect(args).toContain(branch);
+          expect(args).not.toContain('--prompt');
+          await git(['worktree', 'add', next, branch]);
+          return { stdout: 'spawned session next-worker', stderr: '' };
+        }
+        if (args[0] === 'send') {
+          expect(await readFile(join(next, 'tracked.txt'), 'utf8')).toBe('partial implementation\n');
+          expect(await readFile(join(next, 'new-test.txt'), 'utf8')).toBe('partial test\n');
+          delivered = true;
+          return { stdout: '', stderr: '' };
+        }
+        return { stdout: JSON.stringify({ session: { branch, isTerminated: args[2] === 'old-worker', worktreePath: args[2] === 'old-worker' ? old : next } }), stderr: '' };
+      };
+      const adapter = new AoCliAdapter({ cwd: root, command });
+      await expect(adapter.start({ task: { taskId: 'T1', title: 'Fix tracked', body: '', issueNumber: null, issueUrl: null, size: 'small', outcomes: ['passed'] }, attempt: 2, tier: {} as never, ceilingNanos: 1,
+        harness: 'codex', model: 'middle', sessionMode: 'tui', name: 'continued', prompt: 'continue', continueBranch: branch, continueSessionId: 'old-worker' })).resolves.toEqual({ sessionId: 'next-worker', branch, checkoutPath: next });
+      expect(delivered).toBe(true);
+      expect((await git(['branch', '--show-current'], old)).stdout.trim()).toBe('');
+      expect(await readFile(join(old, 'tracked.txt'), 'utf8')).toBe('partial implementation\n');
+      expect((await git(['rev-list', '--count', 'main..' + branch])).stdout.trim()).toBe('0');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }, 10_000);
+
+  it('refuses to detach a branch belonging to a live worker', async () => {
+    const calls: string[][] = [];
+    const adapter = new AoCliAdapter({ command: async (_file, args) => {
+      calls.push(args);
+      return { stdout: JSON.stringify({ session: { branch: 'task', isTerminated: false } }), stderr: '' };
+    } });
+    await expect(adapter.start({ task: {} as never, tier: {} as never, attempt: 2, ceilingNanos: 1, harness: 'codex', model: 'middle', name: 'continued', prompt: 'continue',
+      continueBranch: 'task', continueSessionId: 'old-worker' })).rejects.toThrow('terminated worker');
+    expect(calls).toEqual([['session', 'get', 'old-worker', '--json']]);
+  });
+});
 
 describe('usageFromAoPayload', () => {
   it.each([true, false])('checks the worktree base before task delivery; match=%s', async (matches) => {

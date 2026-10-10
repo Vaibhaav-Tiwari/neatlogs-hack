@@ -1,5 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
 import type { LiveUsage, LiveUsagePort, SessionControlPort } from '../agent/ports.js';
 import type { TokenUsage } from '../schema/index.js';
 import type { WorkerPort, WorkerResult, WorkerStartInput } from '../engine/real.js';
@@ -135,6 +138,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
   }
 
   async start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string | null; checkoutPath: string | null }> {
+    if (input.continueBranch) return this.continueAttempt(input);
     const args = ['spawn'];
     const project = input.aoProject ?? this.options.project;
     if (project) args.push('--project', project);
@@ -162,6 +166,64 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     } catch (error) {
       await this.stop(sessionId, 'experiment base preflight failed');
       throw error;
+    }
+  }
+
+  private async checkoutFor(branch: string): Promise<string | null> {
+    const { stdout } = await this.command('git', ['worktree', 'list', '--porcelain'], { cwd: this.options.cwd });
+    const block = stdout.split(/\n\n/).find((item) => item.split('\n').includes(`branch refs/heads/${branch}`));
+    return block?.split('\n').find((line) => line.startsWith('worktree '))?.slice(9) ?? null;
+  }
+
+  private async continueAttempt(input: WorkerStartInput): Promise<{ sessionId: string; branch: string; checkoutPath: string }> {
+    const branch = input.continueBranch!;
+    if (!input.continueSessionId) throw new Error('continuation requires the stopped worker session id');
+    const previous = (await this.session(input.continueSessionId)).session;
+    if (!previous?.isTerminated || previous.branch !== branch) throw new Error('continuation requires a terminated worker on the same branch');
+    const oldCheckout = await this.checkoutFor(branch);
+    const scratch = await mkdtemp(join(tmpdir(), 'tally-handoff-'));
+    let patch = '';
+    let untracked: string[] = [];
+    let sessionId: string | null = null;
+    try {
+      if (oldCheckout) {
+        patch = (await this.command('git', ['diff', '--binary', 'HEAD'], { cwd: oldCheckout })).stdout;
+        untracked = (await this.command('git', ['ls-files', '--others', '--exclude-standard', '-z'], { cwd: oldCheckout })).stdout.split('\0').filter(Boolean);
+        // The old agent is dead. Retain its dirty recovery copy while freeing the branch.
+        await this.command('git', ['switch', '--detach'], { cwd: oldCheckout });
+      }
+      const args = ['spawn'];
+      const project = input.aoProject ?? this.options.project;
+      if (project) args.push('--project', project);
+      if (input.sessionMode) args.push('--mode', input.sessionMode);
+      args.push('--branch', branch, '--harness', input.harness, '--model', input.model, '--name', input.name);
+      sessionId = parseSpawn((await this.command('ao', args, { cwd: this.options.cwd })).stdout);
+      const current = (await this.session(sessionId)).session;
+      if (current?.branch !== branch) throw new Error(`continuation branch mismatch: expected ${branch}, got ${current?.branch}`);
+      const checkoutPath = current.worktreePath ?? current.checkoutPath ?? await this.checkoutFor(branch);
+      if (!checkoutPath) throw new Error('could not locate continuation worker checkout');
+      if (patch) {
+        const patchPath = join(scratch, 'changes.patch');
+        await writeFile(patchPath, patch);
+        await this.command('git', ['apply', '--binary', patchPath], { cwd: checkoutPath });
+      }
+      for (const file of untracked) {
+        const source = resolve(oldCheckout!, file);
+        const target = resolve(checkoutPath, file);
+        if (!source.startsWith(resolve(oldCheckout!) + sep) || !target.startsWith(resolve(checkoutPath) + sep)) throw new Error('unsafe handoff file path');
+        await mkdir(dirname(target), { recursive: true });
+        const parent = await realpath(dirname(target));
+        const root = await realpath(checkoutPath);
+        if (parent !== root && !parent.startsWith(root + sep)) throw new Error('handoff file escapes worker checkout');
+        await cp(source, target, { dereference: false, force: false, errorOnExist: true });
+      }
+      await this.command('ao', ['send', '--session', sessionId, '--message', input.prompt], { cwd: this.options.cwd });
+      return { sessionId, branch, checkoutPath };
+    } catch (error) {
+      if (sessionId) await this.stop(sessionId, 'continuation preparation failed');
+      throw error;
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
     }
   }
 

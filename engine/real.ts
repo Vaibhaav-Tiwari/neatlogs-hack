@@ -52,6 +52,8 @@ export interface WorkerStartInput {
   name: string;
   prompt: string;
   aoProject?: string;
+  continueBranch?: string | null;
+  continueSessionId?: string | null;
 }
 
 export interface WorkerResult {
@@ -406,6 +408,7 @@ async function runAttempt(input: {
   baseCommit?: string | null;
   requiredBaseCommit?: string;
   continueBranch?: string | null;
+  continueSessionId?: string | null;
   onChangedFiles?: (files: string[]) => void;
 }): Promise<LedgerRow> {
   const startedAt = input.now().toISOString();
@@ -422,9 +425,17 @@ async function runAttempt(input: {
     name: `tally-${input.runId}-${input.task.taskId}-${input.attempt}`,
     prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary, input.runId, input.attempt),
     aoProject: input.config.repo.aoProject,
+    continueBranch: input.continueBranch,
+    continueSessionId: input.continueSessionId,
   });
   let stopped = false;
-  const watcher = new CeilingWatcher({ usage: input.ports.usage, sessions: input.ports.sessions, trace: input.ports.trace });
+  let ceilingStopStarted = false;
+  const watcher = new CeilingWatcher({ usage: input.ports.usage, sessions: {
+    stop: async (sessionId, reason) => {
+      ceilingStopStarted = true;
+      await input.ports.sessions.stop(sessionId, reason);
+    },
+  }, trace: input.ports.trace });
   const abort = new AbortController();
   const watched = watcher.watch(
     { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos },
@@ -445,7 +456,9 @@ async function runAttempt(input: {
   let resolvedCheckoutPath: string | null = null;
 
   try {
-  const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
+  let first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
+  // Killing can resolve the worker poll before the watcher records its stop verdict.
+  if (first.kind === 'worker' && ceilingStopStarted) first = { kind: 'watch', verdict: await watched };
   if (first.kind === 'watch' && first.verdict.action === 'stop') {
     stopped = first.verdict.stopped;
     abort.abort();
@@ -824,7 +837,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             dryRun: options.dryRun,
             baseCommit,
             requiredBaseCommit: options.requiredBaseCommit,
-            continueBranch: escalation.handoffBranch,
+            continueBranch: escalation.handoffBranch ?? interrupted.branch,
+            continueSessionId: interrupted.sessionId,
             onChangedFiles: changedFor(index),
           });
           ledger.push(latest);
@@ -947,7 +961,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           dryRun: options.dryRun,
           baseCommit,
           requiredBaseCommit: options.requiredBaseCommit,
-          continueBranch: escalation.handoffBranch,
+          continueBranch: escalation.handoffBranch ?? first.branch,
+          continueSessionId: first.sessionId,
           onChangedFiles: changedFor(index),
         });
         ledger.push(latest);
