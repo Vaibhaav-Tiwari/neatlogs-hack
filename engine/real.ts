@@ -17,7 +17,10 @@ import { routeTask } from '../agent/router.js';
 import { sizeTask } from '../agent/sizer.js';
 import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
+import { EntireSizingAdapter } from '../adapters/entire.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
+import { FilePriceHistory } from '../adapters/history-file.js';
+import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { CommandVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
 import type { AttemptResult, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
@@ -82,16 +85,20 @@ const nullSignals: SizingSignalsPort = {
   },
 };
 
-function defaultPorts(): RealRunPorts {
+function defaultPorts(config: TallyConfig, configPath: string): RealRunPorts {
   const ao = new AoCliAdapter();
+  const configDir = dirname(configPath);
+  const repoPath = resolve(configDir, config.repo.path);
+  const trace = config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
   return {
     intake: new ConfigBacklogIntake(),
-    signals: nullSignals,
+    signals: config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals,
     worker: ao,
     verifier: new CommandVerifier(),
     usage: ao,
     sessions: ao,
-    history: new PriceHistory(),
+    history: new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') }),
+    ...(trace ? { trace } : {}),
   };
 }
 
@@ -103,10 +110,15 @@ function repoName(config: TallyConfig): string {
   return config.repo.slug ?? config.repo.path;
 }
 
-function integrationStates(config: TallyConfig): RunState['integrations'] {
+function traceStatus(trace: TracePort | undefined): RunState['integrations']['neatlogs'] {
+  const withStatus = trace as (TracePort & { status?: () => RunState['integrations']['neatlogs'] }) | undefined;
+  return withStatus?.status?.() ?? { status: 'missing', detail: 'Trace adapter is not configured.' };
+}
+
+function integrationStates(config: TallyConfig, ports: RealRunPorts): RunState['integrations'] {
   return {
-    neatlogs: config.integrations.neatlogs ? { status: 'missing', detail: 'Adapter owned by lane B.' } : { status: 'off', detail: null },
-    entire: config.integrations.entire ? { status: 'missing', detail: 'Adapter owned by lane B.' } : { status: 'off', detail: null },
+    neatlogs: config.integrations.neatlogs ? traceStatus(ports.trace) : { status: 'off', detail: null },
+    entire: config.integrations.entire ? { status: 'ok', detail: null } : { status: 'off', detail: null },
     cfoai: config.integrations.cfoai ? { status: 'missing', detail: 'CSV fallback not implemented yet.' } : { status: 'off', detail: null },
     github:
       config.backlog.source === 'github-issues'
@@ -270,7 +282,7 @@ async function runAttempt(input: {
 
 export async function runRealTally(options: RealRunOptions): Promise<RunResult> {
   const config = loadConfig(options.configPath);
-  const ports = { ...defaultPorts(), ...options.ports };
+  const ports = { ...defaultPorts(config, options.configPath), ...options.ports };
   const now = options.now ?? (() => new Date());
   const started = now();
   const runId = runIdFrom(started);
@@ -305,7 +317,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         spentNanos: ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
       },
       tasks: taskStates,
-      integrations: integrationStates(config),
+      integrations: integrationStates(config, ports),
     };
     assertValid(runState, ledger);
     writeFileSync(runStatePath, `${JSON.stringify(runState, null, 2)}\n`);
@@ -415,5 +427,6 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
 
   const endedAt = now().toISOString();
   const runState = writeCurrent('finished', endedAt);
+  await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
   return { runState, ledger, outputDir, runStatePath, ledgerPath };
 }
