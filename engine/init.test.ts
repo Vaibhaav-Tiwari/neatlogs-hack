@@ -2,10 +2,25 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { describe, expect, it } from 'vitest';
-import { runInit, type InitCommandRunner } from './init.js';
+import { describe, expect, it, vi } from 'vitest';
+import { defaultCommand, runInit, type InitCommandRunner } from './init.js';
+import { installRecordPath } from './install-record.js';
 
 describe('runInit', () => {
+  it('preserves fields absent from the AO CLI config mirror through the daemon API', async () => {
+    const requests: Array<{ url: string; body?: string }> = [];
+    const config = { worker: { agentConfig: { effort: 'high', permissions: 'default' } }, env: { KEEP: 'value' } };
+    vi.stubGlobal('fetch', async (url: string, options: RequestInit) => {
+      requests.push({ url, body: options.body as string | undefined });
+      return { ok: true, json: async () => ({ project: { config } }) };
+    });
+    try {
+      const read = await defaultCommand('ao', ['project', 'get', 'test', '--json']);
+      const next = { ...JSON.parse(read.stdout).project.config, postCreate: ['make setup'] };
+      await defaultCommand('ao', ['project', 'set-config', 'test', '--config-json', JSON.stringify(next), '--json']);
+      expect(JSON.parse(requests[1]!.body!).config.worker.agentConfig.effort).toBe('high');
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('detects repo defaults, registers AO with setup post-create, writes tally.yaml and runs doctor', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-repo-'));
     mkdirSync(join(repo, '.git'));
@@ -51,5 +66,7 @@ describe('runInit', () => {
     const setConfig = calls.find((call) => call.file === 'ao' && call.args[0] === 'project' && call.args[1] === 'set-config');
     expect(setConfig?.args).toContain(JSON.stringify({ postCreate: ['make setup'] }));
     expect(result.doctor[0]).toMatchObject({ product: 'AO daemon', status: 'connected' });
+    expect(JSON.parse(readFileSync(installRecordPath(result.configPath), 'utf8'))).toMatchObject({ projectCreated: true, addedSetupCommand: 'make setup', version: 1 });
+    await expect(runInit({ cwd: repo, command, readLine: async () => { throw new Error('must not prompt'); } })).rejects.toThrow('will not overwrite');
   });
 });

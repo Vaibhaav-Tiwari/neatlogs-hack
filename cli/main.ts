@@ -5,6 +5,7 @@ import { BacklogError } from '../engine/backlog.js';
 import { ConfigError, loadConfig } from '../engine/config.js';
 import { runDoctor } from '../engine/doctor.js';
 import { runInit } from '../engine/init.js';
+import { runUninstall } from '../engine/uninstall.js';
 import { planTally, readPlanBudget } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
 import { loginCfoai } from '../adapters/cfoai.js';
@@ -12,7 +13,7 @@ import { CrustDataError, runCrustDataMarketSearch } from '../adapters/crustdata.
 import { nanosToUsd } from '../schema/index.js';
 import { startDashboardServer } from './dashboard-server.js';
 
-export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'doctor', 'login', 'market'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -66,6 +67,7 @@ Commands:
   demo     Run the full loop with simulated workers on a sample backlog
   dashboard Start the local dashboard server
   init     Set up tally.yaml for the current repository
+  uninstall List and remove the recorded Tally installation
   doctor   Check that each integration is connected
   login    Connect an integration, e.g. tally login cfoai
   market   Search CrustData for companies adopting coding agents
@@ -230,6 +232,16 @@ async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
   }
 }
 
+async function uninstallCommand(options: CliOptions, io: CliIO): Promise<number> {
+  try {
+    const result = await runUninstall({ configPath: options.config, print: io.stdout });
+    io.stdout(result.removed ? 'Tally installation removed; run data and credentials retained.' : 'Uninstall cancelled.');
+    return 0;
+  } catch (error) {
+    return reportError('tally uninstall', error, io);
+  }
+}
+
 async function demoCommand(_options: CliOptions, io: CliIO): Promise<number> {
   try {
     const result = await runDemo({ live: _options.live });
@@ -310,6 +322,7 @@ const handlers: Record<Command, Handler> = {
   demo: demoCommand,
   dashboard: dashboardCommand,
   init: initCommand,
+  uninstall: uninstallCommand,
   doctor: doctorCommand,
   login: loginCommand,
   market: marketCommand,
