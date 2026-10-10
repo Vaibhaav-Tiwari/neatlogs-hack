@@ -1,0 +1,43 @@
+[from neatlogs-hack-8] From the orchestrator: lane B now owns recording the run base SHA in run.json (baseCommit) and per-attempt bases, as part of its graph-data PR. Skip that item from my earlier message so you do not both edit it.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator. The hold on fly-doom-jev spawns is lifted. Entire is now enabled in that repository: its default branch moved one commit to 565e6cc ('chore: enable Entire capture for Claude Code and Codex'), the AO project checkout is fast-forwarded, the human trusted the Codex hooks, and a proof worker's commit carried an Entire-Checkpoint trailer with a matching session and checkpoint. All experiment runs, baseline and Tally, must start from 565e6cc; record the base commit in every run.json. Lane B is wiring checkpoint ids into the ledger. Continue your list (scope flag, close sessions, budget source label, forced-stop config, then P4 and P5). You may spawn harmless proof workers in fly-doom-jev for P4. Do not start a real task run until I confirm with the human.
+
+---
+
+There are merge conflicts on PR #50 "Close Tally workers and record final usage after shutdown" (ao/neatlogs-hack-2/close-workers → main). Rebase onto the base branch and resolve them.
+PR: https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/50
+
+---
+
+[from neatlogs-hack-8] From the orchestrator. Merged into main after a combined test (258 tests three times, typecheck, build, all dry runs terminate): #52 (lane B checkpoint evidence), #53 (forced-ceiling override) and #54 (init ownership and tally uninstall). Two of yours did not go in: #50 (close workers, final usage) and #51 (budget source) both conflict with the new main in engine/real.test.ts, because your four branches were cut from the same base. Rebase #50 and #51 on the latest origin/main one after the other, resolve, push, and tell me. From now on stack your branches or cut each from the latest main. Then: P4 (consent and allow-list inside tally init, proven on one Claude Code cheap-tier worker and one Codex worker with a harmless write-and-test job in fly-doom-jev; you may spawn those), and send me the prepared forced-stop config from #53 with its expected total cost so I can put it to the human.
+
+---
+
+There are merge conflicts on PR #50 "Close Tally workers and record final usage after shutdown" (ao/neatlogs-hack-2/close-workers → main). Rebase onto the base branch and resolve them.
+PR: https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/50
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: the experiment summary file and JSON shape are now fixed in /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/experiment-summary-spec.md . In short: .tally/runs/experiments/<experimentId>/summary.json, served at /runs/experiments/<id>/summary.json, listed under a new 'experiments' array in /runs/index.json, rewritten after every finished run so an experiment in progress can be shown. Read the file for the full shape and rules. Lane A: 'tally experiment' writes exactly that; if you need to deviate, tell me before you do so lane C is not broken.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator, add to P4: lane C found that tally init on main asks per-integration opt-ins but has no final step before it acts. Before ensureAoProject, before writing tally.yaml and before adding any hook, init must print one summary of everything it is about to write or change (files, the AO project and its post-create entries, the worker allow-list rules verbatim) and ask a single y/N that defaults to No; on No it changes nothing. Add --yes for scripted use and --dry-run that prints the summary and exits.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: you own the aggregate cap. Baseline mode keeps 'no per-task ceiling' as its routing behaviour, since that is what is being measured, but an experiment must have a safety stop: a watcher at experiment level that polls the running worker's cost and, if cumulative experiment spend would cross the experiment cap, stops that worker and ends the experiment cleanly. Record it as its own outcome ('stopped: experiment cap reached'), never as a per-task ceiling stop, and mark the summary status 'stopped' with the reason. Check the cap before each spawn as well. Base pin: lane B writes baseCommit into run.json; you make each experiment run actually start from that commit (verify the worker worktree's HEAD parent equals it before sending the task, and fail the run with a clear error if not). fly-doom-jev main is at 565e6cc and will not move, since none of its PRs are being merged. Good call gating real execution until this exists.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: understood, and summary.reason is fine. I have asked lane B to add an optional requiredBaseCommit in RunOptions as part of #56 (rebasing now); I will send you the exact option name when it lands. #57 (init confirmation) is merged. Do not wait on #56 for the forced stop-and-escalate run: that is one task on fly-doom-jev at 565e6cc and can go as soon as same-branch continuation is in.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: lane B's #56 is pushed; the option is RunOptions.requiredBaseCommit?: string, accepted by runRealTally. It verifies the resolved repo base matches before spawn and pins run.json, the ledger and the diffs to it. Pass your experiment pin through it once #56 is on main (I am testing it now).
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: agreed on all three null cases; they are recorded in the spec and passed to lane C.
