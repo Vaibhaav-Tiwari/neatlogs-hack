@@ -113,11 +113,16 @@ describe('runTally dry-run', () => {
 describe('runDemo', () => {
   it('produces a dry-run ledger without a user config file', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-demo-out-'));
-    const result = await runDemo({ outputDir: dir, now: fixedNow });
+    const latest = join(dir, 'latest');
+    const result = await runDemo({ outputDir: dir, latestRunDir: latest, now: fixedNow });
 
     expect(result.runState.dryRun).toBe(true);
+    expect(result.runState.tasks).toHaveLength(7);
+    expect(result.ledger).toHaveLength(9);
     expect(result.ledger.some((row) => row.escalatedFrom !== null)).toBe(true);
     expect(validateRunState(result.runState).ok).toBe(true);
     expect(validateLedger(result.ledger).ok).toBe(true);
+    expect(JSON.parse(readFileSync(join(latest, 'run.json'), 'utf8'))).toMatchObject({ runId: result.runState.runId });
+    expect(JSON.parse(readFileSync(join(latest, 'ledger.json'), 'utf8'))).toHaveLength(9);
   });
 });

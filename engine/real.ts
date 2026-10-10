@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
@@ -26,6 +26,7 @@ import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState
 import type { AttemptResult, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
 import { type BacklogTask } from './backlog.js';
 import { loadConfig } from './config.js';
+import { writeRunFiles } from './output.js';
 import type { RunOptions, RunResult } from './run.js';
 
 export interface WorkerStartInput {
@@ -288,9 +289,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const runId = runIdFrom(started);
   const mode: RunMode = options.baseline ? 'baseline' : 'tally';
   const outputDir = resolve(options.outputDir ?? `.tally/runs/${runId}`);
-  mkdirSync(outputDir, { recursive: true });
   const ledgerPath = resolve(outputDir, 'ledger.json');
-  const runStatePath = resolve(outputDir, 'run.json');
   const ledger = loadLedger(ledgerPath);
   const budget = new LedgerBudget(usdToNanos(options.budgetUsd ?? config.budget.usd), ledger);
   const tasks = (await ports.intake.tasks(config, options.configPath)).filter((task) => {
@@ -320,8 +319,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       integrations: integrationStates(config, ports),
     };
     assertValid(runState, ledger);
-    writeFileSync(runStatePath, `${JSON.stringify(runState, null, 2)}\n`);
-    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+    writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
     return runState;
   };
   writeCurrent('running', null);
@@ -428,5 +426,6 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const endedAt = now().toISOString();
   const runState = writeCurrent('finished', endedAt);
   await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
-  return { runState, ledger, outputDir, runStatePath, ledgerPath };
+  const paths = writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
+  return { runState, ledger, ...paths };
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { attemptId, ceilingNanos, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
 import type {
@@ -18,6 +18,7 @@ import type {
 import { loadConfig } from './config.js';
 import { type BacklogTask, loadFileBacklog } from './backlog.js';
 import { runRealTally, type RealRunOptions } from './real.js';
+import { DEFAULT_LATEST_RUN_DIR, writeRunFiles } from './output.js';
 
 export interface RunOptions {
   configPath: string;
@@ -26,6 +27,7 @@ export interface RunOptions {
   budgetUsd?: number;
   only?: string;
   outputDir?: string;
+  latestRunDir?: string;
   now?: () => Date;
 }
 
@@ -35,6 +37,7 @@ export interface RunResult {
   outputDir: string;
   runStatePath: string;
   ledgerPath: string;
+  latestRunDir: string;
 }
 
 export class RunError extends Error {
@@ -232,69 +235,23 @@ export async function runTally(options: RunOptions | RealRunOptions): Promise<Ru
   };
   assertValid(runState, ledger);
 
-  const outputDir = resolve(options.outputDir ?? `.tally/runs/${runId}`);
-  mkdirSync(outputDir, { recursive: true });
-  const runStatePath = resolve(outputDir, 'run.json');
-  const ledgerPath = resolve(outputDir, 'ledger.json');
-  writeFileSync(runStatePath, `${JSON.stringify(runState, null, 2)}\n`);
-  writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-  return { runState, ledger, outputDir, runStatePath, ledgerPath };
+  const paths = writeRunFiles(options.outputDir ?? `.tally/runs/${runId}`, runState, ledger, options.latestRunDir);
+  return { runState, ledger, ...paths };
 }
 
-export async function runDemo(options: Pick<RunOptions, 'outputDir' | 'now'> = {}): Promise<RunResult> {
-  const { mkdtempSync, writeFileSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const dir = mkdtempSync(join(tmpdir(), 'tally-demo-'));
-  const configPath = join(dir, 'tally.yaml');
-  writeFileSync(
-    configPath,
-    `version: 1
-repo: { path: ".", slug: "demo/tally-sample", baseBranch: "main" }
-test: { command: "npm test" }
-backlog: { source: "file", file: "backlog.yaml" }
-tiers:
-  - name: cheap
-    harness: claude-code
-    provider: litellm
-    model: nova-micro
-    price: { inputUsdPerMTok: 0.035, cachedInputUsdPerMTok: 0.00875, outputUsdPerMTok: 0.14 }
-    ceilingFraction: 0.2
-  - name: middle
-    harness: claude-code
-    provider: litellm
-    model: claude-sonnet-4.6
-    price: { inputUsdPerMTok: 3.3, cachedInputUsdPerMTok: 0.33, outputUsdPerMTok: 16.5 }
-    ceilingFraction: 0.5
-  - name: top
-    harness: claude-code
-    provider: litellm
-    model: claude-opus-4.6
-    price: { inputUsdPerMTok: 5.5, cachedInputUsdPerMTok: 0.55, outputUsdPerMTok: 27.5 }
-    ceilingFraction: 1
-ceilings:
-  bySizeUsd: { small: 1, medium: 4, large: 10 }
-budget: { source: config, usd: 40 }
-concurrency: 3
-integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
-`,
-  );
-  writeFileSync(
-    join(dir, 'backlog.yaml'),
-    `tasks:
-  - id: T1
-    title: Add validation for empty player name
-    size: small
-    outcomes: [passed]
-  - id: T2
-    title: Persist settings after restart
-    size: medium
-    outcomes: [stopped, passed]
-  - id: T3
-    title: Rework replay export pipeline
-    size: large
-    outcomes: [passed]
-`,
-  );
-  return runTally({ configPath, dryRun: true, baseline: false, outputDir: options.outputDir, now: options.now });
+function demoConfigPath(): string {
+  const fromCwd = resolve('demo/tally.yaml');
+  if (existsSync(fromCwd)) return fromCwd;
+  return resolve(new URL('../demo/tally.yaml', import.meta.url).pathname);
+}
+
+export async function runDemo(options: Pick<RunOptions, 'outputDir' | 'latestRunDir' | 'now'> = {}): Promise<RunResult> {
+  return runTally({
+    configPath: demoConfigPath(),
+    dryRun: true,
+    baseline: false,
+    outputDir: options.outputDir,
+    latestRunDir: options.latestRunDir ?? DEFAULT_LATEST_RUN_DIR,
+    now: options.now,
+  });
 }

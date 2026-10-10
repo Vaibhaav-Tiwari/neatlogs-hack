@@ -109,6 +109,7 @@ describe('runRealTally', () => {
       dryRun: false,
       baseline: false,
       outputDir: join(dir, 'out'),
+      latestRunDir: join(dir, 'latest'),
       now: fixedNow,
       ports: { intake, signals, worker, verifier, usage: worker, sessions: worker },
     });
@@ -127,6 +128,7 @@ describe('runRealTally', () => {
     expect(result.runState.tasks[0]).toMatchObject({ status: 'passed', attempts: 2, escalated: true });
     expect(validateRunState(JSON.parse(readFileSync(result.runStatePath, 'utf8'))).ok).toBe(true);
     expect(validateLedger(JSON.parse(readFileSync(result.ledgerPath, 'utf8'))).ok).toBe(true);
+    expect(JSON.parse(readFileSync(join(dir, 'latest', 'run.json'), 'utf8'))).toMatchObject({ runId: result.runState.runId });
   });
 
   it('resumes from an existing successful ledger row without spawning again', async () => {
