@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
 import { PriceHistory } from '../agent/history.js';
@@ -183,6 +183,7 @@ async function runAttempt(input: {
   handoff: LedgerRow['handoff'];
   handoffSummary: string | null;
   config: TallyConfig;
+  configPath: string;
   ports: RealRunPorts;
   now: () => Date;
 }): Promise<LedgerRow> {
@@ -228,6 +229,8 @@ async function runAttempt(input: {
     costSource = check.costSource;
     const verification = await input.ports.verifier.verify({
       checkoutPath: workerResult.checkoutPath ?? started.checkoutPath,
+      branch: workerResult.branch ?? started.branch,
+      repoPath: resolve(dirname(input.configPath), input.config.repo.path),
       config: input.config,
     });
     result = verification.passed ? 'passed' : 'failed';
@@ -326,6 +329,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       handoff: 'none',
       handoffSummary: null,
       config,
+      configPath: options.configPath,
       ports,
       now,
     });
@@ -358,6 +362,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           handoff: escalation.handoff,
           handoffSummary: escalation.handoffSummary,
           config,
+          configPath: options.configPath,
           ports,
           now,
         });
