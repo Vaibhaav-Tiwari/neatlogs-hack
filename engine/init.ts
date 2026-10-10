@@ -9,6 +9,7 @@ import { tierPriceNote } from './pricing.js';
 import { CommandError, resolveAoBinary, runCommand } from '../adapters/command.js';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadEnv } from './env.js';
+import { configureIntegrations } from '../onboarding/index.js';
 
 export interface InitCommandResult {
   stdout: string;
@@ -31,6 +32,7 @@ export interface InitOptions {
   dryRun?: boolean;
   env?: Record<string, string>;
   cfoaiCheck?: typeof checkCfoaiConnection;
+  onboarding?: typeof configureIntegrations;
 }
 
 export interface InitResult {
@@ -315,6 +317,17 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     concurrency: 3,
     integrations: { neatlogs, entire, cfoai, slack: false },
   };
+  if (!options.dryRun) await (options.onboarding ?? configureIntegrations)({ config, ui: {
+    print,
+    confirm: async (question) => !options.yes && parseYes(await readLine(`${question} y/N`, 'N')),
+    select: async (question, choices) => {
+      if (options.yes) return null;
+      choices.forEach((choice, index) => print(`${index + 1}. ${choice}`));
+      const value = (await readLine(`${question}; enter a number, or blank to skip`, '')).trim();
+      const index = Number(value) - 1;
+      return /^\d+$/.test(value) && index >= 0 && index < choices.length ? index : null;
+    },
+  } });
   const validation = validateConfig(config);
   if (!validation.ok) throw new InitError(`Proposed configuration is invalid: ${validation.errors.join('; ')}; nothing was changed.`);
   await initPrerequisites(config, command, repoRoot, options);
@@ -334,7 +347,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   print(`- Run the configured test command: ${testCommand}`);
   print('- Run git add and git commit.');
   print('- No git push, network access, or installs. Tally publishes.');
-  print('No global Claude Code or Codex settings, integration credentials, or capture hooks will be changed.');
+  print('Integration connection changes require their own explicit approval; the config proposal contains no credentials.');
   const result = { configPath, projectId, testCommand, setupCommand, baseBranch, tiers: tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`), doctor: [] as DoctorLine[] };
   if (options.dryRun || (!options.yes && !parseYes(await readLine('Apply these changes? y/N', 'N')))) {
     return { ...result, applied: false };
