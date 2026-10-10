@@ -31,7 +31,7 @@ export interface RoutingOptions {
 }
 
 export const DEFAULT_ROUTING: RoutingOptions = {
-  cheapConfidence: 0.7,
+  cheapConfidence: 0.65,
   priorWeight: DEFAULT_PRIOR_WEIGHT,
   minPassRateOnTightBudget: 0.5,
 };

@@ -56,6 +56,31 @@ describe('routeTask', () => {
     expect(decision.reason).toContain('$0.30');
   });
 
+  it('chooses the cheapest tier for a small, tested, well-specified task with no history', async () => {
+    const decision = started(
+      await routeTask({
+        task: task({
+          title: 'Reject negative refunds',
+          body: 'Calling `refund.validate(-5)` in src/refund/validator.ts should raise an error, but it returns true.',
+        }),
+        estimate: {
+          size: 'small',
+          confidence: 0.65,
+          signals: { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' },
+          specificity: 0.65,
+          refinedBy: 'rules',
+          summary: '1 file touched, no dependents and tests present',
+        },
+        config,
+        ports: { budget: new FakeBudget(usdToNanos(40)) },
+      }),
+    );
+    expect(decision.tier.name).toBe('bronze');
+    expect(decision.ceilingNanos).toBe(usdToNanos(0.3));
+    expect(decision.expectedCostNanos).toBe(usdToNanos(0.75));
+    expect(decision.topCostNanos).toBe(usdToNanos(1.5));
+  });
+
   it('caps the cheap attempt at 20% of what the top tier may spend', async () => {
     const decision = started(await route('medium', 0.9));
     expect(decision.tier.name).toBe('bronze');
