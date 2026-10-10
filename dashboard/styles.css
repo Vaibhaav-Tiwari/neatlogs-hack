@@ -183,6 +183,9 @@ th.num, td.num { text-align: right; }
 .title { font-weight: 700; font-size: 17px; line-height: 1.3; }
 .refs { font: 400 13.5px/1.5 var(--mono); color: var(--ink-2); margin-top: 3px; }
 .refs .gap { display: inline-block; width: 12px; }
+.impact { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; font: 400 13px/1.35 var(--mono); color: var(--ink-2); }
+.impact b { font-weight: 600; color: var(--ink); }
+.history-mark { display: inline-block; margin-top: 5px; padding-top: 2px; border-top: 1px solid var(--rule); font: italic 400 14px/1.3 var(--serif); }
 .why-status { font-style: italic; font-size: 15px; margin-top: 4px; }
 .tasks .size { width: 84px; font-size: 16px; }
 .tasks .tier { width: 190px; font-size: 16px; }
