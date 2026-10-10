@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KRBNPJTAJ8RRZX821K4W74",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/price-provenance",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "README.md",
+    "engine/init.test.ts",
+    "engine/init.ts",
+    "engine/pricing.test.ts",
+    "engine/pricing.ts",
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/ledger-row.schema.json",
+    "schema/tally-config.schema.json",
+    "schema/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4777841,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 164102400,
+    "output_tokens": 500886,
+    "api_call_count": 1243,
+    "subagent_tokens_complete": true
+  }
+}

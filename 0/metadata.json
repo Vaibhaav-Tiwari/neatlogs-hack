@@ -1,0 +1,65 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KRBNPJTAJ8RRZX821K4W74",
+  "session_id": "01a125af-3ac6-7c02-a43b-a467b6fc3d3a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T20:34:09.909553Z",
+  "branch": "ao/neatlogs-hack-2/price-provenance",
+  "checkpoints_count": 4,
+  "save_step_count": 2,
+  "files_touched": [
+    "README.md",
+    "engine/init.test.ts",
+    "engine/init.ts",
+    "engine/pricing.test.ts",
+    "engine/pricing.ts",
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/ledger-row.schema.json",
+    "schema/tally-config.schema.json",
+    "schema/types.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "cb4e5357ae79",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 4777841,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 164102400,
+    "output_tokens": 500886,
+    "api_call_count": 1243,
+    "subagent_tokens_complete": true
+  },
+  "session_metrics": {
+    "turn_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T20:34:09.27944Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 168,
+    "human_modified": 13,
+    "human_removed": 0,
+    "total_committed": 168,
+    "total_lines_changed": 181,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
