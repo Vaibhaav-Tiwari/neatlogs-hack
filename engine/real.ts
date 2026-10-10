@@ -407,6 +407,7 @@ async function runAttempt(input: {
     prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary, input.runId, input.attempt),
     aoProject: input.config.repo.aoProject,
   });
+  let stopped = false;
   const watcher = new CeilingWatcher({ usage: input.ports.usage, sessions: input.ports.sessions, trace: input.ports.trace });
   const abort = new AbortController();
   const watched = watcher.watch(
@@ -414,10 +415,8 @@ async function runAttempt(input: {
     { signal: abort.signal, intervalMs: input.dryRun ? 1 : 5000 },
   );
   const worker = input.ports.worker.wait(started.sessionId, { timeoutMs: input.config.test.timeoutSec ? input.config.test.timeoutSec * 1000 : undefined });
-  const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
-
-  let result: AttemptResult;
-  let resultReason: string | null;
+  let result: AttemptResult = 'error';
+  let resultReason: string | null = null;
   let workerResult: WorkerResult | null = null;
   let tokens: TokenUsage | null = null;
   let estimatedCostNanos = 0;
@@ -429,7 +428,10 @@ async function runAttempt(input: {
   let entireSessionId: string | null = null;
   let resolvedCheckoutPath: string | null = null;
 
+  try {
+  const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
   if (first.kind === 'watch' && first.verdict.action === 'stop') {
+    stopped = first.verdict.stopped;
     abort.abort();
     result = 'stopped';
     resultReason = first.verdict.reason;
@@ -439,12 +441,6 @@ async function runAttempt(input: {
   } else {
     abort.abort();
     workerResult = first.kind === 'worker' ? first.result : await worker;
-    const usagePort = input.ports.usage as FinalUsagePort;
-    const usage = usagePort.settledUsageFor ? await usagePort.settledUsageFor(started.sessionId) : await usagePort.usageFor(started.sessionId);
-    const check = checkCeiling(usage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
-    tokens = check.tokens;
-    estimatedCostNanos = check.costNanos;
-    costSource = input.dryRun ? 'simulated' : check.costSource;
     if (workerResult.status === 'needs_input' || workerResult.status === 'timeout') {
       result = 'error';
       resultReason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
@@ -516,6 +512,28 @@ async function runAttempt(input: {
       checkpointId = null;
       checkpointUrl = null;
     }
+  }
+  } catch (error) {
+    result = 'error';
+    resultReason = error instanceof Error ? error.message : String(error);
+  } finally {
+    abort.abort();
+    if (!stopped) {
+      try {
+        await input.ports.sessions.stop(started.sessionId, `Tally attempt finished: ${result}`);
+      } catch (error) {
+        throw new Error(`could not close worker ${started.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    await watched;
+  }
+  const usagePort = input.ports.usage as FinalUsagePort;
+  const finalUsage = usagePort.settledUsageFor ? await usagePort.settledUsageFor(started.sessionId) : await usagePort.usageFor(started.sessionId);
+  if (finalUsage) {
+    const finalCheck = checkCeiling(finalUsage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
+    tokens = finalCheck.tokens;
+    estimatedCostNanos = finalCheck.costNanos;
+    costSource = input.dryRun ? 'simulated' : finalCheck.costSource;
   }
 
   return {
