@@ -108,9 +108,16 @@ class ScriptedSizingSignals implements SizingSignalsPort {
     this.tasksById = new Map(loadFileBacklog(config, configPath).map((task) => [task.taskId, task]));
   }
 
-  async signalsFor(task: { taskId: string }): Promise<SizingSignals | null> {
-    const size = this.tasksById.get(task.taskId)?.size;
-    return size ? signalsForSize(size) : null;
+  async signalsFor(task: { taskId: string; title: string; body: string }): Promise<SizingSignals | null> {
+    const sample = this.tasksById.get(task.taskId);
+    const size = sample?.size;
+    if (!size) return null;
+    const signals = signalsForSize(size);
+    if (sample?.impact) return { ...sample.impact.totals, source: 'scripted', impact: { ...sample.impact, source: 'scripted' } };
+    return { ...signals, source: 'scripted', impact: {
+      source: 'scripted', query: `${task.title}\n${task.body}`.trim(), nodes: [], edges: [],
+      totals: { filesTouched: signals.filesTouched, dependents: signals.dependents, testsPresent: signals.testsPresent, nodes: 0, edges: 0 }, truncated: false,
+    } };
   }
 
   status() {

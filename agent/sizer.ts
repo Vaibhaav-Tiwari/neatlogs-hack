@@ -86,7 +86,7 @@ export function sizeFromSignals(task: TaskInput, signals: SizingSignals | null):
 
   const files = bucket(signals.filesTouched, FILE_LIMITS);
   const dependents = bucket(signals.dependents, DEPENDENT_LIMITS);
-  const index = Math.min(2, Math.max(files, dependents) + (broad ? 1 : 0));
+  const index = Math.min(2, files + (broad ? 1 : 0));
 
   let confidence = 0.5;
   confidence += signals.testsPresent ? 0.2 : -0.15;
@@ -123,7 +123,7 @@ function buildPrompt(task: TaskInput, rules: SizeEstimate): string {
       : 'No code measurements are available.',
     `Rule-based estimate: ${rules.size}`,
     '',
-    'small = one or two files, contained. medium = several files or shared code. large = many files or many dependents.',
+    'small = one or two target files. medium = several target files. large = many target files or a broad change. Dependents lower confidence, not size.',
     'Reply with JSON only: {"size":"small|medium|large","confidence":<0 to 1, how sure you are>}',
   ].join('\n');
 }

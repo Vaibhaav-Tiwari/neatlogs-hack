@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CommandResult, CommandRunner } from './entire.js';
 import { EntireSizingAdapter } from './entire.js';
+import { sizeFromSignals } from '../agent/sizer.js';
 
 class FakeRunner implements CommandRunner {
   calls: Array<{ command: string; args: string[] }> = [];
@@ -31,13 +32,27 @@ describe('EntireSizingAdapter', () => {
         };
       }
       if (text.includes('refund.validate')) {
-        return { stdout: JSON.stringify({ callers: { total: 2 }, co_changes: { total: 3 }, files: [{ file_path: 'src/refund/index.ts' }] }) };
+        return { stdout: JSON.stringify({
+          callers: { total: 2, entries: [{ endpoint: { file_path: 'src/refund/index.ts', qualified_name: 'refund.create' }, depth: 1 }] },
+          co_changes: { total: 3, entries: [{ endpoint: { file_path: 'src/refund/store.ts' } }, { endpoint: { file_path: 'tests/refund.test.ts' } }] },
+        }) };
       }
       return { stdout: JSON.stringify({ callers: { total: 1 }, co_changes: { total: 0 } }) };
     });
     const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner, topSymbols: 2 });
     const signals = await adapter.signalsFor(task);
-    expect(signals).toEqual({ filesTouched: 3, dependents: 6, testsPresent: true, source: 'entire-graph' });
+    expect(signals).toMatchObject({ filesTouched: 2, dependents: 6, testsPresent: true, source: 'entire-graph' });
+    expect(signals?.impact?.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'src/refund/validator.ts', kind: 'target' }),
+      expect.objectContaining({ id: 'src/refund/index.ts', kind: 'caller' }),
+      expect.objectContaining({ id: 'src/refund/store.ts', kind: 'coChange' }),
+      expect.objectContaining({ id: 'tests/refund.test.ts', kind: 'test' }),
+    ]));
+    expect(signals?.impact?.edges).toEqual(expect.arrayContaining([
+      { from: 'src/refund/index.ts', to: 'src/refund/validator.ts', kind: 'calls' },
+      { from: 'src/refund/validator.ts', to: 'src/refund/store.ts', kind: 'changesWith' },
+      { from: 'tests/refund.test.ts', to: 'src/refund/validator.ts', kind: 'tests' },
+    ]));
     expect(adapter.status()).toEqual({ status: 'ok', detail: null });
     expect(runner.calls.map((call) => call.args.slice(0, 3).join(' '))).toEqual([
       'graph index --repo',
@@ -55,7 +70,9 @@ describe('EntireSizingAdapter', () => {
     });
     const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner });
     const signals = await adapter.signalsFor(task);
-    expect(signals).toEqual({ filesTouched: 2, dependents: 0, testsPresent: true, source: 'code-search' });
+    expect(signals).toMatchObject({ filesTouched: 2, dependents: 0, testsPresent: true, source: 'code-search' });
+    expect(signals?.impact?.nodes.map((node) => node.id)).toEqual(['src/refund/validator.ts', 'tests/refund.test.ts']);
+    expect(signals?.impact?.nodes.every((node) => node.kind === 'target')).toBe(true);
     expect(adapter.status()).toMatchObject({ status: 'missing' });
     expect(adapter.status().detail).toContain('entire enable');
   });
@@ -71,5 +88,25 @@ describe('EntireSizingAdapter', () => {
     });
     await expect(new EntireSizingAdapter({ repoPath: '/repo', runner }).signalsFor({ taskId: 'T1', title: '', body: '' })).resolves.toBeNull();
     expect(runner.calls).toEqual([]);
+  });
+
+  it('counts the full primary target spread, caps evidence and rejects outside-repo paths', async () => {
+    const runner = new FakeRunner((_command, args) => {
+      if (args.includes('index')) return { stdout: '' };
+      if (args.includes('search')) return { stdout: JSON.stringify({ results: Array.from({ length: 9 }, (_, i) => ({ file_path: `src/f${i}.ts`, qualified_name: `f${i}`, score: 90 - i })) }) };
+      return { stdout: JSON.stringify({ callers: { total: 1, entries: [{ endpoint: { file_path: '/outside/private.ts' }, depth: 1 }] }, co_changes: { total: 60,
+        entries: Array.from({ length: 60 }, (_, i) => ({ endpoint: { file_path: `/repo/src/c${i}.ts` }, weight: i })) } }) };
+    });
+    const signals = await new EntireSizingAdapter({ repoPath: '/repo', runner }).signalsFor(task);
+    expect(signals?.filesTouched).toBe(9);
+    expect(sizeFromSignals(task, signals).size).toBe('large');
+    expect(signals?.impact?.nodes).toHaveLength(40);
+    expect(signals?.impact?.totals.nodes).toBe(69);
+    expect(signals?.impact?.totals.edges).toBe(180);
+    expect(signals?.impact?.edges).toHaveLength(80);
+    expect(signals?.impact?.truncated).toBe(true);
+    expect(signals?.impact?.nodes.some((node) => node.id === 'src/c59.ts')).toBe(true);
+    expect(signals?.impact?.nodes.some((node) => node.id.startsWith('/') || node.id.includes('..'))).toBe(false);
+    expect(runner.calls.filter((call) => call.args.includes('impact'))).toHaveLength(3);
   });
 });

@@ -49,6 +49,7 @@
     "sessionId": { "type": ["string", "null"] },
     "entireSessionId": { "type": ["string", "null"] },
     "branch": { "type": ["string", "null"] },
+    "baseCommit": { "type": ["string", "null"] },
     "tokens": {
       "type": "object",
       "additionalProperties": false,
