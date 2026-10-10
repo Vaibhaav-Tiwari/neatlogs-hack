@@ -142,15 +142,26 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     return { sessionId: parseSpawn(stdout), branch: null, checkoutPath: null };
   }
 
-  async wait(sessionId: string): Promise<WorkerResult> {
+  async wait(sessionId: string, options: { timeoutMs?: number } = {}): Promise<WorkerResult> {
     let idlePolls = 0;
     let needsInputPolls = 0;
     let needsInputState: AoSessionJson['session'] | undefined;
     let needsInputFingerprint: string | null = null;
+    const timeoutMs = options.timeoutMs;
+    const deadline = timeoutMs === undefined ? null : Date.now() + timeoutMs;
     for (;;) {
       const session = await this.session(sessionId);
       const state = session.session;
       const status = state?.status ?? state?.activity?.state ?? 'unknown';
+      if (deadline !== null && Date.now() >= deadline) {
+        const reason = `worker exceeded wall-clock limit of ${Math.round(timeoutMs! / 1000)}s`;
+        try {
+          await this.stop(sessionId, reason);
+        } catch {
+          // The ledger still records the timeout state; a later cleanup can see the session id.
+        }
+        return this.resultFrom(state, 'timeout', reason);
+      }
       if (state?.isTerminated || status === 'terminated') {
         return this.resultFrom(state, 'terminated');
       }

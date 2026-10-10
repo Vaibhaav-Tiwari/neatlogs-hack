@@ -4,6 +4,7 @@ import { parse as parseYaml } from 'yaml';
 import type { AttemptResult, Handoff, TaskSize, TallyConfig, TokenUsage } from '../schema/index.js';
 
 export interface ScriptedAttempt {
+  tier?: string;
   result: AttemptResult;
   resultReason: string | null;
   tokens: TokenUsage;
@@ -116,7 +117,12 @@ function parseScriptedAttempts(task: Record<string, unknown>, outcomes: AttemptR
     if (handoff !== undefined && (typeof handoff !== 'string' || !HANDOFFS.has(handoff as Exclude<Handoff, 'none'>))) {
       problems.push(`${attemptPrefix}.handoff must be restart or entire-handoff`);
     }
+    const tier = attempt.tier;
+    if (tier !== undefined && (typeof tier !== 'string' || tier.length === 0)) {
+      problems.push(`${attemptPrefix}.tier must be a non-empty string`);
+    }
     return {
+      ...(typeof tier === 'string' && tier.length > 0 ? { tier } : {}),
       result: typeof result === 'string' && OUTCOMES.has(result as AttemptResult) ? (result as AttemptResult) : 'error',
       resultReason: typeof attempt.resultReason === 'string' && attempt.resultReason.length > 0 ? attempt.resultReason : null,
       tokens: parseTokens(attempt.tokens, problems, attemptPrefix),

@@ -50,9 +50,13 @@ function withWorkerAutoMode(config: unknown): Record<string, unknown> {
   return base;
 }
 
+function quoteJsonForShell(value: unknown): string {
+  return quoteShell(JSON.stringify(value));
+}
+
 export function workerAutoModeFixCommand(projectId: string, projectConfig: unknown): string {
   const fixed = withWorkerAutoMode(projectConfig);
-  return `ao project set-config ${projectId} --config-json ${quoteShell(JSON.stringify(fixed))}`;
+  return `ao project set-config ${projectId} --config-json ${quoteJsonForShell(fixed)}`;
 }
 
 export function workerPermissionMode(projectConfig: unknown): string | null {
@@ -82,6 +86,43 @@ export function checkWorkerAutoMode(projectId: string, projectConfig: unknown): 
     ok: false,
     mode,
     detail: `worker permission mode is ${label}; unattended Tally workers can stall before setup, edits, tests, or commits`,
+    fix,
+  };
+}
+
+function postCreateCommands(projectConfig: unknown): string[] {
+  if (!isRecord(projectConfig)) return [];
+  const value = projectConfig.postCreate;
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
+  return [];
+}
+
+function withPostCreateCommand(config: unknown, command: string): Record<string, unknown> {
+  const base = isRecord(config) ? { ...config } : {};
+  const commands = postCreateCommands(base);
+  base.postCreate = commands.includes(command) ? commands : [...commands, command];
+  return base;
+}
+
+export function setupPostCreateFixCommand(projectId: string, projectConfig: unknown, setupCommand: string): string {
+  return `ao project set-config ${projectId} --config-json ${quoteJsonForShell(withPostCreateCommand(projectConfig, setupCommand))}`;
+}
+
+export interface SetupPostCreateCheck {
+  ok: boolean;
+  detail: string;
+  fix: string;
+}
+
+export function checkSetupPostCreate(projectId: string, projectConfig: unknown, setupCommand: string | undefined): SetupPostCreateCheck | null {
+  if (!setupCommand) return null;
+  const fix = setupPostCreateFixCommand(projectId, projectConfig, setupCommand);
+  if (postCreateCommands(projectConfig).includes(setupCommand)) {
+    return { ok: true, detail: `post-create runs setup command: ${setupCommand}`, fix };
+  }
+  return {
+    ok: false,
+    detail: `test.setupCommand is "${setupCommand}", but AO project postCreate does not run it before the worker starts`,
     fix,
   };
 }
@@ -122,6 +163,10 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
       const permission = checkWorkerAutoMode(config.repo.aoProject, project.project?.config);
       if (!permission.ok) {
         problems.push(`${permission.detail}; fix: ${permission.fix}`);
+      }
+      const setup = checkSetupPostCreate(config.repo.aoProject, project.project?.config, config.test.setupCommand);
+      if (setup && !setup.ok) {
+        problems.push(`${setup.detail}; fix: ${setup.fix}`);
       }
     }
   }

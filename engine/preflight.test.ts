@@ -89,6 +89,44 @@ describe('real run preflight', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('requires test setup to run in AO post-create before the worker starts', async () => {
+    const { configPath } = writeConfig(', aoProject: "fly-doom-jev"');
+    const config = loadConfig(configPath);
+    config.test.setupCommand = 'make setup';
+    const projectConfig = {
+      canonicalRepoURL: 'https://github.com/Vaibhaav-Tiwari/fly-doom-jev',
+      defaultBranch: 'main',
+      worker: { agent: 'codex', agentConfig: { permissions: 'auto' } },
+    };
+
+    await expect(
+      validateRealRunConfig(config, configPath, async () => ({
+        stdout: JSON.stringify({ project: { config: projectConfig } }),
+        stderr: '',
+      })),
+    ).rejects.toThrow('test.setupCommand is "make setup", but AO project postCreate does not run it before the worker starts');
+  });
+
+  it('accepts test setup when AO post-create runs it before the worker starts', async () => {
+    const { configPath } = writeConfig(', aoProject: "fly-doom-jev"');
+    const config = loadConfig(configPath);
+    config.test.setupCommand = 'make setup';
+
+    await expect(
+      validateRealRunConfig(config, configPath, async () => ({
+        stdout: JSON.stringify({
+          project: {
+            config: {
+              worker: { agent: 'codex', agentConfig: { permissions: 'auto' } },
+              postCreate: ['make setup'],
+            },
+          },
+        }),
+        stderr: '',
+      })),
+    ).resolves.toBeUndefined();
+  });
+
   it('requires an explicit TUI session mode for real worker tiers', async () => {
     const { configPath } = writeConfig(', aoProject: "fly-doom-jev"');
     const config = loadConfig(configPath);

@@ -7,6 +7,18 @@ import { runDemo, runTally } from './run.js';
 
 const fixedNow = () => new Date('2026-10-11T03:00:00.000Z');
 
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function writeFixture() {
   const dir = mkdtempSync(join(tmpdir(), 'tally-run-'));
   const configPath = join(dir, 'tally.yaml');
@@ -103,6 +115,30 @@ describe('runTally dry-run', () => {
     expect(result.ledger).toHaveLength(1);
     expect(result.ledger[0]).toMatchObject({ taskId: 'T1', tier: 'top', model: 'claude-opus-4.6' });
   });
+
+  it(
+    'terminates a baseline dry-run of the sample backlog and routes every task to the top tier',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'tally-baseline-sample-'));
+      const result = await withTimeout(
+        runTally({
+          configPath: join(process.cwd(), 'demo', 'tally.yaml'),
+          dryRun: true,
+          baseline: true,
+          outputDir: join(dir, 'out'),
+          latestRunDir: join(dir, 'latest'),
+          now: fixedNow,
+        }),
+        3_000,
+      );
+
+      expect(result.runState.mode).toBe('baseline');
+      expect(result.runState.tasks).toHaveLength(7);
+      expect(result.ledger.map((row) => row.taskId)).toEqual(['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']);
+      expect(result.ledger.every((row) => row.tier === 'top')).toBe(true);
+    },
+    4_000,
+  );
 
   it('marks tasks skipped when the configured budget cannot reserve their ceiling', async () => {
     const { dir, configPath } = writeFixture();

@@ -45,7 +45,7 @@ export interface WorkerStartInput {
 }
 
 export interface WorkerResult {
-  status: 'idle' | 'terminated' | 'needs_input';
+  status: 'idle' | 'terminated' | 'needs_input' | 'timeout';
   branch: string | null;
   checkoutPath: string | null;
   prUrl: string | null;
@@ -54,7 +54,7 @@ export interface WorkerResult {
 
 export interface WorkerPort {
   start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string | null; checkoutPath: string | null }>;
-  wait(sessionId: string): Promise<WorkerResult>;
+  wait(sessionId: string, options?: { timeoutMs?: number }): Promise<WorkerResult>;
 }
 
 export interface FinalUsagePort extends LiveUsagePort {
@@ -213,7 +213,11 @@ function initialTaskState(task: BacklogTask): TaskState {
 }
 
 function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSummary: string | null, runId: string, attempt: number): string {
-  const setup = config.test.setupCommand ? [`First run this setup command from the current working directory: ${config.test.setupCommand}`] : [];
+  const setup = config.test.setupCommand
+    ? [
+        `The environment has already been set up before you started. Do not run setup (${config.test.setupCommand}), install dependencies, or use the network.`,
+      ]
+    : ['Do not install dependencies or use the network unless the task explicitly requires it.'];
   const publishInstruction = config.repo.workerPublishesPr
     ? 'Commit your changes on your current branch, push that branch, open a pull request against the default branch, and do not merge it.'
     : 'Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.';
@@ -363,7 +367,7 @@ async function runAttempt(input: {
     { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos },
     { signal: abort.signal, intervalMs: input.dryRun ? 1 : 5000 },
   );
-  const worker = input.ports.worker.wait(started.sessionId);
+  const worker = input.ports.worker.wait(started.sessionId, { timeoutMs: input.config.test.timeoutSec ? input.config.test.timeoutSec * 1000 : undefined });
   const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
 
   let result: AttemptResult;
@@ -390,9 +394,9 @@ async function runAttempt(input: {
     tokens = check.tokens;
     estimatedCostNanos = check.costNanos;
     costSource = input.dryRun ? 'simulated' : check.costSource;
-    if (workerResult.status === 'needs_input') {
+    if (workerResult.status === 'needs_input' || workerResult.status === 'timeout') {
       result = 'error';
-      resultReason = workerResult.resultReason ?? 'worker asked for input';
+      resultReason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
     } else {
       const checkoutPath = workerResult.checkoutPath ?? started.checkoutPath;
       const branch = workerResult.branch ?? started.branch;
