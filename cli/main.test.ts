@@ -18,10 +18,10 @@ describe('parseCli', () => {
   });
 
   it('parses run options', () => {
-    expect(parseCli(['run', '--dry-run', '--budget', '40', '--only', 'T3', '--baseline', '--config', 'x/tally.yaml'])).toEqual({
+    expect(parseCli(['run', '--dry-run', '--budget', '40', '--only', 'T3', '--baseline', '--config', 'x/tally.yaml', '--dashboard', '--port', '0'])).toEqual({
       kind: 'command',
       command: 'run',
-      options: { config: 'x/tally.yaml', dryRun: true, baseline: true, budgetUsd: 40, only: 'T3' },
+      options: { config: 'x/tally.yaml', dryRun: true, baseline: true, budgetUsd: 40, only: 'T3', dashboard: true, port: 0, plan: false },
     });
   });
 
@@ -29,13 +29,18 @@ describe('parseCli', () => {
     expect(parseCli(['run'])).toEqual({
       kind: 'command',
       command: 'run',
-      options: { config: 'tally.yaml', dryRun: false, baseline: false, budgetUsd: undefined, only: undefined },
+      options: { config: 'tally.yaml', dryRun: false, baseline: false, budgetUsd: undefined, only: undefined, dashboard: false, port: undefined, plan: false },
     });
+  });
+
+  it('parses --plan', () => {
+    expect(parseCli(['run', '--plan'])).toMatchObject({ kind: 'command', command: 'run', options: { plan: true } });
   });
 
   it('rejects a budget that is not a positive number', () => {
     expect(parseCli(['run', '--budget', 'lots'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['run', '--budget', '-5'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['dashboard', '--port', 'lots'])).toMatchObject({ kind: 'error' });
   });
 
   it('rejects unknown commands and unknown flags', () => {
@@ -68,7 +73,7 @@ describe('main', () => {
   });
 
   it('runs the commands that are still stubs and says they are not implemented yet', async () => {
-    for (const command of ['init', 'doctor'] as const) {
+    for (const command of ['init'] as const) {
       const c = capture();
       expect(await main([command], c.io)).toBe(0);
       expect(c.out.join('\n')).toContain('not implemented yet');

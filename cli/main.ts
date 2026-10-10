@@ -3,9 +3,13 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { BacklogError } from '../engine/backlog.js';
 import { ConfigError } from '../engine/config.js';
+import { runDoctor } from '../engine/doctor.js';
+import { planTally } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
+import { nanosToUsd } from '../schema/index.js';
+import { startDashboardServer } from './dashboard-server.js';
 
-export const COMMANDS = ['run', 'demo', 'init', 'doctor'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'doctor'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -21,6 +25,12 @@ export interface CliOptions {
   budgetUsd: number | undefined;
   /** Run a single task by id or issue number. */
   only: string | undefined;
+  /** Start the local dashboard server after the command finishes. */
+  dashboard: boolean;
+  /** Port for the dashboard server. */
+  port: number | undefined;
+  /** Print route decisions without spawning workers. */
+  plan: boolean;
 }
 
 export type ParsedCli =
@@ -41,6 +51,7 @@ Usage: tally <command> [options]
 Commands:
   run      Run the backlog against the budget in tally.yaml
   demo     Run the full loop with simulated workers on a sample backlog
+  dashboard Start the local dashboard server
   init     Set up tally.yaml for the current repository
   doctor   Check that each integration is connected
 
@@ -50,6 +61,10 @@ Options:
   --budget <usd>    Override the budget for this run
   --only <task>     Run a single task
   --baseline        Send every task to the strongest tier
+  --dashboard       Start the dashboard server after run/demo
+  --open            Alias for --dashboard
+  --port <number>   Dashboard port (default: 5177; use 0 for any free port)
+  --plan            Size and route tasks, but do not spawn workers
   -h, --help        Show this help
   -v, --version     Show the version`;
 
@@ -65,6 +80,10 @@ export function parseCli(argv: string[]): ParsedCli {
         baseline: { type: 'boolean', default: false },
         budget: { type: 'string' },
         only: { type: 'string' },
+        dashboard: { type: 'boolean', default: false },
+        open: { type: 'boolean', default: false },
+        port: { type: 'string' },
+        plan: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
         version: { type: 'boolean', short: 'v', default: false },
       },
@@ -89,6 +108,13 @@ export function parseCli(argv: string[]): ParsedCli {
       return { kind: 'error', message: `--budget must be a positive number of USD, got "${values.budget}"` };
     }
   }
+  let port: number | undefined;
+  if (values.port !== undefined) {
+    port = Number(values.port);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      return { kind: 'error', message: `--port must be an integer from 0 to 65535, got "${values.port}"` };
+    }
+  }
   return {
     kind: 'command',
     command: name as Command,
@@ -98,6 +124,9 @@ export function parseCli(argv: string[]): ParsedCli {
       baseline: values.baseline,
       budgetUsd,
       only: values.only,
+      dashboard: values.dashboard || values.open,
+      port,
+      plan: values.plan,
     },
   };
 }
@@ -113,6 +142,23 @@ const stub =
 
 async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
+    if (options.plan) {
+      const plan = await planTally({
+        configPath: options.config,
+        dryRun: options.dryRun,
+        baseline: options.baseline,
+        budgetUsd: options.budgetUsd,
+        only: options.only,
+      });
+      for (const task of plan) {
+        const route = task.skipped
+          ? 'skip'
+          : `${task.tier} ${task.harness}/${task.model} ceiling ${task.ceilingNanos === null ? 'none' : `$${nanosToUsd(task.ceilingNanos).toFixed(2)}`}`;
+        io.stdout(`${task.taskId}: ${task.size} -> ${route}`);
+        io.stdout(`  ${task.decision}`);
+      }
+      return 0;
+    }
     const result = await runTally({
       configPath: options.config,
       dryRun: options.dryRun,
@@ -124,6 +170,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
     io.stdout(`wrote ${result.ledgerPath}`);
     io.stdout(`updated ${result.latestRunDir}`);
     io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+    if (options.dashboard) await dashboardCommand(options, io);
     return 0;
   } catch (e) {
     return reportError('tally run', e, io);
@@ -137,10 +184,27 @@ async function demoCommand(_options: CliOptions, io: CliIO): Promise<number> {
     io.stdout(`wrote ${result.ledgerPath}`);
     io.stdout(`updated ${result.latestRunDir}`);
     io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+    if (_options.dashboard) await dashboardCommand(_options, io);
     return 0;
   } catch (e) {
     return reportError('tally demo', e, io);
   }
+}
+
+async function dashboardCommand(options: CliOptions, io: CliIO): Promise<number> {
+  const dashboard = await startDashboardServer({ port: options.port });
+  io.stdout(`dashboard ${dashboard.url}`);
+  io.stdout(`data ${dashboard.dataUrl}`);
+  await new Promise<void>(() => {});
+  return 0;
+}
+
+async function doctorCommand(_options: CliOptions, io: CliIO): Promise<number> {
+  const lines = await runDoctor();
+  for (const line of lines) {
+    io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
+  }
+  return lines.some((line) => line.status !== 'connected') ? 1 : 0;
 }
 
 function reportError(prefix: string, error: unknown, io: CliIO): number {
@@ -154,8 +218,9 @@ function reportError(prefix: string, error: unknown, io: CliIO): number {
 const handlers: Record<Command, Handler> = {
   run: runCommand,
   demo: demoCommand,
+  dashboard: dashboardCommand,
   init: stub('init'),
-  doctor: stub('doctor'),
+  doctor: doctorCommand,
 };
 
 const consoleIO: CliIO = {

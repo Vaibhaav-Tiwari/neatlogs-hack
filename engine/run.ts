@@ -4,6 +4,8 @@ import type { Ledger, RunState } from '../schema/index.js';
 import { createDryRunPorts } from './dry-run.js';
 import { runRealTally, type RealRunOptions } from './real.js';
 import { DEFAULT_LATEST_RUN_DIR } from './output.js';
+import { loadConfig } from './config.js';
+import { validateRealRunConfig, type PreflightRunner } from './preflight.js';
 
 export interface RunOptions {
   configPath: string;
@@ -14,6 +16,7 @@ export interface RunOptions {
   outputDir?: string;
   latestRunDir?: string;
   now?: () => Date;
+  preflightRunner?: PreflightRunner;
 }
 
 export interface RunResult {
@@ -33,6 +36,7 @@ export class RunError extends Error {
 }
 
 export async function runTally(options: RunOptions | RealRunOptions): Promise<RunResult> {
+  if (!options.dryRun) await validateRealRunConfig(loadConfig(options.configPath), options.configPath, options.preflightRunner);
   const ports = options.dryRun ? { ...createDryRunPorts(), ...(options as RealRunOptions).ports } : (options as RealRunOptions).ports;
   return runRealTally({ ...(options as RealRunOptions), ...(ports ? { ports } : {}) });
 }
