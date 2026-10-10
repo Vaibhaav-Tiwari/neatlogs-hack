@@ -98,17 +98,17 @@ tasks:
     passCheck: npm test -- --run tests/exchange-rate-cache.test.ts
     outcomes: [stopped, passed]
     scriptedOutcome:
-      route: cheap
-      decision: It looks like a bounded cache change, so the cheap tier gets a capped attempt before escalation.
+      route: middle
+      decision: It looks like a bounded cache change, so the middle tier gets a capped attempt before escalation.
       attempts:
-        - tier: cheap
+        - tier: middle
           result: stopped
           resultReason: Ceiling crossed while chasing stale-cache edge cases.
           tokens: { uncachedInput: 51200, cachedInput: 9800, output: 2740 }
-        - tier: middle
+        - tier: top
           result: passed
           handoff: entire-handoff
-          decision: The first attempt hit its ceiling; continue the same branch with the middle tier and the Entire handoff.
+          decision: The first attempt hit its ceiling; continue the same branch with the top tier and the Entire handoff.
           tokens: { uncachedInput: 43800, cachedInput: 12100, output: 2180 }
 
   - id: T6
@@ -126,8 +126,14 @@ tasks:
       decision: Refund reconciliation crosses state transitions and accounting totals, so begin at the middle tier.
       attempts:
         - tier: middle
-          result: passed
+          result: failed
+          resultReason: The first attempt missed the full-refund follow-up state.
           tokens: { uncachedInput: 46700, cachedInput: 6900, output: 2320 }
+        - tier: top
+          result: passed
+          handoff: entire-handoff
+          decision: The failing middle attempt exposed a hidden state-machine edge; continue with the top tier and the failure context.
+          tokens: { uncachedInput: 52600, cachedInput: 13400, output: 2860 }
 
   - id: T7
     title: Support tax rules for every country in one change
