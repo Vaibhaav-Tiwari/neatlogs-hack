@@ -1113,6 +1113,7 @@ describe('runRealTally', () => {
         sessions: worker,
         publisher: worker,
         trace: new FakeTrace(),
+        history: { lookup: async () => null, record: async () => {} },
       },
     });
 
@@ -1168,6 +1169,7 @@ describe('runRealTally', () => {
         sessions: worker,
         publisher: worker,
         trace: new FakeTrace(),
+        history: { lookup: async () => null, record: async () => {} },
         cfoai,
       },
     });
