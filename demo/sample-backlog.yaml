@@ -1,0 +1,142 @@
+# Tally demo backlog.
+# This file is intentionally self-contained: `tally demo` can replay the
+# scripted outcomes below without GitHub, Agent Orchestrator, neatlogs, Entire,
+# cfo.ai, or API keys.
+version: 1
+kind: tally-demo-backlog
+
+repo:
+  slug: demo/invoice-ledger
+  baseBranch: main
+  description: A tiny billing service used only by the simulated demo runner.
+
+test:
+  setupCommand: null
+  command: npm test
+
+tasks:
+  - id: T1
+    title: Round invoice totals to cents before writing ledger rows
+    expectedSize: small
+    issueNumber: 101
+    description: |
+      The invoice writer currently stores floating point totals directly in
+      ledger rows. Update it so subtotal, tax, and total are rounded to two
+      decimal places before persistence, without changing the tax rate.
+    passCheck: npm test -- --run tests/invoice-rounding.test.ts
+    scriptedOutcome:
+      route: cheap
+      decision: Small arithmetic fix with a focused unit test, so the cheap tier should finish it inside the small ceiling.
+      attempts:
+        - tier: cheap
+          result: passed
+          tokens: { uncachedInput: 15200, cachedInput: 2400, output: 730 }
+
+  - id: T2
+    title: Show customer name in the receipt email subject
+    expectedSize: small
+    issueNumber: 102
+    description: |
+      Receipt emails say "Your receipt is ready" for every customer. Include the
+      customer display name in the subject while preserving the existing body
+      template and fallback for missing names.
+    passCheck: npm test -- --run tests/receipt-email.test.ts
+    scriptedOutcome:
+      route: cheap
+      decision: Template-only change with existing coverage, so the cheapest model is the right first attempt.
+      attempts:
+        - tier: cheap
+          result: passed
+          tokens: { uncachedInput: 11800, cachedInput: 2100, output: 520 }
+
+  - id: T3
+    title: Reject duplicate webhook deliveries by event id
+    expectedSize: small
+    issueNumber: 103
+    description: |
+      Payment webhooks can be delivered more than once. Add an idempotency guard
+      keyed by the provider event id so duplicate deliveries do not create
+      duplicate ledger entries.
+    passCheck: npm test -- --run tests/webhook-idempotency.test.ts
+    scriptedOutcome:
+      route: cheap
+      decision: The affected code path is narrow and the test names the exact idempotency case, so start cheap.
+      attempts:
+        - tier: cheap
+          result: passed
+          tokens: { uncachedInput: 18400, cachedInput: 3200, output: 900 }
+
+  - id: T4
+    title: Add CSV export for the monthly ledger
+    expectedSize: medium
+    issueNumber: 104
+    description: |
+      Add a monthly CSV export endpoint for ledger rows. The file must include
+      invoice id, customer, status, subtotal, tax, total, and paid_at, sorted by
+      paid_at ascending.
+    passCheck: npm test -- --run tests/monthly-export.test.ts
+    scriptedOutcome:
+      route: middle
+      decision: This touches route handling, query filtering, and formatting, so the middle tier is cheaper than risking a stopped cheap attempt.
+      attempts:
+        - tier: middle
+          result: passed
+          tokens: { uncachedInput: 32200, cachedInput: 5100, output: 1640 }
+
+  - id: T5
+    title: Cache exchange rates without serving stale conversions
+    expectedSize: medium
+    issueNumber: 105
+    description: |
+      Exchange-rate lookups are slow. Add a cache with a ten minute TTL, but
+      make sure a failed refresh keeps the last good rate only when it is still
+      inside the TTL.
+    passCheck: npm test -- --run tests/exchange-rate-cache.test.ts
+    scriptedOutcome:
+      route: cheap
+      decision: It looks like a bounded cache change, so the cheap tier gets a capped attempt before escalation.
+      attempts:
+        - tier: cheap
+          result: stopped
+          resultReason: Ceiling crossed while chasing stale-cache edge cases.
+          tokens: { uncachedInput: 51200, cachedInput: 9800, output: 2740 }
+        - tier: middle
+          result: passed
+          handoff: entire-handoff
+          decision: The first attempt hit its ceiling; continue the same branch with the middle tier and the Entire handoff.
+          tokens: { uncachedInput: 43800, cachedInput: 12100, output: 2180 }
+
+  - id: T6
+    title: Reconcile partial refunds against the original invoice
+    expectedSize: medium
+    issueNumber: 106
+    description: |
+      Partial refunds should reduce recognized revenue and mark the invoice as
+      partially_refunded without deleting the original payment row. Add the
+      reconciliation logic and cover a partial refund followed by full refund.
+    passCheck: npm test -- --run tests/refund-reconciliation.test.ts
+    scriptedOutcome:
+      route: middle
+      decision: Refund reconciliation crosses state transitions and accounting totals, so begin at the middle tier.
+      attempts:
+        - tier: middle
+          result: passed
+          tokens: { uncachedInput: 46700, cachedInput: 6900, output: 2320 }
+
+  - id: T7
+    title: Support tax rules for every country in one change
+    expectedSize: large
+    issueNumber: 107
+    description: |
+      Add correct tax calculation for every country, including regional rules,
+      filing thresholds, exemptions, and future law changes, with no external
+      tax provider and no product decision about supported countries.
+    passCheck: npm test -- --run tests/global-tax-rules.test.ts
+    scriptedOutcome:
+      route: top
+      decision: The request is underspecified and broad, so the strongest tier is the only reasonable attempt; it may still fail.
+      attempts:
+        - tier: top
+          result: failed
+          resultReason: The task is not solvable without scope and tax-policy inputs.
+          tokens: { uncachedInput: 68400, cachedInput: 14200, output: 3900 }
