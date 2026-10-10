@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K7BTXNZ6NSJSTK1PMTCCMT",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/neatlogs-trace-ids",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/baseline.ts",
+    "agent/escalation.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 88390,
+    "cache_read_tokens": 1003665,
+    "output_tokens": 49709,
+    "api_call_count": 16
+  }
+}
