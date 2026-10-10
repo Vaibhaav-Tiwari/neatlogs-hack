@@ -23,6 +23,12 @@ const ledger = JSON.parse(fixture('finished-run/ledger.json')) as LedgerRow[];
 const run = JSON.parse(fixture('finished-run/run.json')) as RunState;
 const config = parseYaml(fixture('finished-run/tally.yaml')) as TallyConfig;
 
+it('accepts generated Entire summaries only as an explicit boolean setting', () => {
+  expect(validateConfig({ ...config, entire: { generatedSummaries: false } }).ok).toBe(true);
+  expect(validateConfig({ ...config, entire: { generatedSummaries: true } }).ok).toBe(true);
+  expect(validateConfig({ ...config, entire: { generatedSummaries: 'true' } }).ok).toBe(false);
+});
+
 // A row written against the TypeScript type. `npm run typecheck` fails if the
 // type drifts from this shape; the test below fails if the JSON Schema does.
 const typedRow: LedgerRow = {

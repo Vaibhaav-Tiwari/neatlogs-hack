@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EntireCheckpointAdapter, type CommandRunner } from './entire-checkpoints.js';
 
 describe('EntireCheckpointAdapter', () => {
-  it('finds a Codex logs-only pending checkpoint by session id and generates a handoff summary', async () => {
+  it('generates a handoff summary only with explicit opt-in (fake provider)', async () => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
     const runner: CommandRunner = async (file, args, options) => {
       calls.push({ file, args, cwd: options?.cwd });
@@ -43,7 +43,7 @@ describe('EntireCheckpointAdapter', () => {
       }
       throw new Error(`unexpected command: ${command}`);
     };
-    const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', command: runner });
+    const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', command: runner, generatedSummaries: true });
 
     await expect(adapter.checkpointFor({ sessionId: 'session-1', branch: 'tally/t1-1', checkoutPath: '/repo/worktree' })).resolves.toEqual({
       checkpointId: '01M4CHECKPOINT',
@@ -98,16 +98,43 @@ describe('EntireCheckpointAdapter', () => {
     expect(calls).toEqual(['git log -1 --format=%B --end-of-options ao/worker/root --', 'entire checkpoint explain 01M4PROOF --json --no-pager']);
   });
 
-  it('provides honest metadata handoff when logs-only summary generation is unavailable', async () => {
+  it('defaults to metadata-only handoff, including task, verdict and changed commit files', async () => {
+    const calls: string[][] = [];
     const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', command: async (_file, args) => {
-      if (args.includes('--generate')) throw new Error('summary provider unavailable');
-      if (args.includes('--short')) return { stdout: '## Summary\nNot generated yet. Run entire checkpoint explain --generate.', stderr: '' };
+      calls.push(args);
+      if (_file === 'git') return { stdout: 'calc.ts\0calc.test.ts\0', stderr: '' };
       return { stdout: JSON.stringify({ checkpoint_id: '01M4PROOF', branch: 'worker', files_touched: ['calc.ts'], sessions: [{ session_id: 'native' }] }), stderr: '' };
     } });
-    const handoff = await adapter.summaryFor('ao-worker', { checkpointId: '01M4PROOF' });
-    expect(handoff?.summary).toContain('records changes to calc.ts');
+    const handoff = await adapter.summaryFor('ao-worker', { checkpointId: '01M4PROOF', task: { taskId: 'T1', title: 'Fix calc', body: 'Keep zero inputs valid.' }, result: 'failed', resultReason: 'zero input test failed' });
+    expect(handoff?.summary).toContain('Metadata-only handoff');
+    expect(handoff?.summary).toContain('Checkpoint files: calc.ts');
+    expect(handoff?.summary).toContain('Changed files: calc.ts, calc.test.ts');
+    expect(handoff?.summary).toContain('native session: native');
+    expect(handoff?.summary).toContain('Attempt verdict: failed - zero input test failed');
+    expect(handoff?.summary).toContain('Task T1: Fix calc\nKeep zero inputs valid.');
     expect(handoff?.summary).toContain('rerun the failed tests');
     expect(handoff?.summary).not.toContain('Not generated yet');
     expect(handoff?.branch).toBe('worker');
+    expect(calls.some((args) => args.includes('--generate') || args.includes('--short'))).toBe(false);
+    expect(handoff?.summaryCostNanos).toBe(0);
+  });
+
+  it('uses supplied changed files and remains usable when checkpoint metadata and git are unavailable', async () => {
+    const calls: string[] = [];
+    const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', command: async (file) => { calls.push(file); throw new Error('unavailable'); } });
+    const handoff = await adapter.summaryFor('worker', { checkpointId: 'known', branch: 'failed-branch', changedFiles: ['a.ts'], result: 'stopped' });
+    expect(handoff?.summary).toContain('Checkpoint: known');
+    expect(handoff?.summary).toContain('Branch: failed-branch');
+    expect(handoff?.summary).toContain('Changed files: a.ts');
+    expect(handoff?.summary).toContain('Attempt verdict: stopped');
+    expect(calls).toEqual(['entire']);
+  });
+
+  it('falls back to metadata if explicitly enabled fake generation fails', async () => {
+    const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', generatedSummaries: true, command: async (_file, args) => {
+      if (args.includes('--generate')) throw new Error('fake generation unavailable');
+      return { stdout: '{}', stderr: '' };
+    } });
+    expect((await adapter.summaryFor('worker', { checkpointId: 'known', changedFiles: [] }))?.summary).toContain('Metadata-only handoff');
   });
 });

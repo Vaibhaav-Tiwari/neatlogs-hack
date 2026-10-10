@@ -157,7 +157,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
       : undefined;
   const entireCheckpoints =
     config.integrations.entire && (!hasPort(overrides, 'handoff') || !hasPort(overrides, 'checkpoints'))
-      ? new EntireCheckpointAdapter({ repoPath })
+      ? new EntireCheckpointAdapter({ repoPath, generatedSummaries: config.entire?.generatedSummaries })
       : undefined;
   const handoff = overrides.handoff ?? entireCheckpoints;
   const checkpoints = overrides.checkpoints ?? entireCheckpoints;
@@ -717,7 +717,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             sessionId: interrupted.sessionId,
             branch: interrupted.branch,
             checkpointId: interrupted.checkpointId,
+            resultReason: interrupted.resultReason,
           },
+          task,
           config,
           ports: { budget, handoff: ports.handoff, trace: ports.trace },
           traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
@@ -825,7 +827,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           sessionId: first.sessionId,
           branch: first.branch,
           checkpointId: first.checkpointId,
+          resultReason: first.resultReason,
         },
+        task,
         config,
         ports: { budget, handoff: ports.handoff, trace: ports.trace },
         traceAttributes: { sessionId: runId, taskId: first.taskId, attempt: 2 },
