@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
+import { contentHash, configHash, installRecordPath, type InstallRecord } from './install-record.js';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { runDoctor, type DoctorLine } from './doctor.js';
 
@@ -41,14 +42,26 @@ const CLAUDE_TIERS = [
   ['top', 'claude-opus-5-5', 4, 0.4, 20, 1],
 ] as const;
 
-async function defaultCommand(file: string, args: string[], options?: { cwd?: string }): Promise<InitCommandResult> {
+export async function defaultCommand(file: string, args: string[], options?: { cwd?: string }): Promise<InitCommandResult> {
+  // The CLI config mirror drops fields such as effort; use the full daemon object.
+  if (file === 'ao' && args[0] === 'project' && (args[1] === 'get' || args[1] === 'set-config')) {
+    const id = encodeURIComponent(args[2]!);
+    const editing = args[1] === 'set-config';
+    const response = await fetch(`http://127.0.0.1:3001/api/v1/projects/${id}${editing ? '/config' : ''}`, {
+      method: editing ? 'PUT' : 'GET',
+      ...(editing ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ config: JSON.parse(args[args.indexOf('--config-json') + 1]!) }) } : {}),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(`AO project ${args[1]} failed: HTTP ${response.status}`);
+    return { stdout: JSON.stringify(await response.json()), stderr: '' };
+  }
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
   const result = await promisify(execFile)(file, args, { cwd: options?.cwd, encoding: 'utf8' });
   return { stdout: String(result.stdout), stderr: String(result.stderr) };
 }
 
-async function defaultReadLine(question: string, defaultValue = ''): Promise<string> {
+export async function defaultReadLine(question: string, defaultValue = ''): Promise<string> {
   const { createInterface } = await import('node:readline/promises');
   const readline = createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -156,20 +169,19 @@ function withPostCreate(config: unknown, setupCommand: string | null): Record<st
   return base;
 }
 
-async function ensureAoProject(input: { command: InitCommandRunner; cwd: string; repoRoot: string; projectId: string; setupCommand: string | null }): Promise<void> {
+async function ensureAoProject(input: { command: InitCommandRunner; cwd: string; repoRoot: string; projectId: string; setupCommand: string | null }) {
   const existing = await commandOrNull(input.command, 'ao', ['project', 'get', input.projectId, '--json'], input.cwd);
   if (!existing) {
     await input.command('ao', ['project', 'add', '--path', input.repoRoot, '--id', input.projectId], { cwd: input.cwd });
   }
-  const payloadText = (await commandOrNull(input.command, 'ao', ['project', 'get', input.projectId, '--json'], input.cwd)) ?? '{}';
-  let current: unknown = {};
-  try {
-    current = (parseYaml(payloadText) as { project?: { config?: unknown } })?.project?.config ?? {};
-  } catch {
-    current = {};
-  }
+  const payloadText = (await input.command('ao', ['project', 'get', input.projectId, '--json'], { cwd: input.cwd })).stdout;
+  const current = (parseYaml(payloadText) as { project?: { config?: unknown } })?.project?.config ?? {};
   const next = withPostCreate(current, input.setupCommand);
+  const postCreateBefore = Array.isArray((current as Record<string, unknown>).postCreate) ? (current as { postCreate: string[] }).postCreate : [];
+  const postCreateAfter = Array.isArray(next.postCreate) ? next.postCreate as string[] : [];
   await input.command('ao', ['project', 'set-config', input.projectId, '--config-json', JSON.stringify(next), '--json'], { cwd: input.cwd });
+  return { projectCreated: !existing, projectConfigHash: configHash(next), postCreateExisted: Array.isArray((current as Record<string, unknown>).postCreate), postCreateAfterHash: configHash(postCreateAfter),
+    addedSetupCommand: input.setupCommand && !postCreateBefore.includes(input.setupCommand) ? input.setupCommand : null };
 }
 
 export async function runInit(options: InitOptions = {}): Promise<InitResult> {
@@ -177,6 +189,9 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const readLine = options.readLine ?? defaultReadLine;
   const cwd = options.cwd ?? process.cwd();
   const repoRoot = (await commandOrNull(command, 'git', ['rev-parse', '--show-toplevel'], cwd)) ?? cwd;
+  const configPath = resolve(repoRoot, options.configPath ?? 'tally.yaml');
+  const recordPath = installRecordPath(configPath);
+  if (existsSync(configPath) || existsSync(recordPath)) throw new Error('Tally configuration or install record already exists; init will not overwrite it.');
   const baseBranch = (await commandOrNull(command, 'git', ['branch', '--show-current'], repoRoot)) || 'main';
   const remote = await commandOrNull(command, 'git', ['remote', 'get-url', 'origin'], repoRoot);
   const setupCommand = detectSetupCommand(repoRoot);
@@ -189,7 +204,6 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const agentOutput = await commandOrNull(command, 'ao', ['agent', 'ls', '--refresh', '--json'], cwd);
   const tiers = tiersFor(parseAoAgents(agentOutput));
   const projectId = basename(repoRoot);
-  const configPath = resolve(repoRoot, options.configPath ?? 'tally.yaml');
   const config = {
     version: 1,
     repo: {
@@ -218,8 +232,12 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     concurrency: 3,
     integrations: { neatlogs, entire, cfoai, slack: false },
   };
-  await ensureAoProject({ command, cwd, repoRoot, projectId, setupCommand });
-  writeFileSync(configPath, stringifyYaml(config));
+  const projectChanges = await ensureAoProject({ command, cwd, repoRoot, projectId, setupCommand });
+  const configText = stringifyYaml(config);
+  const record: InstallRecord = { version: 1, configPath, configHash: contentHash(configText), projectId, ...projectChanges };
+  mkdirSync(dirname(recordPath), { recursive: true });
+  writeFileSync(recordPath, JSON.stringify(record, null, 2), { mode: 0o600, flag: 'wx' });
+  writeFileSync(configPath, configText, { flag: 'wx' });
   const doctor = await (options.doctor ?? ((path) => runDoctor({ configPath: path })))(configPath);
   return { configPath, projectId, testCommand, setupCommand, baseBranch, tiers: tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`), doctor };
 }
