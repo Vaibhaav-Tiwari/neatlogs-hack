@@ -10,6 +10,13 @@ export function nanosToUsd(nanos: number): number {
   return nanos / NANOS_PER_USD;
 }
 
+/** Keep cents compact, but never round a fractional-cent cost to zero. */
+export function formatUsd(nanos: number): string {
+  const usd = nanosToUsd(nanos);
+  const digits = nanos % 10_000_000 === 0 ? 2 : Math.min(9, Math.max(4, usd === 0 ? 4 : Math.ceil(-Math.log10(Math.abs(usd))) + 1));
+  return `$${usd.toFixed(digits)}`;
+}
+
 /** Tokens x list price, in nanos. A price per million tokens is 1000 nanos per token per USD. */
 export function costNanos(tokens: TokenUsage, price: TierPrice): number {
   return Math.round(

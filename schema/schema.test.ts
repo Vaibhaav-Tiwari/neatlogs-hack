@@ -6,6 +6,7 @@ import {
   attemptId,
   ceilingNanos,
   costNanos,
+  formatUsd,
   nanosToUsd,
   usdToNanos,
   validateConfig,
@@ -63,6 +64,12 @@ const typedRow: LedgerRow = {
 };
 
 describe('money helpers', () => {
+  it('shows fractional-cent costs without misleading cent rounding', () => {
+    expect(formatUsd(15_307_560)).toBe('$0.0153');
+    expect(formatUsd(15_000_000)).toBe('$0.0150');
+    expect(formatUsd(1)).toBe('$0.000000001');
+    expect(formatUsd(300_000_000)).toBe('$0.30');
+  });
   it('converts between USD and integer nanos', () => {
     expect(usdToNanos(1)).toBe(1_000_000_000);
     expect(usdToNanos(0.3)).toBe(300_000_000);
