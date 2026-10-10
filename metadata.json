@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4JTADPNPQQ28WAMP0B9RKEM",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/routing",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/history.test.ts",
+    "agent/history.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 9148,
+    "cache_read_tokens": 2466205,
+    "output_tokens": 6486,
+    "api_call_count": 9
+  }
+}
