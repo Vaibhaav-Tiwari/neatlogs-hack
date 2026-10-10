@@ -1,7 +1,6 @@
 import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
-import { execFile } from 'node:child_process';
+import { runCommand } from '../adapters/command.js';
 import { dirname, resolve } from 'node:path';
-import { promisify } from 'node:util';
 import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
 import type {
@@ -42,7 +41,7 @@ import { writeRunFiles } from './output.js';
 import { tierPriceNote } from './pricing.js';
 import type { RunOptions, RunResult } from './run.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync = runCommand;
 
 export interface WorkerStartInput {
   task: BacklogTask;
@@ -172,7 +171,7 @@ function hasPort<K extends keyof RealRunPorts>(ports: Partial<RealRunPorts>, key
 function resolvePorts(config: TallyConfig, configPath: string, overrides: Partial<RealRunPorts> = {}): RealRunPorts {
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
-  const ao = new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject });
+  const ao = new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, aoBin: config.repo.aoBin ? resolve(configDir, config.repo.aoBin) : undefined });
   const localHistory = hasPort(overrides, 'history') ? null : new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
   const trace = hasPort(overrides, 'trace') ? overrides.trace : config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
   const cfoai = hasPort(overrides, 'cfoai')
@@ -827,6 +826,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       dryRun: options.dryRun,
       status,
       repo: repoName(config),
+      backlog: { ...config.backlog },
       baseCommit,
       startedAt: started.toISOString(),
       updatedAt,

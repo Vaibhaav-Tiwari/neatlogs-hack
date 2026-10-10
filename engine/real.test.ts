@@ -283,6 +283,20 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it.each(['file', 'github-issues'] as const)('records %s backlog provenance even with zero tasks', async (source) => {
+    const { dir, configPath } = fixture();
+    const config = loadConfig(configPath);
+    config.backlog = source === 'file' ? { source, file: 'external/backlog.yaml' } : { source, issueLabel: 'ready-for-tally' };
+    writeFileSync(configPath, stringifyYaml(config));
+    const worker = new FakeWorker();
+    const result = await runRealTally({ configPath, dryRun: true, baseline: false, outputDir: join(dir, 'empty'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: { tasks: async () => [] }, worker, usage: worker, sessions: worker } });
+    expect(result.runState.backlog).toEqual(config.backlog);
+    expect(JSON.parse(readFileSync(result.runStatePath, 'utf8')).backlog).toEqual(config.backlog);
+    expect(result.runState.tasks).toEqual([]);
+    expect(worker.starts).toEqual([]);
+    expect(validateRunState(result.runState).ok).toBe(true);
+  });
   it('persists verified configured price provenance through the real loop with fake ports', async () => {
     const { dir, configPath } = fixture();
     const config = loadConfig(configPath);

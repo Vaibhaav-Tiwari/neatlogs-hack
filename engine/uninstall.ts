@@ -2,6 +2,7 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { defaultCommand, defaultReadLine, type InitCommandRunner, type PromptReader } from './init.js';
 import { configHash, contentHash, installRecordPath, type InstallRecord } from './install-record.js';
+import { parse as parseYaml } from 'yaml';
 
 export interface UninstallOptions {
   configPath?: string;
@@ -18,7 +19,9 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<{ re
   if (record.version !== 1 || record.configPath !== configPath || typeof record.projectId !== 'string'
     || typeof record.postCreateAfterHash !== 'string' || typeof record.postCreateExisted !== 'boolean') throw new Error('Invalid Tally install record.');
   if (existsSync(configPath) && contentHash(readFileSync(configPath, 'utf8')) !== record.configHash) throw new Error('tally.yaml changed after init; preserve or remove it manually before uninstalling.');
-  const command = options.command ?? defaultCommand;
+  const configuredBin = existsSync(configPath) ? (parseYaml(readFileSync(configPath, 'utf8')) as { repo?: { aoBin?: unknown } } | null)?.repo?.aoBin : undefined;
+  const aoBin = typeof configuredBin === 'string' ? configuredBin : undefined;
+  const command = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: aoBin ? resolve(dirname(configPath), aoBin) : undefined }));
   const cwd = dirname(configPath);
   const { stdout } = await command('ao', ['project', 'get', record.projectId, '--json'], { cwd });
   const current = (JSON.parse(stdout) as { project: { config?: Record<string, unknown> } }).project.config ?? {};
