@@ -57,7 +57,7 @@ export interface WorkerStartInput {
 }
 
 export interface WorkerResult {
-  status: 'idle' | 'terminated' | 'needs_input' | 'timeout' | 'experiment_stop';
+  status: 'idle' | 'terminated' | 'needs_input' | 'timeout' | 'experiment_stop' | 'never_started';
   branch: string | null;
   checkoutPath: string | null;
   prUrl: string | null;
@@ -78,6 +78,7 @@ export interface FinalUsagePort extends LiveUsagePort {
 export interface WorktreePort {
   checkoutPathFor(repoPath: string, branch: string): Promise<string | null>;
   commitFor?(repoPath: string, branch: string): Promise<string | null>;
+  commitWorkInProgress?(repoPath: string, branch: string): Promise<string | null>;
 }
 
 export interface CfoaiBudgetPort extends BudgetPort {
@@ -112,6 +113,15 @@ export interface RealRunOptions extends RunOptions {
 }
 
 export class GitWorktreeResolver implements WorktreePort {
+  async commitWorkInProgress(repoPath: string, branch: string): Promise<string | null> {
+    const cwd = await this.checkoutPathFor(repoPath, branch);
+    if (!cwd) return null;
+    const status = await execFileAsync('git', ['status', '--porcelain'], { cwd });
+    if (!status.stdout.trim()) return null;
+    await execFileAsync('git', ['add', '-A'], { cwd });
+    await execFileAsync('git', ['commit', '-m', 'wip: preserve Tally ceiling-stopped task edits'], { cwd });
+    return this.commitFor(repoPath, branch);
+  }
   async commitFor(repoPath: string, branch: string): Promise<string | null> {
     const { stdout } = await execFileAsync('git', ['rev-parse', '--verify', '--end-of-options', `${branch}^{commit}`], { cwd: repoPath });
     return stdout.trim();
@@ -389,7 +399,16 @@ function stateFromRows(taskState: TaskState, rows: LedgerRow[]): TaskState {
   };
 }
 
-async function runAttempt(input: {
+async function runAttempt(input: Parameters<typeof runSingleAttempt>[0]): Promise<LedgerRow> {
+  const row = await runSingleAttempt(input);
+  if (row.result === 'error' && row.resultReason === 'worker never started' && !(row.tokens?.total) && !input.dryRun) {
+    await input.onStartupError?.(row);
+    return runSingleAttempt({ ...input, retrySuffix: ':startup-retry', continueBranch: row.branch, continueSessionId: row.sessionId });
+  }
+  return row;
+}
+
+async function runSingleAttempt(input: {
   runId: string;
   task: BacklogTask;
   attempt: number;
@@ -410,6 +429,8 @@ async function runAttempt(input: {
   continueBranch?: string | null;
   continueSessionId?: string | null;
   onChangedFiles?: (files: string[]) => void;
+  onStartupError?: (row: LedgerRow) => Promise<void>;
+  retrySuffix?: string;
 }): Promise<LedgerRow> {
   const startedAt = input.now().toISOString();
   const repoPath = resolve(dirname(input.configPath), input.config.repo.path);
@@ -468,10 +489,20 @@ async function runAttempt(input: {
     tokens = first.verdict.tokens;
     estimatedCostNanos = first.verdict.costNanos;
     costSource = input.dryRun ? 'simulated' : first.verdict.costSource;
+    if (!input.dryRun) {
+      const branch = workerResult?.branch ?? started.branch;
+      const wip = branch ? await input.ports.worktrees.commitWorkInProgress?.(repoPath, branch) : null;
+      resultReason += wip ? `; work in progress committed as ${wip}` : '; stopped before any edits; next attempt starts clean';
+    }
   } else {
     abort.abort();
     workerResult = first.kind === 'worker' ? first.result : await worker;
-    if (workerResult.status === 'experiment_stop') {
+    const completionPort = input.ports.usage as FinalUsagePort;
+    const completionUsage = input.dryRun ? null : await (completionPort.settledUsageFor?.(started.sessionId) ?? completionPort.usageFor(started.sessionId));
+    if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated') && !(completionUsage?.tokens.total)))) {
+      result = 'error';
+      resultReason = 'worker never started';
+    } else if (workerResult.status === 'experiment_stop') {
       result = 'stopped';
       resultReason = workerResult.resultReason ?? 'stopped: experiment cap reached';
     } else if (workerResult.status === 'needs_input' || workerResult.status === 'timeout') {
@@ -592,7 +623,7 @@ async function runAttempt(input: {
 
   return {
     schemaVersion: SCHEMA_VERSION,
-    attemptId: attemptId(input.runId, input.task.taskId, input.attempt),
+    attemptId: attemptId(input.runId, input.task.taskId, input.attempt) + (input.retrySuffix ?? ''),
     runId: input.runId,
     taskId: input.task.taskId,
     taskTitle: input.task.title,
@@ -686,6 +717,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const ledger = loadLedger(ledgerPath);
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
   let budgetSource: BudgetSource = 'config';
+  let cfoaiWriteFailure: string | null = null;
   let committedBeforeRunNanos = 0;
   if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
     try {
@@ -711,7 +743,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         attempts: ledger.map((attempt) => ({ tier: attempt.tier, costNanos: attempt.estimatedCostNanos })),
         cumulativeRunSpendNanos: cumulative,
       });
-    } catch {
+      cfoaiWriteFailure = null;
+    } catch (error) {
+      cfoaiWriteFailure = `write failed: ${error instanceof Error ? error.message : String(error)}; actual spend retained in cfoai-spend-fallback.csv`;
       // CSV fallback has already preserved the attempted spend for a later sync.
     }
   };
@@ -771,11 +805,18 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       tasks: taskStates,
       integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource }),
     };
+    if (cfoaiWriteFailure) runState.integrations.cfoai = { status: 'error', detail: cfoaiWriteFailure };
     assertValid(runState, ledger);
     writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
     return runState;
   };
   writeCurrent('running', null);
+  const onStartupError = async (row: LedgerRow) => {
+    ledger.push(row);
+    await recordSpend(row);
+    writeCurrent('running', null);
+    if (row.ceilingNanos !== null && row.ceilingNanos > await budget.remainingNanos()) throw new Error('worker never started; no budget for startup retry');
+  };
 
   for (const [index, task] of tasks.entries()) {
     const stopReason = options.stopRequested?.();
@@ -843,6 +884,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             continueBranch: escalation.handoffBranch ?? interrupted.branch,
             continueSessionId: interrupted.sessionId,
             onChangedFiles: changedFor(index),
+            onStartupError,
           });
           ledger.push(latest);
           await recordHistory({ ports, row: latest, dryRun: options.dryRun });
@@ -914,6 +956,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       baseCommit,
       requiredBaseCommit: options.requiredBaseCommit,
       onChangedFiles: changedFor(index),
+      onStartupError,
     });
     ledger.push(first);
     if (first.result === 'stopped' && options.stopRequested?.()) first.resultReason = options.stopRequested()!;
@@ -967,6 +1010,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           continueBranch: escalation.handoffBranch ?? first.branch,
           continueSessionId: first.sessionId,
           onChangedFiles: changedFor(index),
+          onStartupError,
         });
         ledger.push(latest);
         await recordHistory({ ports, row: latest, dryRun: options.dryRun });
