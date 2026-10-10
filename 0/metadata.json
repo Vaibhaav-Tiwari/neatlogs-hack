@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KMMWN695BAB6NTGFPTQKND",
+  "session_id": "01a125ae-c722-75d0-93f1-147e3e8f6ffa",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T19:29:14.262503Z",
+  "branch": "ao/neatlogs-hack-6/experiment-comparison",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/experiment-fixture/README.md",
+    "dashboard/experiment-fixture/experiments/exp-scripted-comparison/summary.json",
+    "dashboard/experiment-fixture/index.json",
+    "dashboard/experiment-fixture/sample-baseline-1/ledger.json",
+    "dashboard/experiment-fixture/sample-baseline-1/run.json",
+    "dashboard/experiment-fixture/sample-baseline-2/ledger.json",
+    "dashboard/experiment-fixture/sample-baseline-2/run.json",
+    "dashboard/experiment-fixture/sample-tally-1/ledger.json",
+    "dashboard/experiment-fixture/sample-tally-1/run.json",
+    "dashboard/experiment-fixture/sample-tally-2/ledger.json",
+    "dashboard/experiment-fixture/sample-tally-2/run.json",
+    "dashboard/experiment-view.js",
+    "dashboard/experiment-view.test.js",
+    "dashboard/experiment.test.config.mjs",
+    "dashboard/index.html",
+    "dashboard/styles.css"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "5515fa101f3a",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 2043461,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 81196800,
+    "output_tokens": 237379,
+    "api_call_count": 606
+  },
+  "session_metrics": {
+    "turn_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T19:29:14.047862Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 986,
+    "human_modified": 8,
+    "human_removed": 0,
+    "total_committed": 986,
+    "total_lines_changed": 994,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}

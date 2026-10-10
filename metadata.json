@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KMMWN695BAB6NTGFPTQKND",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-6/experiment-comparison",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/experiment-fixture/README.md",
+    "dashboard/experiment-fixture/experiments/exp-scripted-comparison/summary.json",
+    "dashboard/experiment-fixture/index.json",
+    "dashboard/experiment-fixture/sample-baseline-1/ledger.json",
+    "dashboard/experiment-fixture/sample-baseline-1/run.json",
+    "dashboard/experiment-fixture/sample-baseline-2/ledger.json",
+    "dashboard/experiment-fixture/sample-baseline-2/run.json",
+    "dashboard/experiment-fixture/sample-tally-1/ledger.json",
+    "dashboard/experiment-fixture/sample-tally-1/run.json",
+    "dashboard/experiment-fixture/sample-tally-2/ledger.json",
+    "dashboard/experiment-fixture/sample-tally-2/run.json",
+    "dashboard/experiment-view.js",
+    "dashboard/experiment-view.test.js",
+    "dashboard/experiment.test.config.mjs",
+    "dashboard/index.html",
+    "dashboard/styles.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2043461,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 81196800,
+    "output_tokens": 237379,
+    "api_call_count": 606
+  }
+}
