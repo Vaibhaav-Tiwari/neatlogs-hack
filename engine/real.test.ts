@@ -194,11 +194,15 @@ describe('runRealTally', () => {
       handoff: 'restart',
       result: 'passed',
     });
-    expect(result.ledger.map((row) => row.traceId)).toEqual(['00000000000000000000000000000002', '00000000000000000000000000000004']);
+    expect(result.ledger.map((row) => row.traceId)).toEqual(['00000000000000000000000000000002', '00000000000000000000000000000005']);
     expect(result.ledger.map((row) => row.traceUrl)).toEqual([null, null]);
     expect(trace.spans.filter((span) => span.name === 'tally.route' || span.name === 'tally.escalate').map((span) => span.attributes)).toMatchObject([
       { sessionId: result.runState.runId, taskId: 'T1', attempt: 1 },
       { sessionId: result.runState.runId, taskId: 'T1', attempt: 2 },
+    ]);
+    expect(trace.spans.filter((span) => span.name === 'tally.history.record').map((span) => span.attributes)).toMatchObject([
+      { sessionId: result.runState.runId, taskId: 'T1', attempt: 1, 'tally.history.size': 'small', 'tally.history.tier': 'cheap', 'tally.history.result': 'failed' },
+      { sessionId: result.runState.runId, taskId: 'T1', attempt: 2, 'tally.history.size': 'small', 'tally.history.tier': 'middle', 'tally.history.result': 'passed' },
     ]);
     expect(result.runState.tasks[0]).toMatchObject({ status: 'passed', attempts: 2, escalated: true });
     expect(validateRunState(JSON.parse(readFileSync(result.runStatePath, 'utf8'))).ok).toBe(true);
