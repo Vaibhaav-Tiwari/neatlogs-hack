@@ -210,7 +210,13 @@ th.num, td.num { text-align: right; }
 .l-task { max-width: 34ch; }
 .l-task-id { display: block; font: 600 13px/1.35 var(--mono); color: var(--ink-2); }
 .l-note { display: block; font: italic 400 13.5px/1.35 var(--serif); color: var(--ink-2); letter-spacing: 0; }
-.l-links a { margin-right: 12px; white-space: nowrap; }
+.l-links a, .evidence-id { margin-right: 12px; white-space: nowrap; }
+.evidence-id { display: inline-block; color: var(--ink-2); }
+.evidence-id code {
+  font: 500 13px/1.35 var(--mono);
+  color: var(--ink);
+  user-select: all;
+}
 .l-result .status { font-size: 15px; }
 .ledger tr.a-stopped td:first-child { box-shadow: inset 4px 0 0 var(--vermilion); padding-left: 12px; }
 .ledger tfoot td { border-top: 1px solid var(--rule); font-style: italic; padding-top: 9px; padding-bottom: 9px; }

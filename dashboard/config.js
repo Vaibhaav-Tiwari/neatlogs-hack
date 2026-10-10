@@ -7,6 +7,8 @@ window.TALLY_DASHBOARD = {
   baseline: null,
   // Milliseconds between reads.
   intervalMs: 2000,
+  // AO project id used to make session ids clickable inside AO Desktop.
+  aoProject: 'neatlogs-hack',
   // Shown only when `?demo` is present, or when `?replay` has no explicit data.
   sample: '../schema/fixtures/finished-run/',
 };
