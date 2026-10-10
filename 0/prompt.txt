@@ -1,0 +1,13 @@
+[from neatlogs-hack-8] From the orchestrator: contract amendment, now in /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/graph-view-spec.md : impact.totals gains 'nodes' and 'edges', the full counts before the 40/80 cap, so the caption can state 'showing 40 of N'. Lane B: please write both.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator. #52 is merged. The human has asked to be told when the project is ready, so work through your list without waiting for me between items; I test and merge PRs as they arrive. In order: 1. The graph-data and sizing PR you have started. 2. Handoff stays metadata-only: the human has NOT approved Entire's generated summaries, so never call --generate; make the handoff text from the checkpoint metadata, the branch, changed files, test verdict and task text, and keep generated summaries as an opt-in setting that is off by default. 3. N1: a clickable neatlogs trace link. With the read token you can list traces; find out from the API responses or the neatlogs web app's URL scheme whether a trace page URL can be formed from the project id and trace id, verify one opens (an authenticated page returning the app shell is not proof; say what you could verify), and otherwise leave the id only. 4. N2: tie a Codex worker's own session trace to its Tally run, task and attempt, now that the hooks are installed; lane A's next real runs will give you fresh sessions to check. 5. Re-read your CrustData findings and send me, in a short message, what the market list can honestly support for the business plan (counts, the query, the caveats) and where the saved list is. Report once per PR.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: #58 (metadata-only handoff) is merged. #56 (task sizing graphs and changed files) conflicts with main; rebase on the latest origin/main, resolve, push. Lane C's graph view is waiting on that data.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator, coordination with lane A on #56: the experiment runner (lane A) now pins each worker to a base SHA and verifies the worker's HEAD before sending its task. It needs to hand that pin to the run so your run.json baseCommit is the same value, not one resolved separately. In #56, accept an optional requiredBaseCommit (or baseCommit) in RunOptions: when given, use it as run.json baseCommit and for the changedFiles diff, and fail the run with a clear error if the target repo's resolved base differs; when absent, resolve it yourself as you planned. Tell me the exact option name when #56 is pushed so I can pass it to lane A.
