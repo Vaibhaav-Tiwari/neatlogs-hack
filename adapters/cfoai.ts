@@ -83,6 +83,14 @@ export function cfoaiMonthColumn(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+export function refreshTokenRequest(tokens: OAuthTokens | undefined, scope?: string): URLSearchParams | undefined {
+  const refreshToken = tokens?.refresh_token;
+  if (!refreshToken) return undefined;
+  const params = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken });
+  if (scope) params.set('scope', scope);
+  return params;
+}
+
 class FileTokenStore {
   constructor(private readonly path = defaultCfoaiTokenPath()) {}
 
@@ -141,6 +149,10 @@ class CfoaiOAuthProvider implements OAuthClientProvider {
 
   tokens(): OAuthTokens | undefined {
     return this.store.read().tokens;
+  }
+
+  prepareTokenRequest(scope?: string): URLSearchParams | undefined {
+    return refreshTokenRequest(this.tokens(), scope);
   }
 
   saveTokens(tokens: OAuthTokens): void {
@@ -224,6 +236,7 @@ export class CfoaiBudgetAdapter implements BudgetPort {
   private statusState: IntegrationState = { status: 'missing', detail: CFOAI_FIX_COMMAND };
   private toolsChecked = false;
   private runBaseSpendNanos: number | null = null;
+  private readyPromise: Promise<void> | null = null;
 
   constructor(options: CfoaiBudgetAdapterOptions = {}) {
     this.config = normalizeCfoaiConfig(options.config);
@@ -286,6 +299,14 @@ export class CfoaiBudgetAdapter implements BudgetPort {
 
   private async ensureReady(): Promise<void> {
     if (this.usable) return;
+    if (this.readyPromise) return this.readyPromise;
+    this.readyPromise = this.connectAndCheckTools().finally(() => {
+      this.readyPromise = null;
+    });
+    return this.readyPromise;
+  }
+
+  private async connectAndCheckTools(): Promise<void> {
     try {
       if (!this.connected) {
         await this.client.connect();
