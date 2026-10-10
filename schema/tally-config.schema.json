@@ -16,7 +16,8 @@
         "path": { "type": "string", "minLength": 1 },
         "slug": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" },
         "baseBranch": { "type": "string", "minLength": 1 },
-        "aoProject": { "type": "string", "minLength": 1 }
+        "aoProject": { "type": "string", "minLength": 1 },
+        "workerPublishesPr": { "type": "boolean" }
       }
     },
     "test": {
@@ -49,6 +50,7 @@
         "properties": {
           "name": { "type": "string", "minLength": 1 },
           "harness": { "type": "string", "minLength": 1 },
+          "sessionMode": { "type": "string", "enum": ["chat", "tui"] },
           "model": { "type": "string", "minLength": 1 },
           "provider": { "type": "string", "minLength": 1 },
           "price": {

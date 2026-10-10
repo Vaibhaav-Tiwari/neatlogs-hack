@@ -21,6 +21,7 @@ backlog: { source: "file", file: "backlog.yaml" }
 tiers:
   - name: cheap
     harness: claude-code
+    sessionMode: tui
     provider: test
     model: test-model
     price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 }
@@ -67,7 +68,7 @@ describe('real run preflight', () => {
         stderr: '',
       })),
     ).rejects.toThrow(
-      `worker permission mode is unset; unattended Tally workers can stall before running setup, tests, git push, or gh pr create; fix: ${workerAutoModeFixCommand('fly-doom-jev', projectConfig)}`,
+      `worker permission mode is unset; unattended Tally workers can stall before setup, edits, tests, or commits; fix: ${workerAutoModeFixCommand('fly-doom-jev', projectConfig)}`,
     );
   });
 
@@ -86,5 +87,31 @@ describe('real run preflight', () => {
         stderr: '',
       })),
     ).resolves.toBeUndefined();
+  });
+
+  it('requires an explicit TUI session mode for real worker tiers', async () => {
+    const { configPath } = writeConfig(', aoProject: "fly-doom-jev"');
+    const config = loadConfig(configPath);
+    delete config.tiers[0]!.sessionMode;
+
+    await expect(
+      validateRealRunConfig(config, configPath, async () => ({
+        stdout: JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'auto' } } } } }),
+        stderr: '',
+      })),
+    ).rejects.toThrow('tiers[0].sessionMode is required for real runs');
+  });
+
+  it('rejects chat-mode worker tiers for real runs', async () => {
+    const { configPath } = writeConfig(', aoProject: "fly-doom-jev"');
+    const config = loadConfig(configPath);
+    config.tiers[0]!.sessionMode = 'chat';
+
+    await expect(
+      validateRealRunConfig(config, configPath, async () => ({
+        stdout: JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'auto' } } } } }),
+        stderr: '',
+      })),
+    ).rejects.toThrow('tiers[0].sessionMode is "chat"');
   });
 });

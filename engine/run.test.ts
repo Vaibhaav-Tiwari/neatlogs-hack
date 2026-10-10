@@ -68,7 +68,7 @@ describe('runTally dry-run', () => {
   it('runs dry-run through the real loop with routing, ceiling stop, escalation and budget skip', async () => {
     const { dir, configPath } = writeFixture();
     const outputDir = join(dir, 'out');
-    const result = await runTally({ configPath, dryRun: true, baseline: false, budgetUsd: 4.9, outputDir, now: fixedNow });
+    const result = await runTally({ configPath, dryRun: true, baseline: false, budgetUsd: 4.9, outputDir, latestRunDir: join(dir, 'latest-out'), now: fixedNow });
 
     expect(result.runState.runId).toBe('run-20261011-030000Z');
     expect(result.runState.tasks).toHaveLength(3);
@@ -95,6 +95,7 @@ describe('runTally dry-run', () => {
       only: 'T1',
       outputDir: join(dir, 'baseline'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest-baseline'),
     });
 
     expect(result.runState.mode).toBe('baseline');
@@ -105,7 +106,15 @@ describe('runTally dry-run', () => {
 
   it('marks tasks skipped when the configured budget cannot reserve their ceiling', async () => {
     const { dir, configPath } = writeFixture();
-    const result = await runTally({ configPath, dryRun: true, baseline: false, budgetUsd: 0.01, outputDir: join(dir, 'tiny'), now: fixedNow });
+    const result = await runTally({
+      configPath,
+      dryRun: true,
+      baseline: false,
+      budgetUsd: 0.01,
+      outputDir: join(dir, 'tiny'),
+      latestRunDir: join(dir, 'latest-tiny'),
+      now: fixedNow,
+    });
 
     expect(result.ledger).toHaveLength(0);
     expect(result.runState.tasks.every((task) => task.status === 'skipped')).toBe(true);

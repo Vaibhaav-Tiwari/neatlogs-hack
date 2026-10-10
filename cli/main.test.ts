@@ -10,6 +10,17 @@ function capture() {
   return { io: { stdout: (s: string) => out.push(s), stderr: (s: string) => err.push(s) }, out, err };
 }
 
+async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = process.cwd();
+  const dir = mkdtempSync(join(tmpdir(), 'tally-cli-cwd-'));
+  process.chdir(dir);
+  try {
+    return await fn();
+  } finally {
+    process.chdir(previous);
+  }
+}
+
 describe('parseCli', () => {
   it('parses each command', () => {
     for (const command of COMMANDS.filter((command) => command !== 'login')) {
@@ -100,19 +111,22 @@ describe('main', () => {
   });
 
   it('runs demo and reports the generated files', async () => {
-    const c = capture();
-    expect(await main(['demo'], c.io)).toBe(0);
-    expect(c.out.join('\n')).toContain('ledger.json');
-    expect(c.out.join('\n')).toContain('attempts');
-    expect(c.out.join('\n')).toContain('integrations:');
+    await withTempCwd(async () => {
+      const c = capture();
+      expect(await main(['demo'], c.io)).toBe(0);
+      expect(c.out.join('\n')).toContain('ledger.json');
+      expect(c.out.join('\n')).toContain('attempts');
+      expect(c.out.join('\n')).toContain('integrations:');
+    });
   });
 
   it('runs a dry-run from a file backlog', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tally-cli-'));
-    const configPath = join(dir, 'tally.yaml');
-    writeFileSync(
-      configPath,
-      `version: 1
+    await withTempCwd(async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'tally-cli-'));
+      const configPath = join(dir, 'tally.yaml');
+      writeFileSync(
+        configPath,
+        `version: 1
 repo: { path: ".", baseBranch: "main" }
 test: { command: "npm test" }
 backlog: { source: "file", file: "backlog.yaml" }
@@ -128,11 +142,12 @@ ceilings:
 budget: { source: config, usd: 10 }
 integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 `,
-    );
-    writeFileSync(join(dir, 'backlog.yaml'), 'tasks:\n  - id: T1\n    title: Tiny fix\n    size: small\n');
-    const c = capture();
+      );
+      writeFileSync(join(dir, 'backlog.yaml'), 'tasks:\n  - id: T1\n    title: Tiny fix\n    size: small\n');
+      const c = capture();
 
-    expect(await main(['run', '--dry-run', '--config', configPath], c.io)).toBe(0);
-    expect(c.out.join('\n')).toContain('1 tasks, 1 attempts');
+      expect(await main(['run', '--dry-run', '--config', configPath], c.io)).toBe(0);
+      expect(c.out.join('\n')).toContain('1 tasks, 1 attempts');
+    });
   });
 });
