@@ -248,7 +248,8 @@ th.num, td.num { text-align: right; }
 .ledger-task:first-child { margin-top: 12px; }
 .ledger-task-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; }
 .ledger-task-name h3 { margin: 3px 0; font: 700 21px/1.35 var(--serif); overflow-wrap: anywhere; }
-.ledger-task-state { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.ledger-task-state { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; padding-bottom: 4px; }
+.ledger-task-state .stamp { transform: none; outline: none; margin: 0; }
 .ledger-task-figures { grid-column: 1 / -1; display: grid; grid-template-columns: 100px minmax(180px, 1fr) 150px 200px; gap: 10px 24px; padding: 12px 0; border-top: 1px solid var(--rule-soft); }
 .ledger-task-figures dt, .decision-label { display: block; color: var(--ink-2); font: italic 400 14px/1.4 var(--serif); }
 .ledger-task-figures dd { font: 400 15px/1.4 var(--mono); overflow-wrap: anywhere; }
@@ -284,6 +285,9 @@ th.num, td.num { text-align: right; }
   color: var(--ink);
   user-select: all;
 }
+.ledger-task .evidence-id { display: block; max-width: 100%; margin-right: 0; white-space: normal; overflow-wrap: anywhere; }
+.ledger-task .evidence-id code { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.commit-hash { text-decoration: none; cursor: help; font-family: var(--mono); }
 .l-result .status { font-size: 15px; }
 .ledger tr.a-stopped td:first-child { box-shadow: inset 4px 0 0 var(--vermilion); padding-left: 12px; }
 .ledger tr.a-suspect td:first-child { box-shadow: inset 4px 0 0 var(--vermilion); padding-left: 12px; }
