@@ -16,6 +16,31 @@ describe('runInit', () => {
     };
   }
 
+  it('persists the cfo.ai onboarding proposal instead of a source without a config block', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-cfoai-'));
+    writeFileSync(join(repo, 'Makefile'), 'test:\n\ttrue\n');
+    const onboarding = vi.fn(async ({ config, ui }) => {
+      expect(config.integrations.cfoai).toBe(true);
+      expect(await ui.confirm('Connect')).toBe(true);
+      config.budget = { source: 'cfoai', usd: 40, cfoai: { orgId: '42', scenario: 'Main Scenario',
+        table: 'Tally agent budget', pageUrl: 'https://app.cfo.ai/s/discovered-page' } };
+    });
+    const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, doctor: async () => [], onboarding,
+      cfoaiCheck: async () => ({ status: 'ok', detail: 'fake connected' }),
+      readLine: async (question, fallback) => question === 'Enable cfo.ai budget integration? y/N' || question === 'Connect y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
+    expect(onboarding).toHaveBeenCalledOnce();
+    expect(parseYaml(readFileSync(result.configPath, 'utf8')).budget.cfoai.orgId).toBe('42');
+  });
+
+  it('never connects or creates integration objects in dry-run init', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-cfoai-preview-'));
+    writeFileSync(join(repo, 'Makefile'), 'test:\n\ttrue\n');
+    const onboarding = vi.fn(async () => undefined);
+    await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, dryRun: true, onboarding,
+      readLine: async (question, fallback) => question.includes('cfo.ai') ? 'y' : fallback ?? '' });
+    expect(onboarding).not.toHaveBeenCalled();
+  });
+
   it.each(['interactive', 'yes'] as const)('does not invent a command or mutate an empty static repo: %s', async (mode) => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-static-'));
     writeFileSync(join(repo, 'index.html'), '<h1>Static site</h1>');

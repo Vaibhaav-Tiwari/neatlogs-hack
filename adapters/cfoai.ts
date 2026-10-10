@@ -48,7 +48,7 @@ export interface NormalizedCfoaiBudgetConfig {
 
 export interface CfoaiMcpClient {
   connect(): Promise<void>;
-  listTools(): Promise<{ tools: { name: string }[] }>;
+  listTools(): Promise<{ tools: { name: string; description?: string; inputSchema?: Record<string, unknown> }[] }>;
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
   close(): Promise<void>;
 }
@@ -233,7 +233,7 @@ class SdkCfoaiMcpClient implements CfoaiMcpClient {
     await this.client.connect(this.transport);
   }
 
-  async listTools(): Promise<{ tools: { name: string }[] }> {
+  async listTools(): ReturnType<CfoaiMcpClient['listTools']> {
     return this.client.listTools();
   }
 
@@ -248,6 +248,14 @@ class SdkCfoaiMcpClient implements CfoaiMcpClient {
   async finishAuth(code: string): Promise<void> {
     await this.transport.finishAuth(code);
   }
+}
+
+/** A separate MCP connection using only Tally's own OAuth cache. */
+export function createCfoaiClient(tokenPath?: string): CfoaiMcpClient {
+  return new SdkCfoaiMcpClient(
+    CFOAI_SERVER_URL,
+    new CfoaiOAuthProvider(new FileTokenStore(tokenPath), undefined, async () => undefined),
+  );
 }
 
 export interface CfoaiBudgetAdapterOptions {
