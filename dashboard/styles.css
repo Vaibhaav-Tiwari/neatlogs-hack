@@ -244,6 +244,27 @@ th.num, td.num { text-align: right; }
 
 /* ledger */
 .ledger { min-width: 1120px; }
+.ledger-task { padding: 22px 0 26px; border-top: 2px solid var(--rule); }
+.ledger-task:first-child { margin-top: 12px; }
+.ledger-task-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; }
+.ledger-task-name h3 { margin: 3px 0; font: 700 21px/1.35 var(--serif); overflow-wrap: anywhere; }
+.ledger-task-state { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.ledger-task-figures { grid-column: 1 / -1; display: grid; grid-template-columns: 100px minmax(180px, 1fr) 150px 200px; gap: 10px 24px; padding: 12px 0; border-top: 1px solid var(--rule-soft); }
+.ledger-task-figures dt, .decision-label { display: block; color: var(--ink-2); font: italic 400 14px/1.4 var(--serif); }
+.ledger-task-figures dd { font: 400 15px/1.4 var(--mono); overflow-wrap: anywhere; }
+.ledger-decision { max-width: 78ch; margin-bottom: 12px; font: 400 17px/1.5 var(--serif); }
+.ledger-decision .reason { font-size: 13px; }
+.ledger-task .code-graph { margin-bottom: 14px; }
+.ledger-task .ledger { min-width: 0; table-layout: fixed; }
+.ledger-task .ledger th, .ledger-task .ledger td { overflow-wrap: anywhere; }
+.ledger-task .ledger th:nth-child(1) { width: 7%; }
+.ledger-task .ledger th:nth-child(2) { width: 18%; }
+.ledger-task .ledger th:nth-child(3) { width: 14%; }
+.ledger-task .ledger th:nth-child(4), .ledger-task .ledger th:nth-child(5) { width: 9%; }
+.ledger-task .ledger th:nth-child(6) { width: 8%; }
+.ledger-task .ledger th:nth-child(7) { width: 16%; }
+.ledger-task .ledger th:nth-child(8) { width: 19%; }
+.ledger-total { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 24px; border-top: 3px double var(--rule); padding-top: 12px; font-size: 15px; }
 .ledger td { font-size: 15px; padding-top: 8px; padding-bottom: 8px; border-top: 1px solid var(--rule-soft); }
 .ledger tbody tr:first-child td { border-top: 0; }
 .ledger tr.group-start td { border-top: 2px solid var(--rule); }
@@ -394,6 +415,26 @@ th.num, td.num { text-align: right; }
   .live { animation: none; }
 }
 
+@media (max-width: 560px) {
+  .ledger-task-head { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .ledger-task-name h3 { font-size: 19px; }
+  .ledger-task-state { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+  .ledger-task-figures { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  .ledger-task-figures dd { font-size: 13px; }
+  .ledger-decision { max-width: 100%; font-size: 16px; }
+  .ledger-task .scroll { overflow: visible; margin: 10px 0 0; padding: 0; }
+  .ledger-task .ledger { display: block; width: 100%; min-width: 0; }
+  .ledger-task .ledger thead { display: none; }
+  .ledger-task .ledger tbody { display: block; }
+  .ledger-task .ledger tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-top: 1px solid var(--rule); padding: 8px 0; }
+  .ledger-task .ledger td { display: block; border: 0; width: auto; min-width: 0; padding: 6px; text-align: left; }
+  .ledger-task .ledger td[data-label]::before { content: attr(data-label); display: block; color: var(--ink-2); font: italic 400 13px/1.4 var(--serif); margin-bottom: 2px; }
+  .ledger-task .ledger td.l-result, .ledger-task .ledger td.l-links, .ledger-task .ledger td.empty { grid-column: 1 / -1; }
+  .ledger-task .ledger .fig { font-size: 13px; }
+  .ledger-task .l-links a, .ledger-task .evidence-id { white-space: normal; }
+  .ledger-task .code-graph { width: 100%; }
+}
+
 @media print {
   @page { size: landscape; margin: 12mm; }
   * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -436,4 +477,22 @@ th.num, td.num { text-align: right; }
   .ledger th:nth-child(9), .ledger td:nth-child(9) { width: 10%; }
   .l-links a, .evidence-id { display: block; margin-right: 0; white-space: normal; }
   .live { animation: none; }
+  .ledger-task { padding: 5mm 0; }
+  .ledger-task-head, .ledger-decision, .ledger-task .ledger tr { break-inside: avoid; }
+  .ledger-task-name h3 { font-size: 12pt; }
+  .ledger-task-figures { grid-template-columns: 20mm 1fr 35mm 40mm; padding: 3mm 0; }
+  .ledger-task-figures dd, .ledger-decision { font-size: 9pt; }
+  .ledger-task .ledger { display: table; min-width: 0; }
+  .ledger-task .ledger tbody { display: table-row-group; }
+  .ledger-task .ledger tr { display: table-row; }
+  .ledger-task .ledger td { display: table-cell; width: auto; }
+  .ledger-task .ledger td::before { display: none; }
+  .ledger-task .ledger th:nth-child(1), .ledger-task .ledger td:nth-child(1) { width: 7%; }
+  .ledger-task .ledger th:nth-child(2), .ledger-task .ledger td:nth-child(2) { width: 18%; }
+  .ledger-task .ledger th:nth-child(3), .ledger-task .ledger td:nth-child(3) { width: 14%; }
+  .ledger-task .ledger th:nth-child(4), .ledger-task .ledger td:nth-child(4), .ledger-task .ledger th:nth-child(5), .ledger-task .ledger td:nth-child(5) { width: 9%; }
+  .ledger-task .ledger th:nth-child(6), .ledger-task .ledger td:nth-child(6) { width: 8%; }
+  .ledger-task .ledger th:nth-child(7), .ledger-task .ledger td:nth-child(7) { width: 16%; }
+  .ledger-task .ledger th:nth-child(8), .ledger-task .ledger td:nth-child(8) { width: 19%; }
+  .ledger-total { font-size: 9pt; }
 }

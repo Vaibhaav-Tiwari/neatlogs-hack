@@ -550,9 +550,7 @@ function tierCell(tier, model) {
 
 function attemptCountCell(task, attempts, awaiting) {
   const countText = attempts.length === 1 ? '1 attempt' : `${attempts.length} attempts`;
-  const ids = attempts.map((row) => `${row.taskId}/${row.attempt}`).join(', ');
-  const extra = awaiting ? `${ids ? `${ids}, ` : ''}${task.taskId}/${attempts.length + 1} pending` : ids;
-  return `<span class="attempt-count">${esc(countText)}</span>${extra ? `<span class="attempt-list">Ledger rows: ${esc(extra)}</span>` : ''}`;
+  return `<span class="attempt-count">${esc(countText)}</span>${awaiting ? '<span class="attempt-list">next attempt pending</span>' : ''}`;
 }
 
 const IMPACT_LABELS = {
@@ -627,7 +625,7 @@ function taskDecision(attempts) {
 
 const taskGraphs = new Map();
 let defaultGraphKey = '';
-function drawTasks(run, ledger) {
+function drawLedger(run, ledger) {
   const focusedGraphNode = [...taskGraphs.values()].some((graph) => graph.element.contains(document.activeElement)) ? document.activeElement : null;
   const graphTasks = run.tasks.filter((task) => task.impact?.source !== 'none' && task.impact?.nodes?.length > 0);
   const keys = new Set(graphTasks.map((task) => `${run.runId}:${task.taskId}`));
@@ -649,34 +647,29 @@ function drawTasks(run, ledger) {
       const issue = link(task.issueUrl, `#${task.issueNumber}`);
       const pr = link(task.prUrl, 'pull request');
       const classes = [`t-${esc(task.status)}`, attempts.some((row) => row.result === 'stopped') ? 'has-stop' : ''].join(' ');
-      return `<tr class="${classes}">
-        <td class="no fig">${index + 1}</td>
-        <td class="task">
-          <p class="title">${esc(task.title)}</p>
-          <p class="refs">${[esc(task.taskId), issue, pr].filter(Boolean).join('<span class="gap"></span>')}</p>
-          ${taskImpact(task, attempts)}
-          ${task.statusReason ? `<p class="why-status">${esc(task.statusReason)}</p>` : ''}
-        </td>
-        <td class="size" data-label="Size">${task.size ? esc(task.size) : '<span class="blank">unsized</span>'}</td>
-        <td class="tier" data-label="Final route">${finalRouteCell(task, attempts, awaiting)}</td>
-        <td class="attempts" data-label="Attempts">${attemptCountCell(task, attempts, awaiting)}</td>
-        <td class="why" data-label="Why">${taskDecision(attempts)}</td>
-        <td class="money" data-label="Cost">${costCell(task.spentNanos ?? 0, null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</td>
-        <td class="state" data-label="Result">${attempts.some((row) => row.result === 'stopped') ? '<span class="stamp">Stopped and escalated</span>' : statusMark(task.status, STATUS_WORD[task.status] ?? task.status)}</td>
-      </tr>${keys.has(`${run.runId}:${task.taskId}`) ? `<tr class="graph-row"><td colspan="8"><div data-graph-slot="${esc(task.taskId)}"></div></td></tr>` : ''}`;
+      return `<article class="ledger-task ${classes}" data-task-id="${esc(task.taskId)}" aria-labelledby="task-title-${index}">
+        <header class="ledger-task-head">
+          <div class="ledger-task-name"><p class="refs">${[esc(task.taskId), issue, pr].filter(Boolean).join('<span class="gap"></span>')}</p>
+            <h3 id="task-title-${index}">${esc(task.title)}</h3>${taskImpact(task, attempts)}</div>
+          <div class="ledger-task-state">${statusMark(task.status, STATUS_WORD[task.status] ?? task.status)}${attempts.some(row => row.result === 'stopped') ? '<span class="stamp">Stopped and escalated</span>' : ''}</div>
+          <dl class="ledger-task-figures"><div><dt>Size</dt><dd>${task.size ? esc(task.size) : '<span class="blank">unsized</span>'}</dd></div>
+            <div><dt>Final route</dt><dd class="tier">${finalRouteCell(task, attempts, awaiting)}</dd></div>
+            <div><dt>Attempts</dt><dd>${attemptCountCell(task, attempts, awaiting)}</dd></div>
+            <div class="task-total"><dt>Total cost</dt><dd>${costCell(attempts.reduce((sum,row)=>sum+displayedCost(row),0), null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</dd></div></dl>
+        </header>
+        <div class="ledger-decision"><span class="decision-label">Why</span>${taskDecision(attempts)}${task.statusReason ? `<p class="why-status">${esc(task.statusReason)}</p>` : ''}</div>
+        ${keys.has(`${run.runId}:${task.taskId}`) ? `<div data-graph-slot="${esc(task.taskId)}"></div>` : ''}
+        ${attemptTable(run, attempts)}
+      </article>`;
     })
     .join('');
 
-  draw(
-    'tasks',
-    `<thead><tr>
-       <th class="no">No.</th><th>Task</th><th>Size</th><th>Ended up on</th><th>Attempts</th><th>Why</th>
-       <th class="money">Total cost</th><th>Status</th></tr></thead>
-     <tbody>${body}</tbody>`,
-  );
+  const total = ledger.reduce((sum,row)=>sum+displayedCost(row),0);
+  const note = ledger.some(row=>row.displayIsLiveEstimate) ? 'includes live estimates' : Math.abs(total-run.budget.spentNanos)>1 ? `<span class="over">does not match reported budget spend ${usd(run.budget.spentNanos)}</span>` : 'agrees with budget spent';
+  draw('ledger', `${body || '<p class="empty">No work recorded yet.</p>'}<div class="ledger-total"><span>${run.tasks.length} ${run.tasks.length === 1 ? 'task' : 'tasks'} · ${ledger.length} ${ledger.length === 1 ? 'attempt' : 'attempts'}</span><span class="fig">${count(ledger.reduce((sum,row)=>sum+row.tokens.total,0))} tokens</span><strong class="fig">Total ${usd(total)}</strong><span>${note}</span></div>`);
   for (const task of graphTasks) {
     const graph = taskGraphs.get(`${run.runId}:${task.taskId}`);
-    const slot = [...document.getElementById('tasks').querySelectorAll('[data-graph-slot]')].find((node) => node.dataset.graphSlot === task.taskId);
+    const slot = [...document.getElementById('ledger').querySelectorAll('[data-graph-slot]')].find((node) => node.dataset.graphSlot === task.taskId);
     if (!slot.contains(graph.element)) slot.append(graph.element);
     graph.update(task, ledger.filter((row) => row.taskId === task.taskId).sort((a,b) => a.attempt - b.attempt));
   }
@@ -691,48 +684,31 @@ function isSuspectPass(row, run) {
   return zeroCostWithTokens || missingWorkEvidence;
 }
 
-function drawLedger(run, ledger) {
-  const seenTasks = new Set();
+function attemptTable(run, ledger) {
   const rows = ledger
     .map((row) => {
       const running = isRunning(row);
       const kind = running ? 'running' : row.result;
       const suspect = isSuspectPass(row, run);
-      const groupStart = !seenTasks.has(row.taskId);
-      seenTasks.add(row.taskId);
       const links = [link(row.prUrl, 'PR'), aoSessionEvidence(row.sessionId), idEvidence('Entire session', row.entireSessionId), checkpointEvidence(row), traceEvidence(row)].filter(Boolean);
       const tokenSplit = `${count(row.tokens.uncachedInput)} in, ${count(row.tokens.cachedInput)} cached, ${count(row.tokens.output)} out`;
-      return `<tr class="a-${esc(kind)} ${suspect ? 'a-suspect' : ''} ${groupStart ? 'group-start' : ''}">
-        <td class="fig">${esc(row.taskId)}/${row.attempt}</td>
-        <td class="l-task"><span class="l-task-id">${esc(row.taskId)}</span>${esc(row.taskTitle)}${row.escalatedFrom ? '<span class="l-note">continues the attempt above it</span>' : ''}</td>
-        <td><span class="fig">${esc(row.model)}</span><span class="l-note">${esc(row.tier)} tier, ${esc(row.harness)}</span></td>
-        <td class="num"><span class="fig">${count(row.tokens.total)}</span><span class="l-note">${tokenSplit}</span></td>
-        <td class="num fig ${row.result === 'stopped' ? 'over' : ''}">${usd(displayedCost(row))}${
+      return `<tr class="attempt-row a-${esc(kind)} ${suspect ? 'a-suspect' : ''}">
+        <td class="fig" data-label="Attempt">${row.attempt}${row.escalatedFrom ? '<span class="l-note">continues previous attempt</span>' : ''}</td>
+        <td data-label="Tier and model"><span class="fig">${esc(row.model)}</span><span class="l-note">${esc(row.tier)} tier, ${esc(row.harness)}</span></td>
+        <td class="num" data-label="Tokens"><span class="fig">${count(row.tokens.total)}</span><span class="l-note">${tokenSplit}</span></td>
+        <td class="num fig ${row.result === 'stopped' ? 'over' : ''}" data-label="Cost">${usd(displayedCost(row))}${
           row.displayIsLiveEstimate ? '<span class="l-note">live estimate</span>' : row.costSource === 'simulated' ? '<span class="l-note">simulated</span>' : row.costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : ''
         }</td>
-        <td class="num fig">${usd(row.ceilingNanos)}</td>
-        <td class="num fig">${running ? `since ${clock(row.startedAt)}` : minutes(row.startedAt, row.endedAt ?? row.startedAt)}</td>
-        <td class="l-result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${suspect ? '<span class="suspect">suspect pass</span>' : ''}${row.resultReason && row.result !== 'stopped' ? `<span class="l-note">${esc(row.resultReason)}</span>` : ''}</td>
-        <td class="l-links">${links.length ? links.join(' ') : '<span class="blank">none yet</span>'}${suspect ? '<span class="l-note over">Missing PR/branch evidence or has zero cost with non-zero tokens.</span>' : ''}</td></tr>`;
+        <td class="num fig" data-label="Ceiling">${row.ceilingNanos == null ? '<span class="blank">uncapped</span>' : usd(row.ceilingNanos)}</td>
+        <td class="num fig" data-label="Time">${running ? `since ${clock(row.startedAt)}` : minutes(row.startedAt, row.endedAt ?? row.startedAt)}</td>
+        <td class="l-result" data-label="Result">${row.result === 'stopped' ? '<b class="over">Stopped at ceiling</b>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}${suspect ? '<span class="suspect">suspect pass</span>' : ''}${row.resultReason ? `<span class="l-note">${esc(row.resultReason)}</span>` : ''}</td>
+        <td class="l-links" data-label="Evidence">${links.length ? links.join(' ') : '<span class="blank">none yet</span>'}${suspect ? '<span class="l-note over">Missing PR/branch evidence or has zero cost with non-zero tokens.</span>' : ''}</td></tr>`;
     })
     .join('');
-  const tokens = ledger.reduce((sum, row) => sum + row.tokens.total, 0);
-  const cost = ledger.reduce((sum, row) => sum + displayedCost(row), 0);
-  const empty = `<tr><td colspan="9" class="empty">No attempt has been entered yet. Rows appear here as workers start.</td></tr>`;
-  draw(
-    'ledger',
-    `<thead><tr><th>Attempt</th><th>Task</th><th>Model</th><th class="num">Tokens</th><th class="num">Cost</th>
+  const empty = `<tr><td colspan="8" class="empty">Not started; no paid attempt yet.</td></tr>`;
+  return `<div class="scroll"><table class="ledger"><thead><tr><th>Attempt</th><th>Tier and model</th><th class="num">Tokens</th><th class="num">Cost</th>
        <th class="num">Ceiling</th><th class="num">Time</th><th>Result</th><th>Evidence</th></tr></thead>
-     <tbody>${rows || empty}</tbody>
-     <tfoot><tr><td colspan="3">Total, ${ledger.length} ${ledger.length === 1 ? 'attempt' : 'attempts'}</td>
-       <td class="num fig">${count(tokens)}</td><td class="num fig total">${usd(cost)}</td><td colspan="4">${
-         ledger.some((row) => row.displayIsLiveEstimate)
-           ? 'includes live estimates for running attempts'
-           : Math.abs(cost - run.budget.spentNanos) > 1
-             ? `<span class="over">does not match the ${usd(run.budget.spentNanos)} the run reports as spent</span>`
-             : 'agrees with the budget spent'
-       }</td></tr></tfoot>`,
-  );
+     <tbody>${rows || empty}</tbody></table></div>`;
 }
 
 function drawFoot(source) {
@@ -761,7 +737,6 @@ function drawAll(state, source) {
   drawBudget(state.run, state.ledger);
   drawComparison(state.run, source);
   drawIntegrations(state.run);
-  drawTasks(state.run, state.ledger);
   drawLedger(state.run, state.ledger);
   drawFoot(source);
   document.title = `Tally: ${usd(state.run.budget.spentNanos)} of ${usd(state.run.budget.limitNanos)}`;
