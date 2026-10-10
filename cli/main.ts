@@ -11,7 +11,7 @@ import { planTally, readPlanBudget } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
 import { loginCfoai } from '../adapters/cfoai.js';
 import { CrustDataError, runCrustDataMarketSearch } from '../adapters/crustdata.js';
-import { nanosToUsd } from '../schema/index.js';
+import { formatUsd } from '../schema/index.js';
 import { startDashboardServer } from './dashboard-server.js';
 import { publishSite } from './publish.js';
 
@@ -204,7 +204,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
     if (options.plan) {
       const budget = await readPlanBudget(loadConfig(options.config), { budgetUsd: options.budgetUsd });
-      io.stdout(`budget: $${nanosToUsd(budget.limitNanos).toFixed(2)} from ${budget.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'}`);
+      io.stdout(`budget: ${formatUsd(budget.limitNanos)} from ${budget.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'}`);
       const plan = await planTally({
         configPath: options.config,
         dryRun: options.dryRun,
@@ -215,7 +215,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
       for (const task of plan) {
         const route = task.skipped
           ? 'skip'
-          : `${task.tier} ${task.harness}/${task.model} ceiling ${task.ceilingNanos === null ? 'none' : `$${nanosToUsd(task.ceilingNanos).toFixed(2)}`}`;
+          : `${task.tier} ${task.harness}/${task.model} ceiling ${task.ceilingNanos === null ? 'none' : formatUsd(task.ceilingNanos)}`;
         io.stdout(`${task.taskId}: ${task.size} -> ${route}`);
         io.stdout(`  ${task.decision}`);
       }

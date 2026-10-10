@@ -9,6 +9,7 @@ import type {
   CheckpointRecallPort,
   CheckpointPort,
   HandoffPort,
+  LiveUsage,
   LiveUsagePort,
   PriceHistoryPort,
   PriceHistoryWriterPort,
@@ -300,6 +301,7 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
     `Run this verification command before claiming success: ${config.test.command}`,
     `You are running on tier ${tier.name} (${tier.harness}/${tier.model}).`,
     handoffSummary ? `\nHandoff from the previous attempt:\n${handoffSummary}` : '',
+    handoffSummary ? 'Preserve all inherited commits, including Tally work-in-progress commits. Add a new commit for your changes; do not amend, squash, reset, or rebase the inherited history.' : '',
   ].join('\n');
 }
 
@@ -430,6 +432,7 @@ async function runSingleAttempt(input: {
   continueSessionId?: string | null;
   onChangedFiles?: (files: string[]) => void;
   onStartupError?: (row: LedgerRow) => Promise<void>;
+  onProgress?: (costNanos: number) => void;
   retrySuffix?: string;
 }): Promise<LedgerRow> {
   const startedAt = input.now().toISOString();
@@ -451,7 +454,18 @@ async function runSingleAttempt(input: {
   });
   let stopped = false;
   let ceilingStopStarted = false;
-  const watcher = new CeilingWatcher({ usage: input.ports.usage, sessions: {
+  input.onProgress?.(0);
+  const reportUsage = (value: LiveUsage | null) => {
+    if (value) input.onProgress?.(checkCeiling(value, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: null }).costNanos);
+    else input.onProgress?.(0);
+    return value;
+  };
+  const sourceUsage = input.ports.usage as FinalUsagePort;
+  const usage: FinalUsagePort = {
+    usageFor: async (id) => reportUsage(await sourceUsage.usageFor(id)),
+    settledUsageFor: async (id) => reportUsage(await (sourceUsage.settledUsageFor?.(id) ?? sourceUsage.usageFor(id))),
+  };
+  const watcher = new CeilingWatcher({ usage, sessions: {
     stop: async (sessionId, reason) => {
       ceilingStopStarted = true;
       await input.ports.sessions.stop(sessionId, reason);
@@ -497,7 +511,7 @@ async function runSingleAttempt(input: {
   } else {
     abort.abort();
     workerResult = first.kind === 'worker' ? first.result : await worker;
-    const completionPort = input.ports.usage as FinalUsagePort;
+    const completionPort = usage;
     const completionUsage = input.dryRun ? null : await (completionPort.settledUsageFor?.(started.sessionId) ?? completionPort.usageFor(started.sessionId));
     if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated') && !(completionUsage?.tokens.total)))) {
       result = 'error';
@@ -594,7 +608,7 @@ async function runSingleAttempt(input: {
     }
     await watched;
   }
-  const usagePort = input.ports.usage as FinalUsagePort;
+  const usagePort = usage;
   const finalUsage = usagePort.settledUsageFor ? await usagePort.settledUsageFor(started.sessionId) : await usagePort.usageFor(started.sessionId);
   if (finalUsage) {
     const finalCheck = checkCeiling(finalUsage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
@@ -646,6 +660,7 @@ async function runSingleAttempt(input: {
     scopeWarnings,
     escalatedFrom: input.escalatedFrom,
     handoff: input.handoff,
+    handoffText: input.handoffSummary,
     prUrl: input.dryRun ? null : prUrl,
     traceId: input.traceId,
     traceUrl: null,
@@ -771,6 +786,19 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     const saved = savedRun?.tasks.find((state) => state.taskId === task.taskId);
     return { ...initialTaskState(task), ...(saved?.impact ? { impact: saved.impact } : {}), ...(saved?.changedFiles ? { changedFiles: saved.changedFiles } : {}) };
   });
+  const liveCosts = new Map<string, number>();
+  const progressFor = (index: number, attempt: number, tier: Tier) => (cost: number) => {
+    const state = taskStates[index]!;
+    liveCosts.set(state.taskId, Math.max(liveCosts.get(state.taskId) ?? 0, cost));
+    state.status = 'running';
+    state.statusReason = null;
+    state.attempts = attempt;
+    state.tier = tier.name;
+    state.model = tier.model;
+    state.escalated = attempt > 1;
+    state.spentNanos = ledger.filter((row) => row.taskId === state.taskId).reduce((sum, row) => sum + row.estimatedCostNanos, 0) + liveCosts.get(state.taskId)!;
+    writeCurrent('running', null);
+  };
   const changedFor = (index: number) => (files: string[]) => {
     const state = taskStates[index]!;
     state.changedFiles = [...new Set([...(state.changedFiles ?? []), ...files])].sort();
@@ -801,7 +829,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           } }
           : {}),
         limitNanos: budgetLimitNanos,
-        spentNanos: ledgerSpend(ledger),
+        spentNanos: ledgerSpend(ledger) + [...liveCosts.values()].reduce((sum, cost) => sum + cost, 0),
       },
       tasks: taskStates,
       integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource }),
@@ -812,8 +840,15 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     return runState;
   };
   writeCurrent('running', null);
-  const onStartupError = async (row: LedgerRow) => {
+  const finishAttempt = (row: LedgerRow) => {
     ledger.push(row);
+    liveCosts.delete(row.taskId);
+    const index = taskStates.findIndex((state) => state.taskId === row.taskId);
+    if (index >= 0) taskStates[index] = stateFromRows(taskStates[index]!, ledger.filter((item) => item.taskId === row.taskId));
+    writeCurrent('running', null);
+  };
+  const onStartupError = async (row: LedgerRow) => {
+    finishAttempt(row);
     await recordSpend(row);
     writeCurrent('running', null);
     if (row.ceilingNanos !== null && row.ceilingNanos > await budget.remainingNanos()) throw new Error('worker never started; no budget for startup retry');
@@ -886,8 +921,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             continueSessionId: interrupted.sessionId,
             onChangedFiles: changedFor(index),
             onStartupError,
+            onProgress: progressFor(index, 2, escalation.tier),
           });
-          ledger.push(latest);
+          finishAttempt(latest);
           await recordHistory({ ports, row: latest, dryRun: options.dryRun });
           await recordSpend(latest);
         } else {
@@ -958,8 +994,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       requiredBaseCommit: options.requiredBaseCommit,
       onChangedFiles: changedFor(index),
       onStartupError,
+      onProgress: progressFor(index, 1, route.tier),
     });
-    ledger.push(first);
+    finishAttempt(first);
     if (first.result === 'stopped' && options.stopRequested?.()) first.resultReason = options.stopRequested()!;
     await recordHistory({ ports, row: first, dryRun: options.dryRun });
     await recordSpend(first);
@@ -1012,8 +1049,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           continueSessionId: first.sessionId,
           onChangedFiles: changedFor(index),
           onStartupError,
+          onProgress: progressFor(index, 2, escalation.tier),
         });
-        ledger.push(latest);
+        finishAttempt(latest);
         await recordHistory({ ports, row: latest, dryRun: options.dryRun });
         await recordSpend(latest);
       } else {

@@ -8,7 +8,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { OAuthClientProvider, OAuthDiscoveryState } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { IntegrationState, TallyConfig } from '../schema/types.js';
-import { nanosToUsd, usdToNanos } from '../schema/money.js';
+import { formatUsd, nanosToUsd, usdToNanos } from '../schema/money.js';
 import type { BudgetPort } from '../agent/ports.js';
 
 export const CFOAI_SERVER_URL = 'https://api.cfo.ai/mcp';
@@ -109,10 +109,6 @@ export function normalizeCfoaiConfig(config: CfoaiBudgetConfig | undefined): Nor
 
 export function cfoaiMonthColumn(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function formatUsd(nanos: number): string {
-  return `$${nanosToUsd(nanos).toFixed(2)}`;
 }
 
 export function refreshTokenRequest(tokens: OAuthTokens | undefined, scope?: string): URLSearchParams | undefined {

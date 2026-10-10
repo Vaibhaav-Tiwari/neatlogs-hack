@@ -8,7 +8,7 @@
  * and the sizer is confident enough in what the task is. Otherwise it goes
  * to a stronger tier. Nothing starts unless its ceiling fits the budget left.
  */
-import { ceilingNanos, nanosToUsd } from '../schema/money.js';
+import { ceilingNanos, formatUsd, nanosToUsd } from '../schema/money.js';
 import type { TallyConfig, TaskSize, Tier } from '../schema/types.js';
 import { DEFAULT_PRIOR_WEIGHT, estimateFor, priorFor } from './history.js';
 import type { BudgetPort, PriceHistoryPort, PriceStats, TaskInput, TraceAttributes, TracePort } from './ports.js';
@@ -77,7 +77,7 @@ export interface RouteInput {
 }
 
 export function usd(nanos: number): string {
-  return `$${nanosToUsd(nanos).toFixed(2)}`;
+  return formatUsd(nanos);
 }
 
 function percent(share: number): string {

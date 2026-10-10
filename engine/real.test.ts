@@ -386,6 +386,18 @@ describe('runRealTally', () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
     const originalWait = worker.wait.bind(worker);
+    const originalStart = worker.start.bind(worker);
+    worker.start = async (input) => {
+      if (input.attempt === 2) {
+        const rows = JSON.parse(readFileSync(join(dir, 'out', 'ledger.json'), 'utf8'));
+        const state = JSON.parse(readFileSync(join(dir, 'out', 'run.json'), 'utf8'));
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ result: 'stopped', estimatedCostNanos: 2_700_000 });
+        expect(state.budget.spentNanos).toBe(2_700_000);
+        expect(state.tasks[0].attempts).toBe(1);
+      }
+      return originalStart(input);
+    };
     let finish: ((result: WorkerResult) => void) | undefined;
     worker.wait = (id) => id === 'session-1' ? new Promise((resolve) => { finish = resolve; }) : originalWait(id).then((result) => ({ ...result, branch: 'tally/t1-1' }));
     worker.stop = async (id) => { worker.stopped.push(id); if (id === 'session-1') finish?.({ status: 'terminated', branch: 'tally/t1-1', checkoutPath: '/tmp/tally-1', prUrl: null }); };
@@ -396,8 +408,29 @@ describe('runRealTally', () => {
         handoff: { summaryFor: async () => ({ type: 'entire-handoff', summary: 'Continue partial calc.ts.', branch: 'tally/t1-1' }) } } });
     expect(result.ledger.map((row) => row.result)).toEqual(['stopped', 'passed']);
     expect(worker.starts[1]).toMatchObject({ continueBranch: 'tally/t1-1', continueSessionId: 'session-1' });
+    expect(worker.starts[1]?.prompt).toContain('Continue partial calc.ts.');
+    expect(worker.starts[1]?.prompt).toContain('do not amend, squash, reset, or rebase');
+    expect(result.ledger[1]?.handoffText).toBe('Continue from failed branch tally/t1-1.\n\nContinue partial calc.ts.');
     expect(worker.published).toEqual([{ branch: 'tally/t1-1', taskId: 'T1' }]);
   }, 10_000);
+  it('flushes live cost and running task state to disk before the worker ends', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const wait = worker.wait.bind(worker);
+    worker.wait = async (id) => {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const state = JSON.parse(readFileSync(join(dir, 'out', 'run.json'), 'utf8'));
+      expect(state.budget.spentNanos).toBe(2_700_000);
+      expect(state.tasks[0]).toMatchObject({ status: 'running', tier: 'cheap', attempts: 1, spentNanos: 2_700_000 });
+      expect(JSON.parse(readFileSync(join(dir, 'out', 'ledger.json'), 'utf8'))).toEqual([]);
+      return wait(id);
+    };
+    const result = await runRealTally({ configPath, dryRun: true, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+    expect(result.runState.budget.spentNanos).toBe(2_700_000);
+    expect(result.ledger).toHaveLength(1);
+    expect(result.runState.tasks[0]?.status).toBe('passed');
+  }, 5000);
   it('uses a first-attempt override to stop via the watcher and escalates with the normal ceiling', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
