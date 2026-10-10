@@ -103,6 +103,11 @@ describe('parseCli', () => {
     expect(parseCli(['demo', '--live'])).toMatchObject({ kind: 'command', command: 'demo', options: { live: true } });
   });
 
+  it('parses init final approval and preview flags', () => {
+    expect(parseCli(['init', '--yes'])).toMatchObject({ kind: 'command', command: 'init', options: { yes: true } });
+    expect(parseCli(['init', '--dry-run'])).toMatchObject({ kind: 'command', command: 'init', options: { dryRun: true } });
+  });
+
   it('parses market options', () => {
     expect(parseCli(['market', '--output', 'out/market', '--limit', '3', '--keyword', 'GitHub Copilot'])).toMatchObject({
       kind: 'command',
