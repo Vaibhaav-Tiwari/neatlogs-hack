@@ -24,7 +24,7 @@ class FakeCfoaiClient implements CfoaiMcpClient {
     return { tools: this.tools.map((name) => ({ name })) };
   }
 
-  async callTool(name: string, args: Record<string, unknown>) {
+  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     this.calls.push({ name, args });
     if (name === 'inspect_table_blocks') {
       const read = args.read as { rows: string[]; columns: string[] };
@@ -42,6 +42,28 @@ class FakeCfoaiClient implements CfoaiMcpClient {
 
   async close() {
     this.closed += 1;
+  }
+}
+
+class LiveShapeCfoaiClient extends FakeCfoaiClient {
+  override async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    this.calls.push({ name, args });
+    if (name === 'inspect_table_blocks') {
+      const read = args.read as { rows: string[]; columns: string[] };
+      const rows = read.rows.map((row) => ({
+        display_name: row,
+        values: [{ value: this.values.get(row) ?? 0, cell_formula: String(this.values.get(row) ?? 0) }],
+      }));
+      return {
+        structuredContent: {
+          as_of: 275815,
+          coverage: { returned: { rows: read.rows.length, columns: read.columns.length } },
+          columns: [{ ref: `${read.columns[0]}-01 00:00:00+00#668`, dimension: 'Date', grain: 'MONTH' }],
+          rows,
+        },
+      };
+    }
+    return super.callTool(name, args);
   }
 }
 
@@ -86,6 +108,14 @@ describe('CfoaiBudgetAdapter', () => {
       },
     });
     expect(adapter.status()).toEqual({ status: 'ok', detail: null });
+  });
+
+  it('reads real cfo.ai table-shaped responses without mistaking metadata for cell values', async () => {
+    const client = new LiveShapeCfoaiClient();
+    const adapter = new CfoaiBudgetAdapter({ client, now, config: { orgId: '103210', scenario: 'Main Scenario' } });
+
+    await expect(adapter.budgetLimitNanos()).resolves.toBe(usdToNanos(40));
+    await expect(adapter.currentSpendNanos()).resolves.toBe(usdToNanos(3));
   });
 
   it('writes cumulative real spend with edit_table_blocks and verifies the read-back value', async () => {

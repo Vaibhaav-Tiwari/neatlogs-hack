@@ -335,11 +335,11 @@ function receiptStatus(value: unknown): string | null {
 
 function extractUsd(value: unknown, row: string, column: string): number {
   const parsed = unwrapToolResult(value);
+  const tabular = findTabularNumber(parsed, row, column);
+  if (tabular !== null) return tabular;
   const candidates = [
     isRecord(parsed) ? parsed.value : undefined,
     isRecord(parsed) ? parsed.values : undefined,
-    isRecord(parsed) ? parsed.rows : undefined,
-    parsed,
   ];
   for (const candidate of candidates) {
     const found = findNumber(candidate, row, column);
@@ -375,6 +375,37 @@ function findNumber(value: unknown, row: string, column: string): number | null 
       if (found !== null) return found;
     }
   }
+  return null;
+}
+
+function findTabularNumber(value: unknown, row: string, column: string): number | null {
+  if (!isRecord(value) || !Array.isArray(value.rows)) return null;
+  const columns = Array.isArray(value.columns) ? value.columns : [];
+  for (const candidate of value.rows) {
+    if (!isRecord(candidate)) continue;
+    const displayName = typeof candidate.display_name === 'string' ? candidate.display_name : typeof candidate.name === 'string' ? candidate.name : null;
+    if (displayName !== row) continue;
+    const values = Array.isArray(candidate.values) ? candidate.values : [];
+    const index = columnIndex(columns, column);
+    const cell = values[index >= 0 ? index : 0];
+    const direct = isRecord(cell) && 'value' in cell ? cell.value : cell;
+    return exactNumber(direct);
+  }
+  return null;
+}
+
+function columnIndex(columns: unknown[], column: string): number {
+  return columns.findIndex((candidate) => {
+    if (!isRecord(candidate)) return false;
+    const ref = typeof candidate.ref === 'string' ? candidate.ref : '';
+    const displayName = typeof candidate.display_name === 'string' ? candidate.display_name : '';
+    return ref.startsWith(column) || displayName === column;
+  });
+}
+
+function exactNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
   return null;
 }
 

@@ -2,9 +2,9 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { BacklogError } from '../engine/backlog.js';
-import { ConfigError } from '../engine/config.js';
+import { ConfigError, loadConfig } from '../engine/config.js';
 import { runDoctor } from '../engine/doctor.js';
-import { planTally } from '../engine/plan.js';
+import { planTally, readPlanBudget } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
 import { loginCfoai } from '../adapters/cfoai.js';
 import { nanosToUsd } from '../schema/index.js';
@@ -153,6 +153,8 @@ const stub =
 async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
     if (options.plan) {
+      const budget = await readPlanBudget(loadConfig(options.config), { budgetUsd: options.budgetUsd });
+      io.stdout(`budget: $${nanosToUsd(budget.limitNanos).toFixed(2)} from ${budget.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'}`);
       const plan = await planTally({
         configPath: options.config,
         dryRun: options.dryRun,
