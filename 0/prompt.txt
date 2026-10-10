@@ -1,0 +1,1 @@
+[from neatlogs-hack-8] From the orchestrator, priority change effective now: working product for a video first. Do the small scripted changedFiles change for dry runs now (lane C is blocked on it for the demo), then the Codex trace spool flush so worker traces reach neatlogs on lane A's upcoming real run. Park the rest. Thanks for the CrustData summary; received.
