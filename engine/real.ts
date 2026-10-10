@@ -156,9 +156,9 @@ function hasPort<K extends keyof RealRunPorts>(ports: Partial<RealRunPorts>, key
 }
 
 function resolvePorts(config: TallyConfig, configPath: string, overrides: Partial<RealRunPorts> = {}): RealRunPorts {
-  const ao = new AoCliAdapter();
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
+  const ao = new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject });
   const localHistory = hasPort(overrides, 'history') ? null : new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
   const trace = hasPort(overrides, 'trace') ? overrides.trace : config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
   const cfoai = hasPort(overrides, 'cfoai')
