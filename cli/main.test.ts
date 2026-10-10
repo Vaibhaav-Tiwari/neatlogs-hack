@@ -147,14 +147,6 @@ describe('main', () => {
     expect(c.err.join('\n')).toContain('deploy');
   });
 
-  it('runs the commands that are still stubs and says they are not implemented yet', async () => {
-    for (const command of ['init'] as const) {
-      const c = capture();
-      expect(await main([command], c.io)).toBe(0);
-      expect(c.out.join('\n')).toContain('not implemented yet');
-    }
-  });
-
   it('reports config errors before a real run can start', async () => {
     const c = capture();
     expect(await main(['run', '--config', '/nonexistent/tally.yaml'], c.io)).toBe(2);

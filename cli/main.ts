@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { BacklogError } from '../engine/backlog.js';
 import { ConfigError, loadConfig } from '../engine/config.js';
 import { runDoctor } from '../engine/doctor.js';
+import { runInit } from '../engine/init.js';
 import { planTally, readPlanBudget } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
 import { loginCfoai } from '../adapters/cfoai.js';
@@ -172,13 +173,6 @@ export function parseCli(argv: string[]): ParsedCli {
 
 type Handler = (options: CliOptions, io: CliIO) => Promise<number>;
 
-const stub =
-  (command: Command): Handler =>
-  async (_options, io) => {
-    io.stdout(`tally ${command}: not implemented yet`);
-    return 0;
-  };
-
 async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
     if (options.plan) {
@@ -216,6 +210,23 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
     return 0;
   } catch (e) {
     return reportError('tally run', e, io);
+  }
+}
+
+async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
+  try {
+    const result = await runInit({ configPath: options.config });
+    io.stdout(`wrote ${result.configPath}`);
+    io.stdout(`repo project ${result.projectId}`);
+    io.stdout(`test ${result.testCommand}`);
+    if (result.setupCommand) io.stdout(`setup ${result.setupCommand}`);
+    io.stdout(`tiers ${result.tiers.join(', ')}`);
+    for (const line of result.doctor) {
+      io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
+    }
+    return result.doctor.some((line) => line.status !== 'connected') ? 1 : 0;
+  } catch (e) {
+    return reportError('tally init', e, io);
   }
 }
 
@@ -298,7 +309,7 @@ const handlers: Record<Command, Handler> = {
   run: runCommand,
   demo: demoCommand,
   dashboard: dashboardCommand,
-  init: stub('init'),
+  init: initCommand,
   doctor: doctorCommand,
   login: loginCommand,
   market: marketCommand,
