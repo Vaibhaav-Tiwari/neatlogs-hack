@@ -3,6 +3,7 @@
 
 import { frameAt } from './replay-core.js';
 import { displayedCost, isRunning, withLiveCosts } from './live-state.js';
+import { createCodeGraph } from './code-graph.js';
 import { experimentMarkup, experimentMatches, validExperiment } from './experiment-view.js';
 
 const NANOS_PER_USD = 1_000_000_000;
@@ -597,6 +598,8 @@ function taskImpact(task, attempts) {
     task.routing?.historyChangedDecision === true ||
     task.routing?.historyChanged === true ||
     attempts.some((row) => row.historyChangedDecision === true || row.historyChanged === true || row.routing?.historyChangedDecision === true);
+  const totals = task.impact?.totals;
+  if (totals) items.push(`<span>${esc(totals.filesTouched)} ${totals.filesTouched === 1 ? 'file' : 'files'} · ${esc(totals.dependents)} ${totals.dependents === 1 ? 'dependent' : 'dependents'}</span>`);
   return `${changed ? '<span class="history-mark">history changed route</span>' : ''}${items.length ? `<span class="impact">${items.join('')}</span>` : ''}`;
 }
 
@@ -621,7 +624,21 @@ function taskDecision(attempts) {
   return `${carry}<p>${esc(first.decision)}</p>${last?.attempt !== first.attempt ? `<p class="reason">Final decision: ${esc(last.decision)}</p>` : ''}${last?.resultReason ? `<p class="reason ${last.result === 'stopped' ? 'over' : ''}">${esc(last.resultReason)}</p>` : ''}`;
 }
 
+const taskGraphs = new Map();
+let defaultGraphKey = '';
 function drawTasks(run, ledger) {
+  const focusedGraphNode = [...taskGraphs.values()].some((graph) => graph.element.contains(document.activeElement)) ? document.activeElement : null;
+  const graphTasks = run.tasks.filter((task) => task.impact?.source !== 'none' && task.impact?.nodes?.length > 0);
+  const keys = new Set(graphTasks.map((task) => `${run.runId}:${task.taskId}`));
+  for (const [key, graph] of taskGraphs) if (!keys.has(key)) { graph.dispose(); taskGraphs.delete(key); }
+  for (const task of graphTasks) {
+    const key = `${run.runId}:${task.taskId}`;
+    if (!taskGraphs.has(key)) taskGraphs.set(key, createCodeGraph(task));
+  }
+  const defaultTask = graphTasks.find(task => task.status === 'running') ?? graphTasks[0];
+  const nextDefaultKey = defaultTask ? `${run.runId}:${defaultTask.taskId}` : '';
+  if (nextDefaultKey && nextDefaultKey !== defaultGraphKey) taskGraphs.get(nextDefaultKey).element.open = true;
+  defaultGraphKey = nextDefaultKey;
   const body = run.tasks
     .map((task, index) => {
       const attempts = ledger.filter((row) => row.taskId === task.taskId).sort((a, b) => a.attempt - b.attempt);
@@ -639,13 +656,13 @@ function drawTasks(run, ledger) {
           ${taskImpact(task, attempts)}
           ${task.statusReason ? `<p class="why-status">${esc(task.statusReason)}</p>` : ''}
         </td>
-        <td class="size">${task.size ? esc(task.size) : '<span class="blank">unsized</span>'}</td>
-        <td class="tier">${finalRouteCell(task, attempts, awaiting)}</td>
-        <td class="attempts">${attemptCountCell(task, attempts, awaiting)}</td>
-        <td class="why">${taskDecision(attempts)}</td>
-        <td class="money">${costCell(task.spentNanos ?? 0, null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</td>
-        <td class="state">${attempts.some((row) => row.result === 'stopped') ? '<span class="stamp">Stopped and escalated</span>' : statusMark(task.status, STATUS_WORD[task.status] ?? task.status)}</td>
-      </tr>`;
+        <td class="size" data-label="Size">${task.size ? esc(task.size) : '<span class="blank">unsized</span>'}</td>
+        <td class="tier" data-label="Final route">${finalRouteCell(task, attempts, awaiting)}</td>
+        <td class="attempts" data-label="Attempts">${attemptCountCell(task, attempts, awaiting)}</td>
+        <td class="why" data-label="Why">${taskDecision(attempts)}</td>
+        <td class="money" data-label="Cost">${costCell(task.spentNanos ?? 0, null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</td>
+        <td class="state" data-label="Result">${attempts.some((row) => row.result === 'stopped') ? '<span class="stamp">Stopped and escalated</span>' : statusMark(task.status, STATUS_WORD[task.status] ?? task.status)}</td>
+      </tr>${keys.has(`${run.runId}:${task.taskId}`) ? `<tr class="graph-row"><td colspan="8"><div data-graph-slot="${esc(task.taskId)}"></div></td></tr>` : ''}`;
     })
     .join('');
 
@@ -656,6 +673,13 @@ function drawTasks(run, ledger) {
        <th class="money">Total cost</th><th>Status</th></tr></thead>
      <tbody>${body}</tbody>`,
   );
+  for (const task of graphTasks) {
+    const graph = taskGraphs.get(`${run.runId}:${task.taskId}`);
+    const slot = [...document.getElementById('tasks').querySelectorAll('[data-graph-slot]')].find((node) => node.dataset.graphSlot === task.taskId);
+    if (!slot.contains(graph.element)) slot.append(graph.element);
+    graph.update(task, ledger.filter((row) => row.taskId === task.taskId).sort((a,b) => a.attempt - b.attempt));
+  }
+  if (focusedGraphNode?.isConnected && document.activeElement !== focusedGraphNode) focusedGraphNode.focus({ preventScroll: true });
 }
 
 function isSuspectPass(row, run) {
