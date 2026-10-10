@@ -110,6 +110,7 @@ npm test
 | Command | What it will do |
 |---|---|
 | `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`, `--plan`, `--dashboard`/`--open`. |
+| `tally experiment` | Run simulated baseline and Tally modes with `--dry-run --repeats N` (default 2). Real experiment execution is currently gated. `--budget <usd>` is the aggregate safety cap. Baseline keeps no per-task ceiling; real worker base validation and safety monitoring are implemented but have not been exercised live. |
 | `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to light up read-only integrations while workers stay fake. |
 | `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
 | `tally init` | Preview files and AO changes, then ask final default-No consent. `--dry-run` previews; `--yes` applies defaults without prompts. Scoped worker allow-list enforcement is not yet installed. |
@@ -120,6 +121,13 @@ npm test
 | `tally publish --out site` | Static dashboard export with a sensitive-content scan. No deployment. |
 
 ## Layout
+
+Experiment summaries are atomically updated after each completed run at
+`.tally/runs/experiments/<experimentId>/summary.json`. The dashboard server lists
+them in `/runs/index.json` under `experiments`. Each underlying run retains its
+own folder, `mode`, and `repeat`. Simulated cost remains labeled as simulated.
+The aggregate watcher polls once a second; reported final cost can exceed the
+stop threshold due to polling or metering lag and is never clipped to the cap.
 
 | Folder | Holds |
 |---|---|

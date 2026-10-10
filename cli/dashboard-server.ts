@@ -34,6 +34,14 @@ interface RunIndexEntry {
   mode: string | null;
   repo: string | null;
 }
+interface ExperimentIndexEntry {
+  id: string;
+  path: string;
+  updatedAt: string;
+  repo: string | null;
+  real: boolean;
+  status: string | null;
+}
 
 function inside(root: string, file: string): boolean {
   const resolvedRoot = resolve(root);
@@ -68,8 +76,8 @@ function serveFile(root: string, path: string, index: boolean, status: (code: nu
   return file;
 }
 
-function runIndex(runsDir: string): { runs: RunIndexEntry[] } {
-  if (!existsSync(runsDir)) return { runs: [] };
+function runIndex(runsDir: string): { runs: RunIndexEntry[]; experiments: ExperimentIndexEntry[] } {
+  if (!existsSync(runsDir)) return { runs: [], experiments: [] };
   const runs = readdirSync(runsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name !== 'latest')
     .map((entry): RunIndexEntry | null => {
@@ -93,7 +101,20 @@ function runIndex(runsDir: string): { runs: RunIndexEntry[] } {
     })
     .filter((entry): entry is RunIndexEntry => entry !== null)
     .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
-  return { runs };
+  const experimentRoot = join(runsDir, 'experiments');
+  const experiments = !existsSync(experimentRoot) ? [] : readdirSync(experimentRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .flatMap((entry): ExperimentIndexEntry[] => {
+      const path = join(experimentRoot, entry.name, 'summary.json');
+      try {
+        const summary = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+        if (typeof summary.real !== 'boolean') return [];
+        return [{ id: entry.name, path: `/runs/experiments/${encodeURIComponent(entry.name)}/`,
+          updatedAt: statSync(path).mtime.toISOString(), repo: typeof summary.repo === 'string' ? summary.repo : null,
+          real: summary.real, status: typeof summary.status === 'string' ? summary.status : null }];
+      } catch { return []; }
+    }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return { runs, experiments };
 }
 
 function defaultDashboardDir(): string {

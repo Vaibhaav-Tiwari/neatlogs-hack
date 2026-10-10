@@ -14,6 +14,7 @@ export interface CommandResult {
 export type CommandRunner = (file: string, args: string[], options?: { cwd?: string }) => Promise<CommandResult>;
 
 export interface AoAdapterOptions {
+  requiredBaseCommit?: string;
   project?: string;
   cwd?: string;
   command?: CommandRunner;
@@ -138,9 +139,30 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     const project = input.aoProject ?? this.options.project;
     if (project) args.push('--project', project);
     if (input.sessionMode) args.push('--mode', input.sessionMode);
-    args.push('--harness', input.harness, '--model', input.model, '--name', input.name, '--prompt', input.prompt);
+    args.push('--harness', input.harness, '--model', input.model, '--name', input.name);
+    if (!this.options.requiredBaseCommit) args.push('--prompt', input.prompt);
     const { stdout } = await this.command('ao', args, { cwd: this.options.cwd });
-    return { sessionId: parseSpawn(stdout), branch: null, checkoutPath: null };
+    const sessionId = parseSpawn(stdout);
+    if (!this.options.requiredBaseCommit) return { sessionId, branch: null, checkoutPath: null };
+    try {
+      const session = (await this.session(sessionId)).session;
+      let checkoutPath = session?.worktreePath ?? session?.checkoutPath ?? session?.path ?? null;
+      const branch = session?.branch ?? null;
+      if (!checkoutPath && branch) {
+        const list = await this.command('git', ['worktree', 'list', '--porcelain'], { cwd: this.options.cwd });
+        for (const block of list.stdout.split(/\n\n/)) {
+          if (block.split('\n').includes(`branch refs/heads/${branch}`)) checkoutPath = block.split('\n').find((line) => line.startsWith('worktree '))?.slice('worktree '.length) ?? null;
+        }
+      }
+      if (!checkoutPath) throw new Error('experiment could not locate worker checkout before sending task');
+      const head = (await this.command('git', ['rev-parse', 'HEAD'], { cwd: checkoutPath })).stdout.trim();
+      if (head !== this.options.requiredBaseCommit) throw new Error(`experiment worker base mismatch: expected ${this.options.requiredBaseCommit}, got ${head}`);
+      await this.command('ao', ['send', '--session', sessionId, '--message', input.prompt], { cwd: this.options.cwd });
+      return { sessionId, branch, checkoutPath };
+    } catch (error) {
+      await this.stop(sessionId, 'experiment base preflight failed');
+      throw error;
+    }
   }
 
   async wait(sessionId: string, options: { timeoutMs?: number } = {}): Promise<WorkerResult> {

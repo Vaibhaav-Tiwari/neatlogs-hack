@@ -6,6 +6,7 @@ import { ConfigError, loadConfig } from '../engine/config.js';
 import { runDoctor } from '../engine/doctor.js';
 import { runInit } from '../engine/init.js';
 import { runUninstall } from '../engine/uninstall.js';
+import { runExperiment } from '../engine/experiment.js';
 import { planTally, readPlanBudget } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
 import { loginCfoai } from '../adapters/cfoai.js';
@@ -14,7 +15,7 @@ import { nanosToUsd } from '../schema/index.js';
 import { startDashboardServer } from './dashboard-server.js';
 import { publishSite } from './publish.js';
 
-export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -39,6 +40,7 @@ export interface CliOptions {
   /** Use live read-only integrations for `tally demo`. */
   live: boolean;
   yes?: boolean;
+  repeats?: number;
   /** Integration to authenticate for `tally login`. */
   loginTarget: 'cfoai' | undefined;
   /** Directory for `tally market` output. */
@@ -67,6 +69,7 @@ const USAGE = `tally: a CFO for a fleet of coding agents
 Usage: tally <command> [options]
 
 Commands:
+  experiment Run baseline and Tally repeats with a shared safety budget
   run      Run the backlog against the budget in tally.yaml
   demo     Run the full loop with simulated workers on a sample backlog
   dashboard Start the local dashboard server
@@ -78,6 +81,7 @@ Commands:
   publish  Write a static dashboard bundle (does not deploy)
 
 Options:
+  --repeats <N>     Repeats per experiment mode (default: 2)
   --config <path>   Path to tally.yaml (default: tally.yaml)
   --dry-run         Simulate workers; spends nothing
   --budget <usd>    Override the budget for this run
@@ -118,6 +122,7 @@ export function parseCli(argv: string[]): ParsedCli {
         output: { type: 'string' },
         limit: { type: 'string' },
         keyword: { type: 'string' },
+        repeats: { type: 'string' },
         out: { type: 'string' },
         runs: { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
@@ -157,6 +162,11 @@ export function parseCli(argv: string[]): ParsedCli {
     }
   }
   let limit: number | undefined;
+  let repeats: number | undefined;
+  if (values.repeats !== undefined) {
+    repeats = Number(values.repeats);
+    if (!Number.isInteger(repeats) || repeats < 1) return { kind: 'error', message: '--repeats must be a positive integer' };
+  }
   if (values.limit !== undefined) {
     limit = Number(values.limit);
     if (!Number.isInteger(limit) || limit <= 0 || limit > 100) {
@@ -177,6 +187,7 @@ export function parseCli(argv: string[]): ParsedCli {
       plan: values.plan,
       live: values.live,
       ...(values.yes ? { yes: true } : {}),
+      ...(repeats === undefined ? {} : { repeats }),
       loginTarget: name === 'login' ? 'cfoai' : undefined,
       output: values.output,
       limit,
@@ -336,6 +347,16 @@ function reportError(prefix: string, error: unknown, io: CliIO): number {
 }
 
 const handlers: Record<Command, Handler> = {
+  experiment: async (options, io) => {
+    try {
+      if (options.plan || options.baseline || options.live) throw new RunError(['experiment runs both modes; --plan/--baseline/--live are not supported here. Use tally run --plan to preview a mode.']);
+      const result = await runExperiment({ configPath: options.config, dryRun: options.dryRun, repeats: options.repeats, budgetUsd: options.budgetUsd, only: options.only });
+      io.stdout(`wrote ${result.summaryPath}`);
+      io.stdout(`experiment ${result.summary.status}: ${result.summary.reason ?? result.summary.experimentId}`);
+      if (options.dashboard) await dashboardCommand(options, io);
+      return result.summary.status === 'finished' ? 0 : 1;
+    } catch (error) { return reportError('tally experiment', error, io); }
+  },
   publish: async (options, io) => {
     try {
       if (!options.out) throw new Error('publish requires --out <dir>');

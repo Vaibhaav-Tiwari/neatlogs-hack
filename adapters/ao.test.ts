@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { AoCliAdapter, type CommandRunner, usageFromAoPayload } from './ao.js';
 
 describe('usageFromAoPayload', () => {
+  it.each([true, false])('checks the worktree base before task delivery; match=%s', async (matches) => {
+    const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
+    const base = 'a'.repeat(40);
+    const command: CommandRunner = async (file, args, options) => {
+      calls.push({ file, args, cwd: options?.cwd });
+      if (args[0] === 'spawn') return { stdout: 'spawned session worker-base', stderr: '' };
+      if (args[0] === 'session' && args[1] === 'get') return { stdout: JSON.stringify({ session: { id: 'worker-base', branch: 'ao/worker-base/root' } }), stderr: '' };
+      if (file === 'git' && args[0] === 'worktree') return { stdout: 'worktree /worker\nHEAD abc\nbranch refs/heads/ao/worker-base/root\n\n', stderr: '' };
+      if (file === 'git' && args[0] === 'rev-parse') return { stdout: matches ? base : 'b'.repeat(40), stderr: '' };
+      return { stdout: '', stderr: '' };
+    };
+    const adapter = new AoCliAdapter({ command, cwd: '/repo', requiredBaseCommit: base });
+    const input = { task: { taskId: 'T1', title: 'Task', body: '', issueNumber: null, issueUrl: null, size: 'small' as const, outcomes: ['passed' as const] }, attempt: 1,
+      tier: { name: 'cheap', harness: 'codex', model: 'model', provider: 'openai', price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 }, ceilingFraction: 1 },
+      ceilingNanos: null, harness: 'codex', model: 'model', name: 'test', prompt: 'implement task' };
+    if (matches) await expect(adapter.start(input)).resolves.toMatchObject({ checkoutPath: '/worker' });
+    else await expect(adapter.start(input)).rejects.toThrow('experiment worker base mismatch');
+    expect(calls[0]?.args).not.toContain('--prompt');
+    expect(calls.some((call) => call.args[0] === 'send')).toBe(matches);
+    expect(calls.some((call) => call.args[0] === 'session' && call.args[1] === 'kill')).toBe(!matches);
+    expect(calls.find((call) => call.file === 'git' && call.args[0] === 'rev-parse')?.cwd).toBe('/worker');
+  });
   it('does not kill twice when adapter and engine both close the session', async () => {
     let kills = 0;
     const adapter = new AoCliAdapter({ command: async () => { kills += 1; return { stdout: '', stderr: '' }; } });
