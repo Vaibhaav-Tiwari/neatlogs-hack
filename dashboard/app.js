@@ -73,7 +73,8 @@ function aoSessionEvidence(sessionId) {
 installSessionCopy();
 
 function traceEvidence(row) {
-  return link(row.traceUrl, 'neatlogs trace') || idEvidence('trace', row.traceId);
+  return [link(row.traceUrl, 'decision trace') || idEvidence('decision trace', row.traceId),
+    link(row.workerTraceUrl, 'worker trace') || idEvidence('worker trace', row.workerTraceId)].filter(Boolean).join(' ');
 }
 
 function checkpointEvidence(row) {

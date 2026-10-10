@@ -299,8 +299,11 @@ describe('runRealTally', () => {
         history: { lookup: async () => null, record: async () => {} },
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         checkpoints: { checkpointFor: async () => null, sessionIdFor: async c => `native-${c.sessionId}` },
-        workerTraceDrain: { drainWorker: async c => { contexts.push(c); } } } });
+        workerTraceDrain: { drainWorker: async c => { contexts.push(c); } },
+        workerTraceReader: { verifyFor: async c => { expect(c.nativeSessionId).toBe(`native-session-${c.attempt}`); return 'b'.repeat(32); } } } });
     expect(result.ledger[0]).toMatchObject({ result: 'stopped', checkpointId: null, entireSessionId: 'native-session-1', sessionId: 'session-1' });
+    expect(result.ledger[0]?.workerTraceId).toBe('b'.repeat(32));
+    expect(result.ledger[0]?.traceId).not.toBe(result.ledger[0]?.workerTraceId);
     expect(contexts[0]?.entireSessionId).toBe('native-session-1');
   });
   it.each([false, true])('records zero-token startup as error and retries only once (always zero: %s)', async (alwaysZero) => {

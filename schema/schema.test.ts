@@ -86,6 +86,11 @@ describe('money helpers', () => {
 });
 
 describe('ledger row schema', () => {
+  it('keeps worker trace evidence separate from the decision trace', () => {
+    expect(validateLedgerRow({ ...typedRow, traceId: 'a'.repeat(32), workerTraceId: 'b'.repeat(32), workerTraceUrl: null }).ok).toBe(true);
+    expect(validateLedgerRow({ ...typedRow, workerTraceId: 'invalid' }).ok).toBe(false);
+    expect(validateLedgerRow({ ...typedRow, workerTraceId: null }).ok).toBe(true);
+  });
   it('accepts optional native Entire session evidence without changing the AO session', () => {
     expect(validateLedgerRow({ ...typedRow, sessionId: 'ao-worker', entireSessionId: 'codex-native' }).ok).toBe(true);
     expect(validateLedgerRow({ ...typedRow, entireSessionId: null }).ok).toBe(true);

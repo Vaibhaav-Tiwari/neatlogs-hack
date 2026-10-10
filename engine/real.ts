@@ -24,6 +24,7 @@ import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { EntireCheckpointAdapter } from '../adapters/entire-checkpoints.js';
 import { NeatlogsWorkerSpoolAdapter, type WorkerTraceDrainPort } from '../adapters/neatlogs-worker-spool.js';
+import { NeatlogsWorkerTraceReader, type WorkerTraceReaderPort } from '../adapters/neatlogs-worker-traces.js';
 import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
 import { FilePriceHistory } from '../adapters/history-file.js';
@@ -92,6 +93,7 @@ export interface CfoaiBudgetPort extends BudgetPort {
 
 export interface RealRunPorts {
   workerTraceDrain?: WorkerTraceDrainPort;
+  workerTraceReader?: WorkerTraceReaderPort;
   intake: BacklogIntakePort;
   signals: SizingSignalsPort;
   worker: WorkerPort;
@@ -185,6 +187,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
   const recall = overrides.recall ?? (config.integrations.entire ? new EntireCheckpointRecallAdapter({ repoPath }) : undefined);
   return {
     ...(hasPort(overrides, 'workerTraceDrain') ? { workerTraceDrain: overrides.workerTraceDrain } : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? { workerTraceDrain: new NeatlogsWorkerSpoolAdapter() } : {}),
+    ...(hasPort(overrides, 'workerTraceReader') ? { workerTraceReader: overrides.workerTraceReader } : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? { workerTraceReader: new NeatlogsWorkerTraceReader() } : {}),
     intake: overrides.intake ?? new ConfigBacklogIntake(),
     signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals),
     worker: overrides.worker ?? ao,
@@ -474,6 +477,7 @@ async function runSingleAttempt(input: {
   let checkpointUrl: string | null = null;
   let scopeWarnings: string[] = [];
   let entireSessionId: string | null = null;
+  let workerTraceId: string | null = null;
   let resolvedCheckoutPath: string | null = null;
 
   try {
@@ -607,6 +611,9 @@ async function runSingleAttempt(input: {
     const checkoutPath = resolvedCheckoutPath ?? workerResult?.checkoutPath ?? started.checkoutPath ?? (branch
       ? await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch).catch(() => null) : null);
     await input.ports.workerTraceDrain?.drainWorker({ checkoutPath, entireSessionId }).catch(() => {});
+    if (entireSessionId) workerTraceId = await input.ports.workerTraceReader?.verifyFor({
+      runId: input.runId, taskId: input.task.taskId, attempt: input.attempt, nativeSessionId: entireSessionId,
+    }).catch(() => null) ?? null;
   }
 
   if (!input.dryRun && workerResult?.branch && input.onChangedFiles) {
@@ -648,6 +655,8 @@ async function runSingleAttempt(input: {
     prUrl: input.dryRun ? null : prUrl,
     traceId: input.traceId,
     traceUrl: null,
+    workerTraceId,
+    workerTraceUrl: null,
     checkpointId,
     checkpointUrl,
     decision: input.decision,

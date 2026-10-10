@@ -117,6 +117,7 @@ npm test
 | `tally uninstall` | Confirm removal of init-owned configuration and AO settings; preserve history and credentials. |
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 | `tally login cfoai` | Sign in to cfo.ai; tokens are cached outside the repository. |
+| `tally traces drain --run <id>` | Recover only that finished run's worker traces, verify readable spans, then update saved status and worker trace ids. Use `--output <run-dir>` for a run stored elsewhere. |
 | `tally market --limit 5` | Search CrustData for companies adopting coding agents; requires its credentials. |
 | `tally publish --out site` | Static dashboard export with a sensitive-content scan. No deployment. |
 
