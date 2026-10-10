@@ -22,6 +22,7 @@ const ajv = new Ajv({ allErrors: true });
 const ledgerRow = ajv.compile(load('ledger-row.schema.json'));
 const runState = ajv.compile(load('run-state.schema.json'));
 const taskImpact = ajv.compile({ $ref: 'https://tally.dev/schema/run-state.schema.json#/definitions/impact' });
+const changedFiles = ajv.compile({ $ref: 'https://tally.dev/schema/run-state.schema.json#/definitions/changedFiles' });
 const config = ajv.compile(load('tally-config.schema.json'));
 
 function run(validate: ValidateFunction, value: unknown, prefix = ''): ValidationResult {
@@ -66,4 +67,8 @@ export function validateTaskImpact(value: unknown): ValidationResult {
 
 export function validateConfig(value: unknown): ValidationResult {
   return run(config, value);
+}
+
+export function validateChangedFiles(value: unknown): ValidationResult {
+  return run(changedFiles, value);
 }

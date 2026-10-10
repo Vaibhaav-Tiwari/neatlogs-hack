@@ -93,11 +93,12 @@
         "spentNanos": { "type": "integer", "minimum": 0 },
         "escalated": { "type": "boolean" },
         "prUrl": { "type": ["string", "null"], "format": "uri" },
-        "changedFiles": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/relativePath" } },
+        "changedFiles": { "$ref": "#/definitions/changedFiles" },
         "impact": { "$ref": "#/definitions/impact" }
       }
     },
     "relativePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+" },
+    "changedFiles": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/relativePath" } },
     "impact": {
       "type": "object", "additionalProperties": false,
       "required": ["source", "query", "nodes", "edges", "totals", "truncated"],
