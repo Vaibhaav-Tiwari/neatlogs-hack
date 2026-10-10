@@ -609,11 +609,12 @@ async function runSingleAttempt(input: {
     await input.ports.workerTraceDrain?.drainWorker({ checkoutPath, entireSessionId }).catch(() => {});
   }
 
-  if (!input.dryRun && workerResult?.branch && input.onChangedFiles) {
-    const checkoutPath = resolvedCheckoutPath ?? workerResult.checkoutPath ?? started.checkoutPath ?? await input.ports.worktrees.checkoutPathFor(repoPath, workerResult.branch).catch(() => null);
-    if (checkoutPath) {
-      const files = await input.ports.publisher.changedFiles({ checkoutPath, branch: workerResult.branch, config: input.config, baseCommit: attemptBase }).catch(() => null);
-      if (files) input.onChangedFiles(files);
+  if (!input.dryRun && input.onChangedFiles) {
+    const branch = workerResult?.branch ?? started.branch;
+    if (branch) {
+      // AO removes the worker worktree on close; its branch survives in the shared repository.
+      const files = await input.ports.publisher.changedFiles({ checkoutPath: repoPath, branch, config: input.config, baseCommit: attemptBase }).catch(() => null);
+      if (files !== null) input.onChangedFiles(files);
     }
   }
   if (input.dryRun && input.onChangedFiles && input.ports.worker.changedFilesFor) {
