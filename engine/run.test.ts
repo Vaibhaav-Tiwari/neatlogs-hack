@@ -48,6 +48,7 @@ integrations: { neatlogs: false, entire: true, cfoai: false, slack: false }
     `tasks:
   - id: T1
     title: Reject negative amounts
+    body: "payments/amounts.ts must throw for negative inputs; cover it in tests/amounts.test.ts."
     size: small
     outcomes: [passed]
   - id: T2
@@ -64,10 +65,10 @@ integrations: { neatlogs: false, entire: true, cfoai: false, slack: false }
 }
 
 describe('runTally dry-run', () => {
-  it('writes valid run state and ledger files with an escalated attempt', async () => {
+  it('runs dry-run through the real loop with routing, ceiling stop, escalation and budget skip', async () => {
     const { dir, configPath } = writeFixture();
     const outputDir = join(dir, 'out');
-    const result = await runTally({ configPath, dryRun: true, baseline: false, outputDir, now: fixedNow });
+    const result = await runTally({ configPath, dryRun: true, baseline: false, budgetUsd: 7, outputDir, now: fixedNow });
 
     expect(result.runState.runId).toBe('run-20261011-030000Z');
     expect(result.runState.tasks).toHaveLength(3);
@@ -75,9 +76,11 @@ describe('runTally dry-run', () => {
       'T1:1:passed:cheap',
       'T2:1:stopped:middle',
       'T2:2:passed:top',
-      'T3:1:passed:top',
     ]);
     expect(result.runState.tasks[1]).toMatchObject({ status: 'passed', attempts: 2, escalated: true, tier: 'top' });
+    expect(result.runState.tasks[2]).toMatchObject({ status: 'skipped', statusReason: 'not started: no budget' });
+    expect(result.ledger.every((row) => row.costSource === 'simulated')).toBe(true);
+    expect(result.ledger[0]?.decision).toContain('expected to cost');
     expect(result.runState.budget.spentNanos).toBe(result.ledger.reduce((sum, row) => sum + row.estimatedCostNanos, 0));
     expect(validateRunState(JSON.parse(readFileSync(result.runStatePath, 'utf8'))).ok).toBe(true);
     expect(validateLedger(JSON.parse(readFileSync(result.ledgerPath, 'utf8'))).ok).toBe(true);
@@ -113,11 +116,16 @@ describe('runTally dry-run', () => {
 describe('runDemo', () => {
   it('produces a dry-run ledger without a user config file', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-demo-out-'));
-    const result = await runDemo({ outputDir: dir, now: fixedNow });
+    const latest = join(dir, 'latest');
+    const result = await runDemo({ outputDir: dir, latestRunDir: latest, now: fixedNow });
 
     expect(result.runState.dryRun).toBe(true);
+    expect(result.runState.tasks).toHaveLength(7);
+    expect(result.ledger.length).toBeGreaterThanOrEqual(7);
     expect(result.ledger.some((row) => row.escalatedFrom !== null)).toBe(true);
     expect(validateRunState(result.runState).ok).toBe(true);
     expect(validateLedger(result.ledger).ok).toBe(true);
+    expect(JSON.parse(readFileSync(join(latest, 'run.json'), 'utf8'))).toMatchObject({ runId: result.runState.runId });
+    expect(JSON.parse(readFileSync(join(latest, 'ledger.json'), 'utf8'))).toHaveLength(result.ledger.length);
   });
 });

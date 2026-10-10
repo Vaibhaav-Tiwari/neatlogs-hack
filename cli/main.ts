@@ -122,6 +122,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
     });
     io.stdout(`wrote ${result.runStatePath}`);
     io.stdout(`wrote ${result.ledgerPath}`);
+    io.stdout(`updated ${result.latestRunDir}`);
     io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
     return 0;
   } catch (e) {
@@ -134,6 +135,7 @@ async function demoCommand(_options: CliOptions, io: CliIO): Promise<number> {
     const result = await runDemo();
     io.stdout(`wrote ${result.runStatePath}`);
     io.stdout(`wrote ${result.ledgerPath}`);
+    io.stdout(`updated ${result.latestRunDir}`);
     io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
     return 0;
   } catch (e) {

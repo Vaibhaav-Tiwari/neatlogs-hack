@@ -1,8 +1,7 @@
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
-import { PriceHistory } from '../agent/history.js';
 import type {
   BudgetPort,
   HandoffPort,
@@ -26,10 +25,14 @@ import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState
 import type { AttemptResult, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
 import { type BacklogTask } from './backlog.js';
 import { loadConfig } from './config.js';
+import { writeRunFiles } from './output.js';
 import type { RunOptions, RunResult } from './run.js';
 
 export interface WorkerStartInput {
   task: BacklogTask;
+  attempt: number;
+  tier: Tier;
+  ceilingNanos: number | null;
   harness: string;
   model: string;
   name: string;
@@ -108,6 +111,15 @@ function runIdFrom(date: Date): string {
 
 function repoName(config: TallyConfig): string {
   return config.repo.slug ?? config.repo.path;
+}
+
+function defaultOutputDir(runId: string): string {
+  const base = resolve(`.tally/runs/${runId}`);
+  if (!existsSync(base)) return base;
+  for (let i = 2; ; i += 1) {
+    const candidate = resolve(`.tally/runs/${runId}-${i}`);
+    if (!existsSync(candidate)) return candidate;
+  }
 }
 
 function traceStatus(trace: TracePort | undefined): RunState['integrations']['neatlogs'] {
@@ -198,10 +210,14 @@ async function runAttempt(input: {
   configPath: string;
   ports: RealRunPorts;
   now: () => Date;
+  dryRun: boolean;
 }): Promise<LedgerRow> {
   const startedAt = input.now().toISOString();
   const started = await input.ports.worker.start({
     task: input.task,
+    attempt: input.attempt,
+    tier: input.tier,
+    ceilingNanos: input.ceilingNanos,
     harness: input.tier.harness,
     model: input.tier.model,
     name: `tally-${input.runId}-${input.task.taskId}-${input.attempt}`,
@@ -212,7 +228,7 @@ async function runAttempt(input: {
   const abort = new AbortController();
   const watched = watcher.watch(
     { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos },
-    { signal: abort.signal, intervalMs: 5000 },
+    { signal: abort.signal, intervalMs: input.dryRun ? 1 : 5000 },
   );
   const worker = input.ports.worker.wait(started.sessionId);
   const first = await Promise.race([watched.then((verdict) => ({ kind: 'watch' as const, verdict })), worker.then((result) => ({ kind: 'worker' as const, result }))]);
@@ -230,7 +246,7 @@ async function runAttempt(input: {
     resultReason = first.verdict.reason;
     tokens = first.verdict.tokens;
     estimatedCostNanos = first.verdict.costNanos;
-    costSource = first.verdict.costSource;
+    costSource = input.dryRun ? 'simulated' : first.verdict.costSource;
   } else {
     abort.abort();
     workerResult = first.kind === 'worker' ? first.result : await worker;
@@ -238,7 +254,7 @@ async function runAttempt(input: {
     const check = checkCeiling(usage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
     tokens = check.tokens;
     estimatedCostNanos = check.costNanos;
-    costSource = check.costSource;
+    costSource = input.dryRun ? 'simulated' : check.costSource;
     const verification = await input.ports.verifier.verify({
       checkoutPath: workerResult.checkoutPath ?? started.checkoutPath,
       branch: workerResult.branch ?? started.branch,
@@ -261,7 +277,7 @@ async function runAttempt(input: {
     model: input.tier.model,
     harness: input.tier.harness,
     sessionId: started.sessionId,
-    branch: workerResult?.branch ?? started.branch,
+    branch: input.dryRun ? null : (workerResult?.branch ?? started.branch),
     tokens: tokens ?? zeroTokens(),
     estimatedCostNanos,
     costSource,
@@ -270,7 +286,7 @@ async function runAttempt(input: {
     resultReason,
     escalatedFrom: input.escalatedFrom,
     handoff: input.handoff,
-    prUrl: workerResult?.prUrl ?? null,
+    prUrl: input.dryRun ? null : (workerResult?.prUrl ?? null),
     traceUrl: null,
     checkpointId: null,
     checkpointUrl: null,
@@ -287,10 +303,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const started = now();
   const runId = runIdFrom(started);
   const mode: RunMode = options.baseline ? 'baseline' : 'tally';
-  const outputDir = resolve(options.outputDir ?? `.tally/runs/${runId}`);
-  mkdirSync(outputDir, { recursive: true });
+  const outputDir = options.outputDir ? resolve(options.outputDir) : defaultOutputDir(runId);
   const ledgerPath = resolve(outputDir, 'ledger.json');
-  const runStatePath = resolve(outputDir, 'run.json');
   const ledger = loadLedger(ledgerPath);
   const budget = new LedgerBudget(usdToNanos(options.budgetUsd ?? config.budget.usd), ledger);
   const tasks = (await ports.intake.tasks(config, options.configPath)).filter((task) => {
@@ -304,7 +318,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       schemaVersion: SCHEMA_VERSION,
       runId,
       mode,
-      dryRun: false,
+      dryRun: options.dryRun,
       status,
       repo: repoName(config),
       baseCommit: null,
@@ -320,8 +334,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       integrations: integrationStates(config, ports),
     };
     assertValid(runState, ledger);
-    writeFileSync(runStatePath, `${JSON.stringify(runState, null, 2)}\n`);
-    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+    writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
     return runState;
   };
   writeCurrent('running', null);
@@ -373,6 +386,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       configPath: options.configPath,
       ports,
       now,
+      dryRun: options.dryRun,
     });
     ledger.push(first);
     await ports.history.record({ size: first.size, tier: first.tier, result: first.result, costNanos: first.estimatedCostNanos });
@@ -406,6 +420,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           configPath: options.configPath,
           ports,
           now,
+          dryRun: options.dryRun,
         });
         ledger.push(latest);
         await ports.history.record({ size: latest.size, tier: latest.tier, result: latest.result, costNanos: latest.estimatedCostNanos });
@@ -428,5 +443,6 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const endedAt = now().toISOString();
   const runState = writeCurrent('finished', endedAt);
   await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
-  return { runState, ledger, outputDir, runStatePath, ledgerPath };
+  const paths = writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
+  return { runState, ledger, ...paths };
 }

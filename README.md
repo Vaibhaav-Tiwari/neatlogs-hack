@@ -5,9 +5,10 @@ each task, sends it to the cheapest model likely to finish it, stops any task
 that overruns its spend ceiling, hands failed work to a stronger model, and
 ends with a ledger tying every dollar to a merged PR.
 
-Status: early build. The shared data contract exists, `tally demo` runs a
-simulated backlog, and `tally run --dry-run` writes run state plus a ledger from
-a file-backed backlog. Real AO workers and external adapters are next.
+Status: early build. The shared data contract exists, `tally demo` runs the
+seven-task simulated demo backlog, and `tally run --dry-run` writes run state
+plus a ledger from a file-backed backlog. The real AO worker path is wired and
+ready for a gated one-task smoke run.
 
 ## Setup
 
@@ -27,8 +28,8 @@ During development, `npm run tally -- <command>` runs the CLI from source. After
 
 | Command | What it will do |
 |---|---|
-| `tally run` | Run the backlog against the budget in `tally.yaml`. Today this requires `--dry-run`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`. |
-| `tally demo` | Run the full loop with simulated workers on a sample backlog. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`. |
+| `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`. |
+| `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`. |
 | `tally init` | Detect the test command, ask for a budget and issue label, and write `tally.yaml`. |
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 
@@ -70,6 +71,9 @@ tasks:
 ```
 
 `outcomes` is optional and defaults to one passed simulated attempt.
+
+The latest run is also mirrored to `.tally/runs/latest/run.json` and
+`.tally/runs/latest/ledger.json` so the dashboard has one stable path to poll.
 
 ## Secrets
 
