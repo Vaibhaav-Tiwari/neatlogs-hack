@@ -46,7 +46,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepare": "npm run build",
+    "release:branch": "node scripts/release-branch.mjs",
+    "test:git-install": "node scripts/git-install-check.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

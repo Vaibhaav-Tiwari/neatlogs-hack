@@ -1,0 +1,27 @@
+name: Release branch
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: write
+concurrency:
+  group: release-branch-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - name: Build installable tree from this commit
+        run: node scripts/release-branch.mjs --source HEAD --out "$RUNNER_TEMP/tally-release"
+      - name: Cold-cache Git install smoke check
+        run: node scripts/git-install-check.mjs "git+file://$RUNNER_TEMP/tally-release"
+      - name: Update release branch only after a successful smoke check
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git fetch "$RUNNER_TEMP/tally-release" HEAD
+          git push --force origin FETCH_HEAD:refs/heads/release
