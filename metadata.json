@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KACTKNNZN3TT3BAS40TD3C",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/worker-worktree-prompt",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/ao.test.ts",
+    "adapters/ao.ts",
+    "agent/escalation.test.ts",
+    "agent/escalation.ts",
+    "engine/real.test.ts",
+    "engine/real.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1476879,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 49543808,
+    "output_tokens": 150386,
+    "api_call_count": 371
+  }
+}
