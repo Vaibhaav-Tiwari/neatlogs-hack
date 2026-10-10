@@ -165,7 +165,8 @@ function costKind(run, ledger, source = {}) {
   if (source.replaying || explicit === 'replay') return 'replay';
   if (run.dryRun || explicit === 'simulated') return 'simulated';
   if (explicit === 'real') return 'real';
-  return ledger.length > 0 && ledger.every((row) => row.costSource && !nonRealCostSources.has(row.costSource)) ? 'real' : 'simulated';
+  // A run that is not a dry run and has no attempts yet is a real run that has spent nothing, not a simulation.
+  return ledger.every((row) => row.costSource && !nonRealCostSources.has(row.costSource)) ? 'real' : 'simulated';
 }
 
 function comparableKey(run, ledger, source = {}) {

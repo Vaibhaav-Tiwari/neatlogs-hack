@@ -302,7 +302,7 @@ th.num, td.num { text-align: right; }
 .empty-state p + p { margin-top: 10px; }
 .empty-commands { margin: 8px 0 0; padding: 10px 12px; border: 1px dashed var(--rule-soft); background: var(--paper-deep); overflow-x: auto; }
 .empty-commands code { font: 500 14px/1.7 var(--mono); user-select: all; }
-@media (max-width: 560px) { .empty-state { padding: 12px 12px 14px; } .empty-state p { font-size: 16px; } .empty-commands code { font-size: 12.5px; } }
+@media (max-width: 560px) { .empty-state { padding: 12px 12px 14px; } .empty-state p { font-size: 16px; } .empty-commands code { font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; } }
 .suspect {
   display: block;
   margin-top: 4px;
