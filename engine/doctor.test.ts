@@ -96,4 +96,61 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
       fix: expect.stringContaining('ao project set-config fly-doom-jev --config-json'),
     });
   });
+
+  it('reports target AO setup post-create from tally.yaml', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-'));
+    mkdirSync(join(dir, 'repo'));
+    const configPath = join(dir, 'tally.yaml');
+    writeFileSync(
+      configPath,
+      `version: 1
+repo: { path: "repo", baseBranch: "main", aoProject: "fly-doom-jev" }
+test: { setupCommand: "make setup", command: "npm test" }
+backlog: { source: "file", file: "backlog.yaml" }
+tiers:
+  - name: cheap
+    harness: codex
+    sessionMode: tui
+    provider: test
+    model: test-model
+    price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 }
+    ceilingFraction: 1
+ceilings:
+  bySizeUsd: { small: 1, medium: 2, large: 3 }
+budget: { source: config, usd: 10 }
+integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
+`,
+    );
+    writeFileSync(join(dir, 'backlog.yaml'), 'tasks: []\n');
+    const runner: DoctorRunner = async (file, args) => {
+      const command = `${file} ${args.join(' ')}`;
+      if (command === 'ao project get fly-doom-jev --json') {
+        return {
+          stdout: JSON.stringify({
+            project: {
+              config: {
+                worker: { agent: 'codex', agentConfig: { permissions: 'auto' } },
+                postCreate: [],
+              },
+            },
+          }),
+          stderr: '',
+        };
+      }
+      return { stdout: 'ok', stderr: '' };
+    };
+
+    const lines = await runDoctor({
+      runner,
+      configPath,
+      env: { NEATLOGS_API_KEY: 'set' },
+      cfoaiCheck: async () => ({ status: 'ok', detail: 'connected' }),
+    });
+
+    expect(lines.find((line) => line.product === 'AO setup post-create')).toMatchObject({
+      status: 'broken',
+      detail: 'test.setupCommand is "make setup", but AO project postCreate does not run it before the worker starts',
+      fix: expect.stringContaining('"postCreate":["make setup"]'),
+    });
+  });
 });

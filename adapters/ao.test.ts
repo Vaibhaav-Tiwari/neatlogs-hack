@@ -165,6 +165,53 @@ describe('usageFromAoPayload', () => {
     expect(gets).toBe(4);
   });
 
+  it('stops a worker that exceeds the configured wall-clock limit', async () => {
+    const calls: Array<{ file: string; args: string[] }> = [];
+    const originalNow = Date.now;
+    let now = 1_000;
+    Date.now = () => {
+      now += 1_000;
+      return now;
+    };
+    try {
+      const command: CommandRunner = async (file, args) => {
+        calls.push({ file, args });
+        if (args.slice(0, 2).join(' ') === 'session get') {
+          return {
+            stdout: JSON.stringify({
+              session: {
+                id: 'worker-timeout',
+                status: 'working',
+                branch: 'ao/worker-timeout/root',
+                worktreePath: '/worktree',
+                activity: { state: 'working' },
+              },
+            }),
+            stderr: '',
+          };
+        }
+        if (args.slice(0, 2).join(' ') === 'session kill') return { stdout: '', stderr: '' };
+        throw new Error(`unexpected command: ${file} ${args.join(' ')}`);
+      };
+      const adapter = new AoCliAdapter({ command, sleep: async () => {}, pollMs: 0 });
+
+      await expect(adapter.wait('worker-timeout', { timeoutMs: 1_500 })).resolves.toEqual({
+        status: 'timeout',
+        branch: 'ao/worker-timeout/root',
+        checkoutPath: '/worktree',
+        prUrl: null,
+        resultReason: 'worker exceeded wall-clock limit of 2s',
+      });
+    } finally {
+      Date.now = originalNow;
+    }
+    expect(calls.map((call) => `${call.file} ${call.args.join(' ')}`)).toEqual([
+      'ao session get worker-timeout --json',
+      'ao session get worker-timeout --json',
+      'ao session kill worker-timeout',
+    ]);
+  });
+
   it('passes the configured AO session mode when spawning a worker', async () => {
     const calls: Array<{ file: string; args: string[] }> = [];
     const command: CommandRunner = async (file, args) => {

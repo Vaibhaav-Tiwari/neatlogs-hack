@@ -255,7 +255,7 @@ describe('runRealTally', () => {
     expect(JSON.parse(readFileSync(join(dir, 'latest', 'run.json'), 'utf8'))).toMatchObject({ runId: result.runState.runId });
   });
 
-  it('prompts workers to stay in their AO worktree, run setup, and leave publishing to Tally by default', async () => {
+  it('prompts workers to stay in their AO worktree and leave setup and publishing to Tally/AO by default', async () => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('test: { command: "npm test" }', 'test: { setupCommand: "npm ci", command: "npm test" }'));
     const worker = new FakeWorker();
@@ -281,7 +281,8 @@ describe('runRealTally', () => {
     const prompt = worker.starts[0]!.prompt;
     expect(prompt).toContain('Work only in the current working directory');
     expect(prompt).toContain('Never read or write any other checkout or path outside this worktree');
-    expect(prompt).toContain('First run this setup command from the current working directory: npm ci');
+    expect(prompt).toContain('The environment has already been set up before you started');
+    expect(prompt).toContain('Do not run setup (npm ci), install dependencies, or use the network');
     expect(prompt).toContain('do not push and do not open a pull request; Tally will publish the verified branch');
     expect(prompt).not.toContain('/tmp/');
   });

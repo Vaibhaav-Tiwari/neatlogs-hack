@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadConfig } from './config.js';
 import { loadEnv } from './env.js';
-import { checkWorkerAutoMode } from './preflight.js';
+import { checkSetupPostCreate, checkWorkerAutoMode } from './preflight.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -73,6 +73,39 @@ async function aoWorkerModeLine(configPath: string, runner: DoctorRunner): Promi
   }
 }
 
+async function aoSetupPostCreateLine(configPath: string, runner: DoctorRunner): Promise<DoctorLine | null> {
+  if (!existsSync(configPath)) return null;
+  const config = loadConfig(configPath);
+  if (!config.test.setupCommand) return null;
+  const projectId = config.repo.aoProject;
+  if (!projectId) {
+    return {
+      product: 'AO setup post-create',
+      status: 'missing',
+      detail: 'repo.aoProject is required before Tally can check setup post-create',
+      fix: 'add repo.aoProject to tally.yaml',
+    };
+  }
+  try {
+    const output = await runner('ao', ['project', 'get', projectId, '--json']);
+    const payload = JSON.parse(output.stdout) as { project?: { config?: unknown } };
+    const check = checkSetupPostCreate(projectId, payload.project?.config, config.test.setupCommand)!;
+    return {
+      product: 'AO setup post-create',
+      status: check.ok ? 'connected' : 'broken',
+      detail: check.detail,
+      fix: check.ok ? null : check.fix,
+    };
+  } catch {
+    return {
+      product: 'AO setup post-create',
+      status: 'missing',
+      detail: `repo.aoProject "${projectId}" is not registered in AO`,
+      fix: `ao project add --path ${config.repo.path} --id ${projectId}`,
+    };
+  }
+}
+
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine[]> {
   const runner = options.runner ?? defaultRunner;
   const env = options.env ?? loadEnv();
@@ -82,6 +115,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
   if (options.configPath) {
     const workerMode = await aoWorkerModeLine(options.configPath, runner);
     if (workerMode) lines.push(workerMode);
+    const setupPostCreate = await aoSetupPostCreateLine(options.configPath, runner);
+    if (setupPostCreate) lines.push(setupPostCreate);
   }
   lines.push(await commandLine('GitHub CLI', runner, 'gh', ['auth', 'status'], 'gh auth login'));
   lines.push(await commandLine('Entire CLI', runner, 'entire', ['--version'], 'pipx install entire'));
