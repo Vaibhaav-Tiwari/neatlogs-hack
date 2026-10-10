@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KNFKFMSEPZ6F8HDZB9CRHR",
+  "session_id": "01a125ae-c722-75d0-93f1-147e3e8f6ffa",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T19:43:51.377256Z",
+  "branch": "ao/neatlogs-hack-6/budget-page-link",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/budget-link.js",
+    "dashboard/budget-link.test.mjs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "4ae70b346920",
+  "checkpoint_transcript_start": 5527,
+  "transcript_lines_at_start": 5527,
+  "compact_transcript_start": 647,
+  "token_usage": {
+    "input_tokens": 15576,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1337344,
+    "output_tokens": 2813,
+    "api_call_count": 11
+  },
+  "session_metrics": {
+    "turn_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T19:43:51.134379Z",
+    "agent_lines": 33,
+    "agent_removed": 38,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 33,
+    "total_lines_changed": 71,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
