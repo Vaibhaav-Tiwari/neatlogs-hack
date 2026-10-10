@@ -10,6 +10,8 @@ import { CommandError, resolveAoBinary, runCommand } from '../adapters/command.j
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadEnv } from './env.js';
 import { configureIntegrations } from '../onboarding/index.js';
+import { loadConfig } from './config.js';
+import { applyReinit, finishReinit, prepareReinit, readReinit, reinitPath } from './reinit.js';
 
 export interface InitCommandResult {
   stdout: string;
@@ -240,6 +242,46 @@ async function finishInit(options: InitOptions, transaction: InitTransaction, co
   }
 }
 
+async function reconfigureInit(options: InitOptions, configPath: string, print: (line: string) => void, readLine: PromptReader): Promise<InitResult> {
+  const pending = readReinit(configPath);
+  const before = pending ? parseYaml(pending.beforeConfig) as TallyConfig : loadConfig(configPath);
+  const config = pending ? parseYaml(pending.afterConfig) as TallyConfig : structuredClone(before);
+  if (!validateConfig(before).ok || !validateConfig(config).ok) throw new InitError('Re-init recovery configuration is invalid; no changes made.');
+  if (!pending) {
+    for (const name of ['neatlogs', 'entire', 'cfoai'] as const) {
+      const label = name === 'cfoai' ? 'cfo.ai' : name === 'entire' ? 'Entire' : name;
+      config.integrations[name] = parseYes(await readLine(`Enable ${label} integration? y/N`, before.integrations[name] ? 'y' : 'N'));
+    }
+  }
+  const result = { configPath, projectId: config.repo.aoProject ?? '', testCommand: config.test.command, setupCommand: config.test.setupCommand ?? null, baseBranch: config.repo.baseBranch, tiers: config.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
+  if (!pending && configHash(config) === configHash(before)) {
+    print('No changes proposed; existing configuration and installation ownership are unchanged.');
+    return { ...result, applied: false, doctor: [] };
+  }
+  const command: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: config.repo.aoBin ? resolve(dirname(configPath), config.repo.aoBin) : undefined }));
+  const targetRepo = resolve(dirname(configPath), config.repo.path);
+  await initPrerequisites(config, command, targetRepo, options);
+  const plan = pending ?? prepareReinit(configPath, stringifyYaml(config));
+  print(`Tally re-init proposed diff for ${configPath}:`);
+  for (const key of Object.keys(config) as (keyof TallyConfig)[]) {
+    if (configHash(before[key]) !== configHash(config[key])) {
+      print(`- ${key}: ${JSON.stringify(before[key])}`);
+      print(`+ ${key}: ${JSON.stringify(config[key])}`);
+    }
+  }
+  print(`Preserve all other settings; ${plan.beforeRecord === null ? 'no installation ownership record will be created' : 'preserve installation ownership and update only its config hash'}. AO project, setup hooks and worker permissions will not change.`);
+  if (pending) print(`Resume interrupted re-init from ${reinitPath(configPath)}.`);
+  if (options.dryRun || (!options.yes && !parseYes(await readLine('Apply these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
+  applyReinit(plan);
+  try {
+    const doctor = await (options.doctor ?? ((path) => runDoctor({ configPath: path })))(configPath);
+    finishReinit(configPath);
+    return { ...result, applied: true, doctor };
+  } catch (error) {
+    throw new InitError(`Re-init updated ${configPath} and preserved installation ownership, but doctor failed: ${error instanceof Error ? error.message : 'unknown error'}; AO settings were unchanged; rerun tally init --config ${JSON.stringify(configPath)} to resume safely.`);
+  }
+}
+
 export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const command = options.command ?? defaultCommand;
   const print = options.print ?? console.log;
@@ -262,7 +304,8 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     if (options.dryRun || (!options.yes && !parseYes(await readLine('Resume these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
     return { ...result, applied: true, doctor: await finishInit(options, pending, resumeCommand, recordPath) };
   }
-  if (existsSync(configPath) || existsSync(recordPath)) throw new InitError(`Tally configuration or install record already exists; init will not overwrite it; use tally doctor --config ${JSON.stringify(configPath)} for a completed installation or tally uninstall --config ${JSON.stringify(configPath)} to remove an owned partial installation before retrying.`);
+  if (existsSync(configPath) || readReinit(configPath)) return reconfigureInit(options, configPath, print, readLine);
+  if (existsSync(recordPath)) throw new InitError(`An install record exists without ${configPath}; preserve it and use tally uninstall --config ${JSON.stringify(configPath)} to remove the owned partial installation before retrying.`);
   const baseBranch = (await commandOrNull(command, 'git', ['branch', '--show-current'], repoRoot)) || 'main';
   const remote = await commandOrNull(command, 'git', ['remote', 'get-url', 'origin'], repoRoot);
   let testCommand = detectTestCommand(repoRoot);

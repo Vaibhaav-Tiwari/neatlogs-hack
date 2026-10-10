@@ -163,6 +163,12 @@ The recovery record is removed after init and doctor complete. This is a
 recoverable transaction, not an atomic transaction spanning the AO daemon and
 the filesystem: an interrupted call may require checking its outcome.
 
+Run `tally init` again to connect a product you skipped. It proposes an
+integration-only diff, preserves the rest of your config and AO ownership,
+and asks for confirmation (default No). `--dry-run` shows the diff without
+writing. With no proposed changes it exits cleanly. Interrupted re-init
+writes can be resumed using the command printed in the error.
+
 `tally run --dry-run` runs the same loop with simulated workers instead of
 real ones.
 
