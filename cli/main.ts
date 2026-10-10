@@ -32,6 +32,8 @@ export interface CliOptions {
   port: number | undefined;
   /** Print route decisions without spawning workers. */
   plan: boolean;
+  /** Use live read-only integrations for `tally demo`. */
+  live: boolean;
   /** Integration to authenticate for `tally login`. */
   loginTarget: 'cfoai' | undefined;
 }
@@ -69,6 +71,7 @@ Options:
   --open            Alias for --dashboard
   --port <number>   Dashboard port (default: 5177; use 0 for any free port)
   --plan            Size and route tasks, but do not spawn workers
+  --live            For demo: use live read-only integrations with fake workers
   -h, --help        Show this help
   -v, --version     Show the version`;
 
@@ -88,6 +91,7 @@ export function parseCli(argv: string[]): ParsedCli {
         open: { type: 'boolean', default: false },
         port: { type: 'string' },
         plan: { type: 'boolean', default: false },
+        live: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
         version: { type: 'boolean', short: 'v', default: false },
       },
@@ -136,6 +140,7 @@ export function parseCli(argv: string[]): ParsedCli {
       dashboard: values.dashboard || values.open,
       port,
       plan: values.plan,
+      live: values.live,
       loginTarget: name === 'login' ? 'cfoai' : undefined,
     },
   };
@@ -182,6 +187,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
     io.stdout(`wrote ${result.ledgerPath}`);
     io.stdout(`updated ${result.latestRunDir}`);
     io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+    printIntegrations(result, io);
     if (options.dashboard) await dashboardCommand(options, io);
     return 0;
   } catch (e) {
@@ -191,16 +197,24 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
 
 async function demoCommand(_options: CliOptions, io: CliIO): Promise<number> {
   try {
-    const result = await runDemo();
+    const result = await runDemo({ live: _options.live });
     io.stdout(`wrote ${result.runStatePath}`);
     io.stdout(`wrote ${result.ledgerPath}`);
     io.stdout(`updated ${result.latestRunDir}`);
     io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+    printIntegrations(result, io);
     if (_options.dashboard) await dashboardCommand(_options, io);
     return 0;
   } catch (e) {
     return reportError('tally demo', e, io);
   }
+}
+
+function printIntegrations(result: Awaited<ReturnType<typeof runTally>>, io: CliIO): void {
+  const summary = Object.entries(result.runState.integrations)
+    .map(([name, state]) => `${name}=${state.status}${state.detail ? ` (${state.detail})` : ''}`)
+    .join('; ');
+  io.stdout(`integrations: ${summary}`);
 }
 
 async function loginCommand(options: CliOptions, io: CliIO): Promise<number> {

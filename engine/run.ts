@@ -36,20 +36,22 @@ export class RunError extends Error {
 }
 
 export async function runTally(options: RunOptions | RealRunOptions): Promise<RunResult> {
-  if (!options.dryRun) await validateRealRunConfig(loadConfig(options.configPath), options.configPath, options.preflightRunner);
-  const ports = options.dryRun ? { ...createDryRunPorts(), ...(options as RealRunOptions).ports } : (options as RealRunOptions).ports;
+  const config = loadConfig(options.configPath);
+  if (!options.dryRun) await validateRealRunConfig(config, options.configPath, options.preflightRunner);
+  const ports = options.dryRun ? { ...createDryRunPorts({ config, configPath: options.configPath }), ...(options as RealRunOptions).ports } : (options as RealRunOptions).ports;
   return runRealTally({ ...(options as RealRunOptions), ...(ports ? { ports } : {}) });
 }
 
-function demoConfigPath(): string {
-  const fromCwd = resolve('demo/tally.yaml');
+function demoConfigPath(live = false): string {
+  const file = live ? 'tally.live.yaml' : 'tally.yaml';
+  const fromCwd = resolve('demo', file);
   if (existsSync(fromCwd)) return fromCwd;
-  return resolve(new URL('../demo/tally.yaml', import.meta.url).pathname);
+  return resolve(new URL(`../demo/${file}`, import.meta.url).pathname);
 }
 
-export async function runDemo(options: Pick<RunOptions, 'outputDir' | 'latestRunDir' | 'now'> = {}): Promise<RunResult> {
+export async function runDemo(options: Pick<RunOptions, 'outputDir' | 'latestRunDir' | 'now'> & { live?: boolean } = {}): Promise<RunResult> {
   return runTally({
-    configPath: demoConfigPath(),
+    configPath: demoConfigPath(options.live),
     dryRun: true,
     baseline: false,
     outputDir: options.outputDir,

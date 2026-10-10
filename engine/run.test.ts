@@ -40,7 +40,7 @@ ceilings:
   bySizeUsd: { small: 1, medium: 4, large: 10 }
 budget: { source: config, usd: 40 }
 concurrency: 3
-integrations: { neatlogs: false, entire: true, cfoai: false, slack: false }
+integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 `,
   );
   writeFileSync(

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { SizingSignalsPort, LiveUsagePort, SessionControlPort } from '../agent/ports.js';
+import type { SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
 import { usdToNanos, validateLedger, validateRunState, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
@@ -67,6 +67,25 @@ const missingEntireSignals: SizingSignalsPort & { status: () => { status: 'missi
     return { status: 'missing', detail: 'Entire graph is unavailable. Falling back to code search. Fix: run `entire enable` in this repository.' };
   },
 };
+
+const scriptedEntireSignals: SizingSignalsPort & { status: () => { status: 'ok'; detail: string } } = {
+  async signalsFor() {
+    return { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' };
+  },
+  status() {
+    return { status: 'ok', detail: 'not used: sample tasks carry scripted sizing' };
+  },
+};
+
+class FakeTrace implements TracePort {
+  async span<T>(_name: string, _attributes: TraceAttributes, fn: (span: TraceSpan) => Promise<T>): Promise<T> {
+    return fn({ set() {} });
+  }
+
+  status() {
+    return { status: 'ok' as const, detail: 'https://app.neatlogs.com/traces/test-trace' };
+  }
+}
 
 const tokens: TokenUsage = { uncachedInput: 1000, cachedInput: 2000, output: 300, total: 3300 };
 
@@ -391,7 +410,7 @@ describe('runRealTally', () => {
     expect(readFileSync(join(result.outputDir, 'cfoai-spend-fallback.csv'), 'utf8')).toContain(result.ledger[0]!.attemptId);
   });
 
-  it('never writes simulated dry-run spend to cfo.ai', async () => {
+  it('reads cfo.ai budget in dry-run, reports it as live and never writes simulated spend', async () => {
     const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }', 'budget: { source: cfoai, usd: 10 }'));
     const worker = new FakeWorker();
@@ -416,6 +435,54 @@ describe('runRealTally', () => {
 
     expect(cfoai.writes).toEqual([]);
     expect(existsSync(join(result.outputDir, 'cfoai-spend-fallback.csv'))).toBe(false);
-    expect(result.runState.budget).toMatchObject({ source: 'config', limitNanos: usdToNanos(10) });
+    expect(result.runState.budget).toMatchObject({ source: 'cfoai', limitNanos: usdToNanos(40) });
+    expect(result.runState.integrations.cfoai).toEqual({ status: 'ok', detail: 'budget read; spend not written in a dry run' });
+  });
+
+  it('reports scripted dry-run Entire sizing as neutral instead of missing', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: true, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: true,
+      baseline: false,
+      outputDir: join(dir, 'entire-scripted'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals: scriptedEntireSignals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+      },
+    });
+
+    expect(result.runState.integrations.entire).toEqual({ status: 'ok', detail: 'not used: sample tasks carry scripted sizing' });
+  });
+
+  it('reports neatlogs status from the trace port in a dry run', async () => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: true,
+      baseline: false,
+      outputDir: join(dir, 'neatlogs-dry'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        trace: new FakeTrace(),
+      },
+    });
+
+    expect(result.runState.integrations.neatlogs).toEqual({ status: 'ok', detail: 'https://app.neatlogs.com/traces/test-trace' });
   });
 });

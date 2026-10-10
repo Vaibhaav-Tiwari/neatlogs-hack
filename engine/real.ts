@@ -143,7 +143,8 @@ function portStatus(port: unknown, fallback: RunState['integrations']['entire'])
   return withStatus.status?.() ?? fallback;
 }
 
-function integrationStates(config: TallyConfig, ports: RealRunPorts): RunState['integrations'] {
+function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource }): RunState['integrations'] {
+  const cfoaiStatus = ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
   return {
     neatlogs: config.integrations.neatlogs ? traceStatus(ports.trace) : { status: 'off', detail: null },
     entire: config.integrations.entire
@@ -152,7 +153,11 @@ function integrationStates(config: TallyConfig, ports: RealRunPorts): RunState['
           detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.',
         })
       : { status: 'off', detail: null },
-    cfoai: config.integrations.cfoai ? (ports.cfoai?.status() ?? { status: 'missing', detail: CFOAI_FIX_COMMAND }) : { status: 'off', detail: null },
+    cfoai: config.integrations.cfoai
+      ? options.dryRun && options.budgetSource === 'cfoai' && cfoaiStatus.status === 'ok'
+        ? { status: 'ok', detail: 'budget read; spend not written in a dry run' }
+        : cfoaiStatus
+      : { status: 'off', detail: null },
     github:
       config.backlog.source === 'github-issues'
         ? { status: 'ok', detail: null }
@@ -379,7 +384,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const ledger = loadLedger(ledgerPath);
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
   let budgetSource: BudgetSource = 'config';
-  if (!options.dryRun && options.budgetUsd === undefined && config.budget.source === 'cfoai' && ports.cfoai) {
+  if (options.budgetUsd === undefined && config.budget.source === 'cfoai' && ports.cfoai) {
     try {
       budgetLimitNanos = await ports.cfoai.budgetLimitNanos();
       budgetSource = 'cfoai';
@@ -423,7 +428,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         spentNanos: ledgerSpend(ledger),
       },
       tasks: taskStates,
-      integrations: integrationStates(config, ports),
+      integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource }),
     };
     assertValid(runState, ledger);
     writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
