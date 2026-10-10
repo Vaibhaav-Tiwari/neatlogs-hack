@@ -148,7 +148,10 @@ export interface Tier {
   name: string;
   /** Any harness the Agent Orchestrator supports. */
   harness: string;
+  /** Model id as the provider names it, e.g. a gateway alias such as nova-lite. */
   model: string;
+  /** Who serves and bills the model, e.g. anthropic, openai, litellm, bedrock. */
+  provider: string;
   /** Published list price. Cost is always tokens x this. */
   price: TierPrice;
   /** Share of the size ceiling this tier may spend, in (0, 1]. */

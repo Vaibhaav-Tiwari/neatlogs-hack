@@ -169,6 +169,14 @@ describe('config schema', () => {
     expect(validateConfig({ ...config, tiers }).ok).toBe(true);
   });
 
+  it('requires a provider on every tier and carries it through', () => {
+    expect(config.tiers.every((t) => typeof t.provider === 'string' && t.provider.length > 0)).toBe(true);
+    const { provider: _drop, ...withoutProvider } = config.tiers[0]!;
+    expect(validateConfig({ ...config, tiers: [withoutProvider] }).ok).toBe(false);
+    const gateway = { ...config.tiers[0]!, provider: 'litellm', model: 'nova-lite' };
+    expect(validateConfig({ ...config, tiers: [gateway] }).ok).toBe(true);
+  });
+
   it('rejects a ceiling fraction above 1 and an unknown budget source', () => {
     const tiers = [{ ...config.tiers[0]!, ceilingFraction: 1.5 }];
     expect(validateConfig({ ...config, tiers }).ok).toBe(false);

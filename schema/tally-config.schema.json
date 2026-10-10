@@ -45,11 +45,12 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "harness", "model", "price", "ceilingFraction"],
+        "required": ["name", "harness", "model", "provider", "price", "ceilingFraction"],
         "properties": {
           "name": { "type": "string", "minLength": 1 },
           "harness": { "type": "string", "minLength": 1 },
           "model": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "minLength": 1 },
           "price": {
             "type": "object",
             "additionalProperties": false,

@@ -46,7 +46,7 @@ During development, `npm run tally -- <command>` runs the CLI from source.
 
 Tally assumes nothing about the repository it works on. The repository, test
 command, model tiers, list prices, ceilings and budget all come from
-`tally.yaml`; see `schema/fixtures/finished-run/tally.yaml` for a complete
+`tally.yaml` (a tier is a name, harness, model id, provider, list price and ceiling share); see `schema/fixtures/finished-run/tally.yaml` for a complete
 example and `schema/tally-config.schema.json` for the rules.
 
 Money in the ledger and run state is stored as integer nanos of USD
