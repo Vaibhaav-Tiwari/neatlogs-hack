@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KD8KSGN60Z4G9BZZKFTV72",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-6/f4-run-picker",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/config.js",
+    "dashboard/index.html",
+    "dashboard/styles.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1128439,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 40720768,
+    "output_tokens": 102830,
+    "api_call_count": 291,
+    "subagent_tokens_complete": false
+  }
+}
