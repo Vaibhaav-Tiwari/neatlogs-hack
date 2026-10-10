@@ -462,7 +462,7 @@ function drawBudget(run, ledger) {
     .filter((row) => displayedCost(row) > 0)
     .map((row) => {
       const cls = row.result === 'stopped' ? 'seg stop' : isRunning(row) ? 'seg run' : 'seg';
-      const live = row.displayIsLiveEstimate ? ' live estimate toward ceiling' : '';
+      const live = row.displayIsReplay ? ' replay' : row.displayIsLiveEstimate ? ' live estimate toward ceiling' : '';
       const label = `${row.taskId} attempt ${row.attempt}, ${row.model}: ${usd(displayedCost(row))}${row.costSource === 'simulated' ? ' simulated' : ''}${live}`;
       return `<span class="${cls}" style="width:${((displayedCost(row) / scale) * 100).toFixed(3)}%" title="${esc(label)}"></span>`;
     })
@@ -533,7 +533,7 @@ function statusMark(kind, text) {
 function costCell(costNanos, ceilingNanos, stopped, costSource, liveEstimate = false) {
   const source = [
     liveEstimate ? '<span class="l-note">live estimate until the attempt writes final usage</span>' : '',
-    costSource === 'simulated' ? '<span class="l-note">simulated</span>' : costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : '',
+    costSource === 'replay' ? '<span class="l-note">replay</span>' : costSource === 'simulated' ? '<span class="l-note">simulated</span>' : costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : '',
   ].join('');
   if (!ceilingNanos) return `<p class="fig cost">${usd(costNanos)}</p>${source}`;
   const share = costNanos / ceilingNanos;
@@ -657,7 +657,7 @@ function drawLedger(run, ledger) {
           <dl class="ledger-task-figures"><div><dt>Size</dt><dd>${task.size ? esc(task.size) : '<span class="blank">unsized</span>'}</dd></div>
             <div><dt>Final route</dt><dd class="tier">${finalRouteCell(task, attempts, awaiting)}</dd></div>
             <div><dt>Attempts</dt><dd>${attemptCountCell(task, attempts, awaiting)}</dd></div>
-            <div class="task-total"><dt>Total cost</dt><dd>${costCell(attempts.reduce((sum,row)=>sum+displayedCost(row),0), null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</dd></div></dl>
+            <div class="task-total"><dt>Total cost</dt><dd>${costCell(attempts.reduce((sum,row)=>sum+displayedCost(row),0), null, attempts.some((row) => row.result === 'stopped'), attempts.some(row => row.displayIsReplay) ? 'replay' : attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</dd></div></dl>
         </header>
         <div class="ledger-decision"><span class="decision-label">Why</span>${taskDecision(attempts)}${task.statusReason ? `<p class="why-status">${reasonText(task.statusReason)}</p>` : ''}</div>
         ${keys.has(`${run.runId}:${task.taskId}`) ? `<div data-graph-slot="${esc(task.taskId)}"></div>` : ''}
@@ -699,7 +699,7 @@ function attemptTable(run, ledger) {
         <td data-label="Tier and model"><span class="fig">${esc(row.model)}</span><span class="l-note">${esc(row.tier)} tier, ${esc(row.harness)}</span></td>
         <td class="num" data-label="Tokens"><span class="fig">${count(row.tokens.total)}</span><span class="l-note">${tokenSplit}</span></td>
         <td class="num fig ${row.result === 'stopped' ? 'over' : ''}" data-label="Cost">${usd(displayedCost(row))}${
-          row.displayIsLiveEstimate ? '<span class="l-note">live estimate</span>' : row.costSource === 'simulated' ? '<span class="l-note">simulated</span>' : row.costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : ''
+          row.displayIsReplay ? '<span class="l-note">replay</span>' : row.displayIsLiveEstimate ? '<span class="l-note">live estimate</span>' : row.costSource === 'simulated' ? '<span class="l-note">simulated</span>' : row.costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : ''
         }</td>
         <td class="num fig" data-label="Ceiling">${row.ceilingNanos == null ? '<span class="blank">uncapped</span>' : usd(row.ceilingNanos)}</td>
         <td class="num fig" data-label="Time">${running ? `since ${clock(row.startedAt)}` : minutes(row.startedAt, row.endedAt ?? row.startedAt)}</td>
@@ -724,7 +724,7 @@ function drawFoot(source) {
 }
 
 function drawAll(state, source) {
-  state = withLiveCosts(state, { liveCeilingSec: config.liveCeilingSec });
+  state = withLiveCosts(state, { liveCeilingSec: config.liveCeilingSec, replay: Boolean(config.replaySec) });
   source = { ...source, ledger: state.ledger };
   const currentKey = comparableKey(state.run, state.ledger, source);
   const baselineKey = source.baseline ? comparableKey(source.baseline.run, source.baseline.ledger ?? []) : null;
@@ -826,7 +826,7 @@ async function tick() {
   if (config.replaySec) {
     replayStart ??= performance.now();
     const fraction = (performance.now() - replayStart) / (config.replaySec * 1000);
-    replaying = fraction < 1;
+    replaying = true;
     state = frameAt(lastGood.run, lastGood.ledger, fraction);
   }
   drawAll(state, { sample: usingSample, stale, baseline, replaying, runs, runsIndexError, comparisonRuns, ...experimentState });
