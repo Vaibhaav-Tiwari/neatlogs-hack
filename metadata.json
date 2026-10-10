@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4JST9ZPF27NGHCY8Y4GPDY9",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/root",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cli/main.ts",
+    "engine/config.ts",
+    "engine/env.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 10124,
+    "cache_read_tokens": 949256,
+    "output_tokens": 9230,
+    "api_call_count": 4
+  }
+}
