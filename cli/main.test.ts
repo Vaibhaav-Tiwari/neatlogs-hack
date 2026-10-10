@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -22,6 +22,17 @@ async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 describe('parseCli', () => {
+  it('prints an actionable init error for a static repo under --yes without writing configuration', async () => {
+    await withTempCwd(async () => {
+      writeFileSync('index.html', '<h1>Static site</h1>');
+      const { io, out, err } = capture();
+      expect(await main(['init', '--yes'], io)).toBe(2);
+      expect(out.join('\n')).toContain('No test command found');
+      expect(err.join('\n')).toContain('Tally cannot verify work without a test command');
+      expect(existsSync('tally.yaml')).toBe(false);
+      expect(existsSync('.tally')).toBe(false);
+    });
+  });
   it('parses each command', () => {
     for (const command of COMMANDS.filter((command) => command !== 'login' && command !== 'traces')) {
       expect(parseCli([command])).toMatchObject({ kind: 'command', command });

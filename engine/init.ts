@@ -10,6 +10,8 @@ export interface InitCommandResult {
   stderr: string;
 }
 
+export class InitError extends Error {}
+
 export type InitCommandRunner = (file: string, args: string[], options?: { cwd?: string }) => Promise<InitCommandResult>;
 export type PromptReader = (question: string, defaultValue?: string) => Promise<string>;
 
@@ -89,7 +91,7 @@ async function commandOrNull(command: InitCommandRunner, file: string, args: str
 function hasMakeTarget(cwd: string, target: string): boolean {
   const path = resolve(cwd, 'Makefile');
   if (!existsSync(path)) return false;
-  return new RegExp(`^${target}:`, 'm').test(readFileSync(path, 'utf8'));
+  return new RegExp(`^${target}[ \\t]*:`, 'm').test(readFileSync(path, 'utf8'));
 }
 
 function packageJsonScript(cwd: string, script: string): boolean {
@@ -97,25 +99,39 @@ function packageJsonScript(cwd: string, script: string): boolean {
   if (!existsSync(path)) return false;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as { scripts?: Record<string, unknown> };
-    return typeof parsed.scripts?.[script] === 'string';
+    const value = parsed.scripts?.[script];
+    return typeof value === 'string' && value.trim().length > 0;
   } catch {
     return false;
   }
 }
 
-function detectTestCommand(cwd: string): string {
+function detectTestCommand(cwd: string): string | null {
   if (hasMakeTarget(cwd, 'test')) return 'make test';
   if (packageJsonScript(cwd, 'test')) return 'npm test';
-  if (existsSync(resolve(cwd, 'pyproject.toml'))) return 'pytest';
-  return 'npm test';
+  for (const [file, section] of [
+    ['pyproject.toml', 'tool.pytest.ini_options'], ['pytest.ini', 'pytest'],
+    ['tox.ini', 'pytest'], ['setup.cfg', 'tool:pytest'],
+  ] as const) {
+    const path = resolve(cwd, file);
+    if (!existsSync(path)) continue;
+    const text = readFileSync(path, 'utf8');
+    if (text.split('\n').some((line) => line.trim().split('#')[0]!.trim() === `[${section}]`)) return 'pytest';
+  }
+  if (existsSync(resolve(cwd, 'Cargo.toml'))) return 'cargo test';
+  if (existsSync(resolve(cwd, 'go.mod'))) return 'go test ./...';
+  return null;
 }
 
 function detectSetupCommand(cwd: string): string | null {
   if (hasMakeTarget(cwd, 'setup')) return 'make setup';
-  if (existsSync(resolve(cwd, 'package-lock.json'))) return 'npm ci';
-  if (existsSync(resolve(cwd, 'pnpm-lock.yaml'))) return 'pnpm install --frozen-lockfile';
-  if (existsSync(resolve(cwd, 'yarn.lock'))) return 'yarn install --frozen-lockfile';
-  if (existsSync(resolve(cwd, 'uv.lock'))) return 'uv sync';
+  if (packageJsonScript(cwd, 'setup')) return 'npm run setup';
+  if (existsSync(resolve(cwd, 'package.json'))) {
+    if (existsSync(resolve(cwd, 'package-lock.json'))) return 'npm ci';
+    if (existsSync(resolve(cwd, 'pnpm-lock.yaml'))) return 'pnpm install --frozen-lockfile';
+    if (existsSync(resolve(cwd, 'yarn.lock'))) return 'yarn install --frozen-lockfile';
+  }
+  if (existsSync(resolve(cwd, 'pyproject.toml')) && existsSync(resolve(cwd, 'uv.lock'))) return 'uv sync';
   return null;
 }
 
@@ -138,21 +154,25 @@ function parseAoAgents(output: string | null): Set<string> {
   const found = new Set<string>();
   if (!output) return found;
   try {
-    const parsed = JSON.parse(output) as unknown;
-    const text = JSON.stringify(parsed).toLowerCase();
-    if (text.includes('codex')) found.add('codex');
-    if (text.includes('claude-code')) found.add('claude-code');
-    return found;
+    const parsed = JSON.parse(output) as { installed?: unknown };
+    // AO also lists every supported harness; those are not evidence of installation.
+    const agents = parsed.installed;
+    if (!Array.isArray(agents)) return found;
+    for (const agent of agents) {
+      if (agent && typeof agent === 'object' && agent.installed !== false &&
+          (agent.id === 'codex' || agent.id === 'claude-code')) found.add(agent.id);
+    }
   } catch {
-    const text = output.toLowerCase();
-    if (text.includes('codex')) found.add('codex');
-    if (text.includes('claude-code')) found.add('claude-code');
-    return found;
+    // An unavailable or malformed installation report must not invent a harness.
   }
+  return found;
 }
 
 function tiersFor(agents: Set<string>) {
-  const harness = agents.has('codex') || !agents.has('claude-code') ? 'codex' : 'claude-code';
+  if (!agents.has('codex') && !agents.has('claude-code')) {
+    throw new InitError('No installed Codex or Claude Code agent detected. Install and sign in to one, then check `ao agent ls --refresh --json` before running tally init.');
+  }
+  const harness = agents.has('codex') ? 'codex' : 'claude-code';
   const source = harness === 'codex' ? CODEx_TIERS : CLAUDE_TIERS;
   const provider = harness === 'codex' ? 'openai' : 'anthropic';
   return source.map(([name, model, input, cached, output, ceilingFraction]) => ({
@@ -192,6 +212,7 @@ async function ensureAoProject(input: { command: InitCommandRunner; cwd: string;
 
 export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const command = options.command ?? defaultCommand;
+  const print = options.print ?? console.log;
   const readLine = options.readLine ?? (options.yes || options.dryRun ? async (_question: string, defaultValue = '') => defaultValue : defaultReadLine);
   const cwd = options.cwd ?? process.cwd();
   const repoRoot = (await commandOrNull(command, 'git', ['rev-parse', '--show-toplevel'], cwd)) ?? cwd;
@@ -200,15 +221,29 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   if (existsSync(configPath) || existsSync(recordPath)) throw new Error('Tally configuration or install record already exists; init will not overwrite it.');
   const baseBranch = (await commandOrNull(command, 'git', ['branch', '--show-current'], repoRoot)) || 'main';
   const remote = await commandOrNull(command, 'git', ['remote', 'get-url', 'origin'], repoRoot);
-  const setupCommand = detectSetupCommand(repoRoot);
-  const testCommand = detectTestCommand(repoRoot);
+  let testCommand = detectTestCommand(repoRoot);
+  if (!testCommand) {
+    const explanation = 'No test command found. Tally cannot verify work without a test command; provide a shell command that checks the work. No configuration or AO settings have been changed.';
+    print(explanation);
+    if (options.yes || options.dryRun) throw new InitError(explanation);
+    testCommand = (await readLine('Test command (shell command)', '')).trim();
+    if (!testCommand) throw new InitError(explanation);
+  }
+  let setupCommand = detectSetupCommand(repoRoot);
+  if (!setupCommand) {
+    print('No setup command found. Leave it blank if no environment setup is needed; Tally will not invent an install command.');
+    if (!options.yes && !options.dryRun) setupCommand = (await readLine('Setup command (shell command; optional)', '')).trim() || null;
+  }
   const budgetUsd = parseBudget(await readLine('Monthly budget in USD', '40'));
   const issueLabel = await readLine('GitHub issue label for Tally tasks', 'tally');
   const neatlogs = parseYes(await readLine('Enable neatlogs traces? y/N', 'N'));
   const entire = parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
   const cfoai = parseYes(await readLine('Enable cfo.ai budget integration? y/N', 'N'));
   const agentOutput = await commandOrNull(command, 'ao', ['agent', 'ls', '--refresh', '--json'], cwd);
-  const tiers = tiersFor(parseAoAgents(agentOutput));
+  const agents = parseAoAgents(agentOutput);
+  const tiers = tiersFor(agents);
+  print(`Installed coding agents detected: ${[...agents].join(', ')}. Proposing ${tiers[0]!.harness} tiers.`);
+  if (!agents.has('codex')) print('Codex is not installed; proposing tiers for the installed Claude Code agent instead.');
   const projectId = basename(repoRoot);
   const config = {
     version: 1,
@@ -241,7 +276,6 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const existingProject = await commandOrNull(command, 'ao', ['project', 'get', projectId, '--json'], cwd);
   const currentProjectConfig = existingProject ? (parseYaml(existingProject) as { project?: { config?: unknown } })?.project?.config ?? {} : {};
   const nextProjectConfig = withPostCreate(currentProjectConfig, setupCommand);
-  const print = options.print ?? console.log;
   print('Tally init proposed changes:');
   print(`Create ${configPath}:\n${stringifyYaml(config)}`);
   print(`Create ${recordPath}: installation ownership record for uninstall.`);

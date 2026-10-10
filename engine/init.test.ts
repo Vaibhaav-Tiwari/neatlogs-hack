@@ -7,6 +7,91 @@ import { defaultCommand, runInit, type InitCommandRunner } from './init.js';
 import { installRecordPath } from './install-record.js';
 
 describe('runInit', () => {
+  function detectedAgents(repo: string, installed = ['claude-code']): InitCommandRunner {
+    return async (file, args) => {
+      if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
+      if (args[0] === 'agent') return { stdout: JSON.stringify({ supported: [{ id: 'codex' }, { id: 'claude-code' }], installed: installed.map((id) => ({ id })) }), stderr: '' };
+      if (args[1] === 'get') return { stdout: JSON.stringify({ project: { config: {} } }), stderr: '' };
+      return { stdout: '{}', stderr: '' };
+    };
+  }
+
+  it.each(['interactive', 'yes'] as const)('does not invent a command or mutate an empty static repo: %s', async (mode) => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-static-'));
+    writeFileSync(join(repo, 'index.html'), '<h1>Static site</h1>');
+    const output: string[] = [];
+    const command = vi.fn(detectedAgents(repo));
+    const readLine = vi.fn(async () => '');
+    await expect(runInit({ cwd: repo, command, readLine, doctor: async () => [], print: (line) => output.push(line), yes: mode === 'yes' })).rejects.toThrow('Tally cannot verify work without a test command');
+    expect(output.join('\n')).toContain('No test command found');
+    if (mode === 'interactive') expect(readLine).toHaveBeenCalledWith('Test command (shell command)', '');
+    else expect(readLine).not.toHaveBeenCalled();
+    expect(existsSync(join(repo, 'tally.yaml'))).toBe(false);
+    expect(existsSync(installRecordPath(join(repo, 'tally.yaml')))).toBe(false);
+    expect(command.mock.calls.some(([, args]) => args[0] === 'project')).toBe(false);
+  });
+
+  it('accepts explicit shell commands for a static repo and proposes only installed Claude tiers', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-explicit-'));
+    const output: string[] = [];
+    const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: (line) => output.push(line), doctor: async () => [],
+      readLine: async (question, fallback) => question === 'Test command (shell command)' ? 'test -f index.html && sh checks.sh' : question === 'Setup command (shell command; optional)' ? 'sh prepare.sh' : question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
+    const config = parseYaml(readFileSync(result.configPath, 'utf8'));
+    expect(config.test.command).toBe('test -f index.html && sh checks.sh');
+    expect(config.test.setupCommand).toBe('sh prepare.sh');
+    expect(config.tiers.every((tier: { harness: string }) => tier.harness === 'claude-code')).toBe(true);
+    expect(output.join('\n')).toContain('Codex is not installed');
+    expect(output.join('\n')).toContain('No setup command found');
+  });
+
+  it.each([
+    ['package.json', '{"scripts":{"test":"node --test"}}', 'npm test'],
+    ['Makefile', 'test :\n\ttrue\n', 'make test'],
+    ['pyproject.toml', '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n', 'pytest'],
+    ['pytest.ini', '[pytest]\n', 'pytest'],
+    ['Cargo.toml', '[package]\nname = "example"\n', 'cargo test'],
+    ['go.mod', 'module example.com/test\n', 'go test ./...'],
+  ])('detects tests from %s evidence', async (file, content, expected) => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-detect-'));
+    writeFileSync(join(repo, file), content);
+    const result = await runInit({ cwd: repo, command: detectedAgents(repo), dryRun: true, print: () => {} });
+    expect(result.testCommand).toBe(expected);
+    expect(result.setupCommand).toBeNull();
+    expect(result.applied).toBe(false);
+  });
+
+  it.each([
+    ['pyproject.toml', '[project]\nname = "no-tests"\n'],
+    ['package.json', '{"scripts":{"test":"  "}}'],
+    ['package-lock.json', '{}'],
+  ])('does not guess tests from insufficient evidence in %s', async (file, content) => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-no-evidence-'));
+    writeFileSync(join(repo, file), content);
+    await expect(runInit({ cwd: repo, command: detectedAgents(repo), doctor: async () => [], yes: true, print: () => {} })).rejects.toThrow('Tally cannot verify work without a test command');
+  });
+
+  it('refuses to propose an absent supported agent when none is installed', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-no-agent-'));
+    writeFileSync(join(repo, 'Makefile'), 'test:\n\ttrue\n');
+    await expect(runInit({ cwd: repo, command: detectedAgents(repo, []), doctor: async () => [], yes: true, print: () => {} })).rejects.toThrow('No installed Codex or Claude Code');
+    expect(existsSync(join(repo, 'tally.yaml'))).toBe(false);
+  });
+
+  it.each(['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'uv.lock'])('does not invent setup from an orphaned %s', async (lock) => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-orphan-lock-'));
+    writeFileSync(join(repo, 'Makefile'), 'test:\n\ttrue\n');
+    writeFileSync(join(repo, lock), '{}');
+    const result = await runInit({ cwd: repo, command: detectedAgents(repo), dryRun: true, print: () => {} });
+    expect(result.setupCommand).toBeNull();
+  });
+
+  it('allows an explicitly supplied test without inventing optional setup', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-no-setup-'));
+    const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, doctor: async () => [],
+      readLine: async (question, fallback) => question === 'Test command (shell command)' ? 'sh checks.sh' : question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
+    expect(result.setupCommand).toBeNull();
+    expect(parseYaml(readFileSync(result.configPath, 'utf8')).test).not.toHaveProperty('setupCommand');
+  });
   it.each(['decline', 'dry-run', 'yes'] as const)('shows the full summary before mutation: %s', async (mode) => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-consent-'));
     writeFileSync(join(repo, 'Makefile'), 'setup:\n\ttrue\ntest:\n\ttrue\n');
@@ -15,7 +100,7 @@ describe('runInit', () => {
     let confirmations = 0;
     const command: InitCommandRunner = async (file, args) => {
       if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
-      if (args[0] === 'agent') return { stdout: '[]', stderr: '' };
+      if (args[0] === 'agent') return { stdout: JSON.stringify({ installed: [{ id: 'codex' }] }), stderr: '' };
       if (args[1] === 'get') return { stdout: JSON.stringify({ project: { config: { postCreate: ['echo preserved'], worker: { agentConfig: { permissions: 'default' } } } } }), stderr: '' };
       expect(printed.join('\n')).toContain('Requested worker rules (not yet enforced)');
       expect(printed.join('\n')).toContain('git add and git commit');
@@ -62,7 +147,7 @@ describe('runInit', () => {
       if (joined === 'git rev-parse --show-toplevel') return { stdout: repo, stderr: '' };
       if (joined === 'git branch --show-current') return { stdout: 'main\n', stderr: '' };
       if (joined === 'git remote get-url origin') return { stdout: 'git@github.com:acme/widgets.git\n', stderr: '' };
-      if (joined === 'ao agent ls --refresh --json') return { stdout: JSON.stringify({ agents: [{ id: 'codex' }] }), stderr: '' };
+      if (joined === 'ao agent ls --refresh --json') return { stdout: JSON.stringify({ installed: [{ id: 'codex' }] }), stderr: '' };
       if (file === 'ao' && args[0] === 'project' && args[1] === 'get') {
         if (!projectAdded) throw new Error('missing project');
         return { stdout: JSON.stringify({ project: { config: {} } }), stderr: '' };
