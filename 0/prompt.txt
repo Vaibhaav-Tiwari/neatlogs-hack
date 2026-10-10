@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bjbd5j709</task-id>
+<tool-use-id>toolu_01BKM66C7h5fyFtf5EFSgTSV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-vaibhaav--ao-data-worktrees-neatlogs-hack-neatlogs-hack-6/62bf8255-2828-4016-bc6c-8d8c4893b1a2/tasks/bjbd5j709.output</output-file>
+<status>completed</status>
+<summary>Background command "Clone target repo to scratch and survey it" completed (exit code 0)</summary>
+</task-notification>
