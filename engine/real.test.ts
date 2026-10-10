@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +10,7 @@ import { runRealTally, type WorkerPort, type WorkerStartInput } from './real.js'
 
 const fixedNow = () => new Date('2026-10-11T03:00:00.000Z');
 
-function fixture() {
+function fixture(integrations = 'neatlogs: false, entire: false, cfoai: false, slack: false') {
   const dir = mkdtempSync(join(tmpdir(), 'tally-real-'));
   const configPath = join(dir, 'tally.yaml');
   writeFileSync(
@@ -41,7 +41,7 @@ tiers:
 ceilings:
   bySizeUsd: { small: 1, medium: 4, large: 10 }
 budget: { source: config, usd: 40 }
-integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
+integrations: { ${integrations} }
 `,
   );
   return { dir, configPath };
@@ -56,6 +56,15 @@ const intake: BacklogIntakePort = {
 const signals: SizingSignalsPort = {
   async signalsFor() {
     return { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' };
+  },
+};
+
+const missingEntireSignals: SizingSignalsPort & { status: () => { status: 'missing'; detail: string } } = {
+  async signalsFor() {
+    return { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' };
+  },
+  status() {
+    return { status: 'missing', detail: 'Entire graph is unavailable. Falling back to code search. Fix: run `entire enable` in this repository.' };
   },
 };
 
@@ -172,6 +181,73 @@ describe('runRealTally', () => {
     expect(secondWorker.starts).toHaveLength(0);
   });
 
+  it('resumes an interrupted task from its ledger row without redoing attempt one or double counting cost', async () => {
+    const { dir, configPath } = fixture();
+    const outputDir = join(dir, 'interrupted');
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(
+      join(outputDir, 'ledger.json'),
+      JSON.stringify(
+        [
+          {
+            schemaVersion: 1,
+            attemptId: 'run-20261011-030000Z:T1:1',
+            runId: 'run-20261011-030000Z',
+            taskId: 'T1',
+            taskTitle: 'Fix `calc.ts` should add values',
+            attempt: 1,
+            size: 'small',
+            tier: 'cheap',
+            model: 'claude-haiku-4-5-20251001',
+            harness: 'claude-code',
+            sessionId: 'session-old',
+            branch: 'tally/t1-old',
+            tokens,
+            estimatedCostNanos: 500_000_000,
+            costSource: 'list-price',
+            ceilingNanos: 200_000_000,
+            result: 'failed',
+            resultReason: 'tests failed before interruption',
+            escalatedFrom: null,
+            handoff: 'none',
+            prUrl: null,
+            traceUrl: null,
+            checkpointId: null,
+            checkpointUrl: null,
+            decision: 'Existing first attempt from the interrupted run.',
+            startedAt: '2026-10-11T03:00:00.000Z',
+            endedAt: '2026-10-11T03:00:00.000Z',
+          },
+        ],
+        null,
+        2,
+      ),
+    );
+    const worker = new FakeWorker();
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir,
+      now: fixedNow,
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+      },
+    });
+
+    expect(worker.starts).toHaveLength(1);
+    expect(worker.starts[0]).toMatchObject({ attempt: 2, model: 'claude-sonnet-5-5' });
+    expect(result.ledger.map((row) => `${row.taskId}:${row.attempt}:${row.result}`)).toEqual(['T1:1:failed', 'T1:2:passed']);
+    expect(result.ledger[1]?.escalatedFrom).toBe('run-20261011-030000Z:T1:1');
+    expect(result.runState.tasks[0]).toMatchObject({ status: 'passed', attempts: 2, spentNanos: 505_400_000 });
+    expect(result.runState.budget.spentNanos).toBe(505_400_000);
+  });
+
   it('keeps budget-bounded tasks out of the worker fleet', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
@@ -195,5 +271,29 @@ describe('runRealTally', () => {
     expect(worker.starts).toHaveLength(0);
     expect(result.ledger).toHaveLength(0);
     expect(result.runState.tasks[0]).toMatchObject({ status: 'skipped', statusReason: 'not started: no budget' });
+    expect(result.runState.budget.spentNanos).toBe(0);
+  });
+
+  it('reports Entire as missing when enabled sizing falls back to code search', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: true, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'entire-missing'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals: missingEntireSignals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+      },
+    });
+
+    expect(result.runState.integrations.entire).toMatchObject({ status: 'missing' });
+    expect(result.runState.integrations.entire.detail).toContain('entire enable');
   });
 });
