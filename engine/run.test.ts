@@ -77,6 +77,34 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 }
 
 describe('runTally dry-run', () => {
+  it('persists scripted changed files for passed and stopped attempts, unioning escalation edits', async () => {
+    const { dir, configPath } = writeFixture();
+    const tokens = { uncachedInput: 0, cachedInput: 0, output: 0, total: 0 };
+    writeFileSync(join(dir, 'backlog.yaml'), JSON.stringify({ tasks: [
+      { taskId: 'T1', title: 'Fix calc.ts', body: 'Expected calc.ts to add values; existing unit tests cover it.', size: 'small', scriptedOutcome: { attempts: [
+        { result: 'passed', tokens, changedFiles: ['calc.ts'] },
+      ] } },
+      { taskId: 'T2', title: 'Fix calc.ts', body: 'Expected calc.ts to add values; existing unit tests cover it.', size: 'small', scriptedOutcome: { attempts: [
+        { result: 'stopped', tokens, changedFiles: ['calc.ts'] },
+        { result: 'passed', tokens, changedFiles: ['tests/calc.test.ts', 'calc.ts'] },
+      ] } },
+    ] }));
+    const result = await runTally({ configPath, dryRun: true, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow });
+    expect(result.ledger.map((row) => row.result)).toEqual(['passed', 'stopped', 'passed']);
+    expect(result.runState.tasks.map((task) => task.changedFiles)).toEqual([['calc.ts'], ['calc.ts', 'tests/calc.test.ts']]);
+    expect(validateRunState(result.runState).ok).toBe(true);
+    const saved = JSON.parse(readFileSync(result.runStatePath, 'utf8'));
+    expect(saved.tasks[1].changedFiles).toEqual(['calc.ts', 'tests/calc.test.ts']);
+  });
+
+  it.each([['/absolute.ts'], ['../outside.ts'], ['src/../outside.ts'], ['C:/absolute.ts'], ['\\\\server\\share.ts'], [7], 'not-an-array'].map((changedFiles) => ({ changedFiles })))('rejects invalid scripted changed files: %j', async ({ changedFiles }) => {
+    const { dir, configPath } = writeFixture();
+    writeFileSync(join(dir, 'backlog.yaml'), JSON.stringify({ tasks: [{ taskId: 'T1', title: 'Fix calc.ts', size: 'small', scriptedOutcome: { attempts: [
+      { result: 'passed', tokens: {}, changedFiles },
+    ] } }] }));
+    await expect(runTally({ configPath, dryRun: true, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow })).rejects.toThrow(/changedFiles/);
+  });
+
   it('runs dry-run through the real loop with routing, ceiling stop, escalation and budget skip', async () => {
     const { dir, configPath } = writeFixture();
     const outputDir = join(dir, 'out');

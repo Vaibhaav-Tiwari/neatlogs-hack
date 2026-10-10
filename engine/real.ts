@@ -64,6 +64,8 @@ export interface WorkerResult {
 export interface WorkerPort {
   start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string | null; checkoutPath: string | null }>;
   wait(sessionId: string, options?: { timeoutMs?: number }): Promise<WorkerResult>;
+  /** Optional scripted evidence, read only once this attempt has settled. */
+  changedFilesFor?(sessionId: string): Promise<string[] | null>;
 }
 
 export interface FinalUsagePort extends LiveUsagePort {
@@ -554,6 +556,10 @@ async function runAttempt(input: {
       const files = await input.ports.publisher.changedFiles({ checkoutPath, branch: workerResult.branch, config: input.config, baseCommit: attemptBase }).catch(() => null);
       if (files) input.onChangedFiles(files);
     }
+  }
+  if (input.dryRun && input.onChangedFiles && input.ports.worker.changedFilesFor) {
+    const files = await input.ports.worker.changedFilesFor(started.sessionId);
+    if (files !== null) input.onChangedFiles(files);
   }
 
   return {
