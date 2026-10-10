@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util';
 import { BacklogError } from '../engine/backlog.js';
 import { ConfigError, loadConfig } from '../engine/config.js';
 import { runDoctor } from '../engine/doctor.js';
-import { runInit } from '../engine/init.js';
+import { InitError, runInit } from '../engine/init.js';
 import { runUninstall } from '../engine/uninstall.js';
 import { runExperiment } from '../engine/experiment.js';
 import { planTally, readPlanBudget } from '../engine/plan.js';
@@ -349,7 +349,7 @@ async function marketCommand(options: CliOptions, io: CliIO): Promise<number> {
 }
 
 function reportError(prefix: string, error: unknown, io: CliIO): number {
-  if (error instanceof ConfigError || error instanceof BacklogError || error instanceof RunError || error instanceof CrustDataError) {
+  if (error instanceof InitError || error instanceof ConfigError || error instanceof BacklogError || error instanceof RunError || error instanceof CrustDataError) {
     io.stderr(`${prefix}: ${error.message}`);
     return 2;
   }

@@ -79,6 +79,13 @@ applying detected defaults without prompts. Review model tiers, prices, tests
 and ceilings before starting workers. Scoped worker allow-list enforcement is
 not yet installed; init does not change global coding-agent settings.
 
+Init detects test/setup commands from repository evidence and proposes tiers
+only for installed Codex or Claude Code agents. When no test command is found,
+it asks for a shell command: Tally cannot verify work without one. Blank input
+or `--yes` with no detected test command fails without writing configuration
+or changing AO settings. An undetected setup command is optional and never
+guessed.
+
 Use `tally doctor`, then `tally run --plan` to inspect routing without spawning
 workers. A real `tally run` starts workers and can publish verified branches
 and pull requests. `tally run --dry-run` uses simulated workers instead.
