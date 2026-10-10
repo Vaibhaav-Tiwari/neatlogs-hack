@@ -5,9 +5,10 @@ import type { BudgetPort, SizingSignalsPort } from '../agent/ports.js';
 import { routeTask } from '../agent/router.js';
 import { sizeTask } from '../agent/sizer.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
+import { CfoaiBudgetAdapter } from '../adapters/cfoai.js';
 import { ConfigBacklogIntake } from '../adapters/github.js';
 import { usdToNanos } from '../schema/index.js';
-import type { TaskSize } from '../schema/index.js';
+import type { BudgetSource, TallyConfig, TaskSize } from '../schema/index.js';
 import { loadConfig } from './config.js';
 import { createDryRunPorts } from './dry-run.js';
 import { validateRealRunConfig, type PreflightRunner } from './preflight.js';
@@ -34,6 +35,11 @@ export interface PlanOptions {
   preflightRunner?: PreflightRunner;
 }
 
+export interface PlanBudgetInfo {
+  source: BudgetSource;
+  limitNanos: number;
+}
+
 class PlanBudget implements BudgetPort {
   private reservedNanos = 0;
   constructor(private readonly limitNanos: number) {}
@@ -51,6 +57,18 @@ const nullSignals: SizingSignalsPort = {
   },
 };
 
+export async function readPlanBudget(config: TallyConfig, options: Pick<PlanOptions, 'budgetUsd'>): Promise<PlanBudgetInfo> {
+  if (options.budgetUsd !== undefined) return { source: 'config', limitNanos: usdToNanos(options.budgetUsd) };
+  if (config.budget.source === 'cfoai') {
+    try {
+      return { source: 'cfoai', limitNanos: await new CfoaiBudgetAdapter({ config: config.budget.cfoai }).budgetLimitNanos() };
+    } catch {
+      return { source: 'config', limitNanos: usdToNanos(config.budget.usd) };
+    }
+  }
+  return { source: 'config', limitNanos: usdToNanos(config.budget.usd) };
+}
+
 export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
   const config = loadConfig(options.configPath);
   if (!options.dryRun) await validateRealRunConfig(config, options.configPath, options.preflightRunner);
@@ -65,7 +83,8 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
     if (options.only === undefined) return true;
     return task.taskId === options.only || String(task.issueNumber) === options.only;
   });
-  const budget = new PlanBudget(usdToNanos(options.budgetUsd ?? config.budget.usd));
+  const budgetInfo = await readPlanBudget(config, options);
+  const budget = new PlanBudget(budgetInfo.limitNanos);
   const history = new PriceHistory();
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
