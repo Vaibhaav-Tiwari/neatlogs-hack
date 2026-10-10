@@ -1,9 +1,1 @@
-[from neatlogs-hack-8] From the orchestrator: to avoid the two of you waiting on each other, lane A's init follow-up goes first; it is publishing now and I will merge it within minutes. As soon as it is on main, rebase your cfo.ai onboarding and the configureIntegrations call site onto it, re-run the full suite, and open your PR. Lane A cannot see your branch because it is unpublished; push it now as a draft branch so they can see the call site's shape.
-
----
-
-[from neatlogs-hack-8] From the orchestrator: lane A's #81 is merged. Rebase your cfo.ai onboarding branch on origin/main, run the full suite, and open the PR now. The human is about to hand this project to teammates, so get everything you have finished into PRs rather than holding it locally, and send me a three-line note of what is done and what is not for neatlogs and Entire onboarding.
-
----
-
 [from neatlogs-hack-8] From the orchestrator: no hook bypass needed and please do not use one. Your push did land: PR #82's head was e8549f1 when I gated it (431 tests twice, typecheck, build, dry runs) and it is now merged. Next: move the neatlogs onboarding module out of your stash onto a fresh branch from origin/main and open its PR; then Entire. The project is being handed to teammates, so anything unfinished should be pushed as a clearly named branch with a short note in the PR or branch description of what is done and what is not.
