@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KRED3A7NQ3VKEX39540XZD",
+  "session_id": "01a125ae-c722-75d0-93f1-147e3e8f6ffa",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T20:35:37.823497Z",
+  "branch": "ao/neatlogs-hack-6/replay-budget-precision",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/budget-link.js",
+    "dashboard/cost-format.js",
+    "dashboard/cost-format.test.js"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "9c3dae8b2ba7",
+  "checkpoint_transcript_start": 6061,
+  "transcript_lines_at_start": 6061,
+  "compact_transcript_start": 718,
+  "token_usage": {
+    "input_tokens": 74545,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1416064,
+    "output_tokens": 8154,
+    "api_call_count": 19
+  },
+  "session_metrics": {
+    "turn_count": 13
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T20:35:37.371892Z",
+    "agent_lines": 67,
+    "agent_removed": 12,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 67,
+    "total_lines_changed": 79,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
