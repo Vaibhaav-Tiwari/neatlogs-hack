@@ -82,6 +82,8 @@ const tokens: TokenUsage = { uncachedInput: 1000, cachedInput: 2000, output: 300
 class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
   starts: WorkerStartInput[] = [];
   stopped: string[] = [];
+  published: Array<{ branch: string; taskId: string }> = [];
+  commitsAheadCount = 1;
 
   async start(input: WorkerStartInput) {
     this.starts.push(input);
@@ -93,12 +95,25 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
     return { status: 'idle' as const, branch: `tally/t1-${index}`, checkoutPath: `/tmp/tally-${index}`, prUrl: `https://github.com/acme/payments-service/pull/${index}` };
   }
 
-  async usageFor() {
+  async usageFor(): Promise<{ tokens: TokenUsage; estimatedCostNanos: number } | null> {
     return { tokens, estimatedCostNanos: 123 };
+  }
+
+  async settledUsageFor() {
+    return this.usageFor();
   }
 
   async stop(sessionId: string) {
     this.stopped.push(sessionId);
+  }
+
+  async commitsAhead() {
+    return this.commitsAheadCount;
+  }
+
+  async publishPr(input: { branch: string; task: { taskId: string } }) {
+    this.published.push({ branch: input.branch, taskId: input.task.taskId });
+    return `https://github.com/acme/payments-service/pull/${this.published.length}`;
   }
 }
 
@@ -112,6 +127,19 @@ class NeedsInputWorker extends FakeWorker {
       prUrl: null,
       resultReason: 'worker asked for input: AO session entered needs_input/waiting_input',
     };
+  }
+}
+
+class UsageSettlesWorker extends FakeWorker {
+  usageCalls = 0;
+
+  async usageFor() {
+    return null;
+  }
+
+  async settledUsageFor() {
+    this.usageCalls += 1;
+    return { tokens, estimatedCostNanos: 123 };
   }
 }
 
@@ -193,7 +221,7 @@ describe('runRealTally', () => {
       outputDir: join(dir, 'out'),
       latestRunDir: join(dir, 'latest'),
       now: fixedNow,
-      ports: { intake, signals, worker, verifier, usage: worker, sessions: worker, trace },
+      ports: { intake, signals, worker, verifier, usage: worker, sessions: worker, publisher: worker, trace },
     });
 
     expect(worker.starts.map((start) => `${start.harness}:${start.model}`)).toEqual([
@@ -227,7 +255,7 @@ describe('runRealTally', () => {
     expect(JSON.parse(readFileSync(join(dir, 'latest', 'run.json'), 'utf8'))).toMatchObject({ runId: result.runState.runId });
   });
 
-  it('prompts workers to stay in their AO worktree, run setup, and open an unmerged PR', async () => {
+  it('prompts workers to stay in their AO worktree, run setup, and leave publishing to Tally by default', async () => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('test: { command: "npm test" }', 'test: { setupCommand: "npm ci", command: "npm test" }'));
     const worker = new FakeWorker();
@@ -238,6 +266,7 @@ describe('runRealTally', () => {
       baseline: false,
       outputDir: join(dir, 'prompt'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals,
@@ -245,6 +274,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
       },
     });
 
@@ -252,8 +282,90 @@ describe('runRealTally', () => {
     expect(prompt).toContain('Work only in the current working directory');
     expect(prompt).toContain('Never read or write any other checkout or path outside this worktree');
     expect(prompt).toContain('First run this setup command from the current working directory: npm ci');
-    expect(prompt).toContain('open a pull request against the default branch, and do not merge it');
+    expect(prompt).toContain('do not push and do not open a pull request; Tally will publish the verified branch');
     expect(prompt).not.toContain('/tmp/');
+  });
+
+  it('fails a real task that leaves the worker branch with no commits ahead of base', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    worker.commitsAheadCount = 0;
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'no-changes'),
+      now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier,
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+      },
+    });
+
+    expect(verifier.calls).toBe(0);
+    expect(worker.published).toHaveLength(0);
+    expect(result.ledger.every((row) => row.result === 'failed' && row.resultReason === 'no changes made' && row.prUrl === null)).toBe(true);
+  });
+
+  it('publishes the verified worker branch from Tally and records the PR URL', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'publish'),
+      now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+      },
+    });
+
+    expect(worker.published).toEqual([{ branch: 'tally/t1-1', taskId: 'T1' }]);
+    expect(result.ledger[0]).toMatchObject({ result: 'passed', prUrl: 'https://github.com/acme/payments-service/pull/1' });
+  });
+
+  it('records settled final usage instead of an early empty usage snapshot', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new UsageSettlesWorker();
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'settled-usage'),
+      now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+      },
+    });
+
+    expect(worker.usageCalls).toBe(1);
+    expect(result.ledger[0]!.tokens.total).toBe(tokens.total);
+    expect(result.ledger[0]!.estimatedCostNanos).toBeGreaterThan(0);
   });
 
   it('records a worker needs-input state as an error without running verification or escalating', async () => {
@@ -267,6 +379,7 @@ describe('runRealTally', () => {
       baseline: false,
       outputDir: join(dir, 'needs-input'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals,
@@ -274,6 +387,7 @@ describe('runRealTally', () => {
         verifier,
         usage: worker,
         sessions: worker,
+        publisher: worker,
       },
     });
 
@@ -300,6 +414,7 @@ describe('runRealTally', () => {
       dryRun: false,
       baseline: false,
       outputDir,
+      latestRunDir: join(dir, 'latest-resume'),
       now: fixedNow,
       ports: {
         intake,
@@ -308,6 +423,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: firstWorker,
         sessions: firstWorker,
+        publisher: firstWorker,
       },
     });
     const secondWorker = new FakeWorker();
@@ -316,6 +432,7 @@ describe('runRealTally', () => {
       dryRun: false,
       baseline: false,
       outputDir,
+      latestRunDir: join(dir, 'latest-resume'),
       now: fixedNow,
       ports: {
         intake,
@@ -324,6 +441,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: false, reason: 'should not run' }]),
         usage: secondWorker,
         sessions: secondWorker,
+        publisher: secondWorker,
       },
     });
 
@@ -381,6 +499,7 @@ describe('runRealTally', () => {
       dryRun: false,
       baseline: false,
       outputDir,
+      latestRunDir: join(dir, 'latest-interrupted'),
       now: fixedNow,
       ports: {
         intake,
@@ -389,6 +508,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
       },
     });
 
@@ -410,6 +530,7 @@ describe('runRealTally', () => {
       budgetUsd: 0.01,
       outputDir: join(dir, 'tiny'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals,
@@ -417,6 +538,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
       },
     });
 
@@ -435,6 +557,7 @@ describe('runRealTally', () => {
       baseline: false,
       outputDir: join(dir, 'entire-missing'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals: missingEntireSignals,
@@ -442,6 +565,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
       },
     });
 
@@ -467,6 +591,7 @@ describe('runRealTally', () => {
       baseline: false,
       outputDir: join(dir, 'cfoai'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals,
@@ -474,6 +599,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
         cfoai,
       },
     });
@@ -498,6 +624,7 @@ describe('runRealTally', () => {
       baseline: false,
       outputDir: join(dir, 'cfoai-missing'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals,
@@ -505,6 +632,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
         cfoai,
       },
     });
@@ -527,6 +655,7 @@ describe('runRealTally', () => {
       baseline: false,
       outputDir: join(dir, 'cfoai-dry'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals,
@@ -534,6 +663,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
         cfoai,
       },
     });
@@ -554,6 +684,7 @@ describe('runRealTally', () => {
       baseline: false,
       outputDir: join(dir, 'entire-scripted'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals: scriptedEntireSignals,
@@ -561,6 +692,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
       },
     });
 
@@ -577,6 +709,7 @@ describe('runRealTally', () => {
       baseline: false,
       outputDir: join(dir, 'neatlogs-dry'),
       now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
       ports: {
         intake,
         signals,
@@ -584,6 +717,7 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         usage: worker,
         sessions: worker,
+        publisher: worker,
         trace: new FakeTrace(),
       },
     });

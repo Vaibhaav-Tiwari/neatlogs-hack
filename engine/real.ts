@@ -22,6 +22,7 @@ import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.
 import { FilePriceHistory } from '../adapters/history-file.js';
 import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
+import { GitHubPublisher, type PublishPort } from '../adapters/publisher.js';
 import { CommandVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
 import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
@@ -36,6 +37,7 @@ export interface WorkerStartInput {
   tier: Tier;
   ceilingNanos: number | null;
   harness: string;
+  sessionMode?: 'chat' | 'tui';
   model: string;
   name: string;
   prompt: string;
@@ -53,6 +55,10 @@ export interface WorkerResult {
 export interface WorkerPort {
   start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string | null; checkoutPath: string | null }>;
   wait(sessionId: string): Promise<WorkerResult>;
+}
+
+export interface FinalUsagePort extends LiveUsagePort {
+  settledUsageFor?(sessionId: string): Promise<Awaited<ReturnType<LiveUsagePort['usageFor']>>>;
 }
 
 export interface CfoaiBudgetPort extends BudgetPort {
@@ -73,6 +79,7 @@ export interface RealRunPorts {
   handoff?: HandoffPort;
   trace?: TracePort;
   cfoai?: CfoaiBudgetPort;
+  publisher: PublishPort;
 }
 
 export interface RealRunOptions extends RunOptions {
@@ -122,6 +129,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     usage: overrides.usage ?? ao,
     sessions: overrides.sessions ?? ao,
     history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
+    publisher: overrides.publisher ?? new GitHubPublisher(),
     ...(overrides.handoff ? { handoff: overrides.handoff } : {}),
     ...(trace ? { trace } : {}),
     ...(cfoai ? { cfoai } : {}),
@@ -203,13 +211,16 @@ function initialTaskState(task: BacklogTask): TaskState {
 
 function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSummary: string | null, runId: string, attempt: number): string {
   const setup = config.test.setupCommand ? [`First run this setup command from the current working directory: ${config.test.setupCommand}`] : [];
+  const publishInstruction = config.repo.workerPublishesPr
+    ? 'Commit your changes on your current branch, push that branch, open a pull request against the default branch, and do not merge it.'
+    : 'Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.';
   return [
     `You are implementing Tally run ${runId}, task ${task.taskId}, attempt ${attempt}: ${task.title}`,
     `Neatlogs correlation: runId=${runId} taskId=${task.taskId} attempt=${attempt}.`,
     '',
     'You are already inside your own AO git worktree for the target repo. Work only in the current working directory.',
     'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
-    'Commit your changes on your current branch, push that branch, open a pull request against the default branch, and do not merge it.',
+    publishInstruction,
     '',
     task.body || '(No issue body was provided.)',
     '',
@@ -337,6 +348,7 @@ async function runAttempt(input: {
     tier: input.tier,
     ceilingNanos: input.ceilingNanos,
     harness: input.tier.harness,
+    sessionMode: input.tier.sessionMode,
     model: input.tier.model,
     name: `tally-${input.runId}-${input.task.taskId}-${input.attempt}`,
     prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary, input.runId, input.attempt),
@@ -357,6 +369,7 @@ async function runAttempt(input: {
   let tokens: TokenUsage | null = null;
   let estimatedCostNanos = 0;
   let costSource: LedgerRow['costSource'] = 'list-price';
+  let prUrl: string | null = null;
 
   if (first.kind === 'watch' && first.verdict.action === 'stop') {
     abort.abort();
@@ -368,7 +381,8 @@ async function runAttempt(input: {
   } else {
     abort.abort();
     workerResult = first.kind === 'worker' ? first.result : await worker;
-    const usage = await input.ports.usage.usageFor(started.sessionId);
+    const usagePort = input.ports.usage as FinalUsagePort;
+    const usage = usagePort.settledUsageFor ? await usagePort.settledUsageFor(started.sessionId) : await usagePort.usageFor(started.sessionId);
     const check = checkCeiling(usage, { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos });
     tokens = check.tokens;
     estimatedCostNanos = check.costNanos;
@@ -377,14 +391,48 @@ async function runAttempt(input: {
       result = 'error';
       resultReason = workerResult.resultReason ?? 'worker asked for input';
     } else {
-      const verification = await input.ports.verifier.verify({
-        checkoutPath: workerResult.checkoutPath ?? started.checkoutPath,
-        branch: workerResult.branch ?? started.branch,
-        repoPath: resolve(dirname(input.configPath), input.config.repo.path),
-        config: input.config,
-      });
-      result = verification.passed ? 'passed' : 'failed';
-      resultReason = verification.reason;
+      const checkoutPath = workerResult.checkoutPath ?? started.checkoutPath;
+      const branch = workerResult.branch ?? started.branch;
+      if (!input.dryRun && (!checkoutPath || !branch)) {
+        result = 'failed';
+        resultReason = 'worker checkout path or branch was not reported';
+      } else if (!input.dryRun && (await input.ports.publisher.commitsAhead({ checkoutPath: checkoutPath!, branch: branch!, config: input.config })) <= 0) {
+        result = 'failed';
+        resultReason = 'no changes made';
+      } else {
+        const verification = await input.ports.verifier.verify({
+          checkoutPath,
+          branch,
+          repoPath: resolve(dirname(input.configPath), input.config.repo.path),
+          config: input.config,
+        });
+        result = verification.passed ? 'passed' : 'failed';
+        resultReason = verification.reason;
+        if (verification.passed && !input.dryRun) {
+          if (input.config.repo.workerPublishesPr) {
+            prUrl = workerResult.prUrl;
+            if (!prUrl) {
+              result = 'failed';
+              resultReason = 'worker finished without opening a PR';
+            }
+          } else {
+            try {
+              prUrl = await input.ports.publisher.publishPr({
+                checkoutPath: checkoutPath!,
+                branch: branch!,
+                config: input.config,
+                task: input.task,
+                runId: input.runId,
+                attempt: input.attempt,
+              });
+            } catch (error) {
+              result = 'failed';
+              const message = error instanceof Error ? error.message : String(error);
+              resultReason = `PR publish failed: ${message}`;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -409,7 +457,7 @@ async function runAttempt(input: {
     resultReason,
     escalatedFrom: input.escalatedFrom,
     handoff: input.handoff,
-    prUrl: input.dryRun ? null : (workerResult?.prUrl ?? null),
+    prUrl: input.dryRun ? null : prUrl,
     traceId: input.traceId,
     traceUrl: null,
     checkpointId: null,

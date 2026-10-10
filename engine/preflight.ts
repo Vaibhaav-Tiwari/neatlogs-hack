@@ -81,9 +81,20 @@ export function checkWorkerAutoMode(projectId: string, projectConfig: unknown): 
   return {
     ok: false,
     mode,
-    detail: `worker permission mode is ${label}; unattended Tally workers can stall before running setup, tests, git push, or gh pr create`,
+    detail: `worker permission mode is ${label}; unattended Tally workers can stall before setup, edits, tests, or commits`,
     fix,
   };
+}
+
+function sessionModeProblems(config: TallyConfig): string[] {
+  return config.tiers.flatMap((tier, index) => {
+    if (tier.sessionMode === 'tui') return [];
+    const path = `tiers[${index}].sessionMode`;
+    if (tier.sessionMode === 'chat') {
+      return [`${path} is "chat"; real Tally workers need sessionMode: tui so unattended shell work does not route through chat approval prompts`];
+    }
+    return [`${path} is required for real runs; set sessionMode: tui after proving the harness can run unattended`];
+  });
 }
 
 function parseAoProject(stdout: string): AoProjectResponse {
@@ -97,6 +108,7 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
   if (!existsSync(resolvedRepo)) problems.push(`repo.path does not exist: ${resolvedRepo}`);
   const resolvedBacklog = backlogPath(config, configPath);
   if (resolvedBacklog && !existsSync(resolvedBacklog)) problems.push(`backlog.file does not exist: ${resolvedBacklog}`);
+  problems.push(...sessionModeProblems(config));
   if (config.repo.aoProject) {
     let project: AoProjectResponse | null = null;
     try {

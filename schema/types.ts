@@ -150,6 +150,8 @@ export interface Tier {
   name: string;
   /** Any harness the Agent Orchestrator supports. */
   harness: string;
+  /** AO session interface for real workers. TUI is required for unattended shell work. */
+  sessionMode?: 'chat' | 'tui';
   /** Model id as the provider names it, e.g. a gateway alias such as nova-lite. */
   model: string;
   /** Who serves and bills the model, e.g. anthropic, openai, litellm, bedrock. */
@@ -170,6 +172,8 @@ export interface TallyConfig {
     baseBranch: string;
     /** Agent Orchestrator project id, when it differs from the default for the checkout. */
     aoProject?: string;
+    /** Let the worker push/open its own PR. Defaults to false; Tally publishes after verification. */
+    workerPublishesPr?: boolean;
   };
   test: {
     /** Run in the task's checkout; exit code 0 means the task passed. */

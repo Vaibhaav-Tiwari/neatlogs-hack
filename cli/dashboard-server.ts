@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { extname, normalize, resolve, sep } from 'node:path';
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 
 export interface DashboardServerOptions {
   port?: number;
@@ -24,6 +24,15 @@ const MIME: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
 };
+
+interface RunIndexEntry {
+  id: string;
+  path: string;
+  updatedAt: string | null;
+  status: string | null;
+  mode: string | null;
+  repo: string | null;
+}
 
 function inside(root: string, file: string): boolean {
   const resolvedRoot = resolve(root);
@@ -58,6 +67,34 @@ function serveFile(root: string, path: string, index: boolean, status: (code: nu
   return file;
 }
 
+function runIndex(runsDir: string): { runs: RunIndexEntry[] } {
+  if (!existsSync(runsDir)) return { runs: [] };
+  const runs = readdirSync(runsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== 'latest')
+    .map((entry): RunIndexEntry | null => {
+      const runDir = join(runsDir, entry.name);
+      const runStatePath = join(runDir, 'run.json');
+      if (!inside(runsDir, runStatePath) || !existsSync(runStatePath)) return null;
+      try {
+        const run = JSON.parse(readFileSync(runStatePath, 'utf8')) as Record<string, unknown>;
+        const stat = statSync(runStatePath);
+        return {
+          id: entry.name,
+          path: `/runs/${encodeURIComponent(entry.name)}/`,
+          updatedAt: typeof run.updatedAt === 'string' ? run.updatedAt : stat.mtime.toISOString(),
+          status: typeof run.status === 'string' ? run.status : null,
+          mode: typeof run.mode === 'string' ? run.mode : null,
+          repo: typeof run.repo === 'string' ? run.repo : null,
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is RunIndexEntry => entry !== null)
+    .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
+  return { runs };
+}
+
 export async function startDashboardServer(options: DashboardServerOptions = {}): Promise<DashboardServer> {
   const host = options.host ?? '127.0.0.1';
   const dashboardDir = resolve(options.dashboardDir ?? 'dashboard');
@@ -68,6 +105,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const setStatus = (next: number) => {
       code = next;
     };
+    if (url.pathname === '/runs/index.json') {
+      response.writeHead(200, { 'content-type': MIME['.json'], 'cache-control': 'no-store' });
+      response.end(`${JSON.stringify(runIndex(runsDir), null, 2)}\n`);
+      return;
+    }
     const file =
       url.pathname === '/runs'
         ? null

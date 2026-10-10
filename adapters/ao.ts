@@ -20,6 +20,10 @@ export interface AoAdapterOptions {
   fetch?: typeof fetch;
   usageBaseUrl?: string;
   pollMs?: number;
+  idleStablePolls?: number;
+  needsInputGracePolls?: number;
+  usageSettlePolls?: number;
+  usageSettleMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -27,13 +31,14 @@ interface AoSessionJson {
   session?: {
     id?: string;
     status?: string;
+    updatedAt?: string;
     isTerminated?: boolean;
     branch?: string | null;
     worktreePath?: string | null;
     checkoutPath?: string | null;
     path?: string | null;
     prs?: { url?: string | null }[];
-    activity?: { state?: string; reason?: string | null; message?: string | null; detail?: string | null };
+    activity?: { state?: string; reason?: string | null; message?: string | null; detail?: string | null; lastActivityAt?: string | null };
     reason?: string | null;
     message?: string | null;
     detail?: string | null;
@@ -84,6 +89,14 @@ function needsInputReason(session: AoSessionJson['session']): string {
   return detail ? `worker asked for input: ${detail}` : `worker asked for input: AO session entered ${state}`;
 }
 
+function progressFingerprint(session: AoSessionJson['session'], usage: LiveUsage | null): string {
+  return JSON.stringify({
+    updatedAt: session?.updatedAt ?? null,
+    lastActivityAt: session?.activity?.lastActivityAt ?? null,
+    tokens: usage?.tokens.total ?? null,
+  });
+}
+
 export function usageFromAoPayload(payload: unknown): LiveUsage | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const totals = (payload as { totals?: unknown }).totals;
@@ -101,6 +114,10 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
   private readonly fetchImpl: typeof fetch;
   private readonly usageBaseUrl: string;
   private readonly pollMs: number;
+  private readonly idleStablePolls: number;
+  private readonly needsInputGracePolls: number;
+  private readonly usageSettlePolls: number;
+  private readonly usageSettleMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(private readonly options: AoAdapterOptions = {}) {
@@ -108,6 +125,10 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     this.fetchImpl = options.fetch ?? fetch;
     this.usageBaseUrl = options.usageBaseUrl ?? 'http://127.0.0.1:3001/api/v1';
     this.pollMs = options.pollMs ?? 5000;
+    this.idleStablePolls = options.idleStablePolls ?? 3;
+    this.needsInputGracePolls = options.needsInputGracePolls ?? Math.max(2, Math.ceil(30_000 / Math.max(1, this.pollMs)));
+    this.usageSettlePolls = options.usageSettlePolls ?? 5;
+    this.usageSettleMs = options.usageSettleMs ?? 1000;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
@@ -115,12 +136,17 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     const args = ['spawn'];
     const project = input.aoProject ?? this.options.project;
     if (project) args.push('--project', project);
+    if (input.sessionMode) args.push('--mode', input.sessionMode);
     args.push('--harness', input.harness, '--model', input.model, '--name', input.name, '--prompt', input.prompt);
     const { stdout } = await this.command('ao', args, { cwd: this.options.cwd });
     return { sessionId: parseSpawn(stdout), branch: null, checkoutPath: null };
   }
 
   async wait(sessionId: string): Promise<WorkerResult> {
+    let idlePolls = 0;
+    let needsInputPolls = 0;
+    let needsInputState: AoSessionJson['session'] | undefined;
+    let needsInputFingerprint: string | null = null;
     for (;;) {
       const session = await this.session(sessionId);
       const state = session.session;
@@ -129,17 +155,37 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
         return this.resultFrom(state, 'terminated');
       }
       if (isNeedsInput(state?.status) || isNeedsInput(state?.activity?.state)) {
-        const reason = needsInputReason(state);
-        try {
-          await this.stop(sessionId, reason);
-        } catch {
-          // The ledger still records the needs-input state; a later cleanup can see the session id.
+        idlePolls = 0;
+        const usage = await this.usageFor(sessionId).catch(() => null);
+        const fingerprint = progressFingerprint(state, usage);
+        needsInputPolls = fingerprint === needsInputFingerprint ? needsInputPolls + 1 : 1;
+        needsInputFingerprint = fingerprint;
+        needsInputState = state ?? needsInputState;
+        if (needsInputPolls >= this.needsInputGracePolls) {
+          const reason = needsInputReason(needsInputState);
+          try {
+            await this.stop(sessionId, reason);
+          } catch {
+            // The ledger still records the needs-input state; a later cleanup can see the session id.
+          }
+          return this.resultFrom(needsInputState, 'needs_input', reason);
         }
-        return this.resultFrom(state, 'needs_input', reason);
+        await this.sleep(this.pollMs);
+        continue;
       }
       if (status === 'idle' || state?.activity?.state === 'idle') {
-        return this.resultFrom(state, 'idle');
+        needsInputPolls = 0;
+        needsInputState = undefined;
+        needsInputFingerprint = null;
+        idlePolls += 1;
+        if (idlePolls >= this.idleStablePolls) return this.resultFrom(state, 'idle');
+        await this.sleep(this.pollMs);
+        continue;
       }
+      idlePolls = 0;
+      needsInputPolls = 0;
+      needsInputState = undefined;
+      needsInputFingerprint = null;
       await this.sleep(this.pollMs);
     }
   }
@@ -148,6 +194,23 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     const response = await this.fetchImpl(`${this.usageBaseUrl}/usage/sessions/${encodeURIComponent(sessionId)}`);
     if (!response.ok) return null;
     return usageFromAoPayload(await response.json());
+  }
+
+  async settledUsageFor(sessionId: string): Promise<LiveUsage | null> {
+    let latest: LiveUsage | null = null;
+    let stablePolls = 0;
+    for (let i = 0; i < this.usageSettlePolls; i += 1) {
+      const usage = await this.usageFor(sessionId);
+      if (usage && latest && JSON.stringify(usage) === JSON.stringify(latest)) {
+        stablePolls += 1;
+        if (stablePolls >= 1) return usage;
+      } else {
+        stablePolls = 0;
+      }
+      if (usage) latest = usage;
+      if (i < this.usageSettlePolls - 1) await this.sleep(this.usageSettleMs);
+    }
+    return latest;
   }
 
   async stop(sessionId: string, _reason: string): Promise<void> {
