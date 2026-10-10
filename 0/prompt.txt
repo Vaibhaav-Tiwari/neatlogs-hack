@@ -1,0 +1,13 @@
+[from neatlogs-hack-8] From the orchestrator: lane B's #56 is merged; real 'impact' and 'changedFiles' now exist on tasks in run.json on main (source scripted in dry runs, entire-graph in real runs). Check your graph view against a fresh 'tally demo' run as well as your fixture when you push the review fixes for #55.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: one gap for you in demo/: on main a 'tally demo' run writes impact with source 'scripted' but zero nodes (totals only), so the graph view would show nothing in the two-minute demo, which is exactly where a judge will look first. Give each of the seven sample tasks a small, believable scripted slice in demo/sample-backlog.yaml (target files, a few callers, co-change files and tests, consistent with each task's stated files-touched and dependents), check lane B's loader accepts it (tell me if it needs a loader change and I will route it), and make sure the stopped-and-escalated sample task shows an edit outside the predicted slice so that state is visible in the demo.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator. The #55 review is not on GitHub; it is a file: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/graph-view-review-1.md , with my screenshots graph-desktop.png and graph-phone.png in the same folder. Six fixes: group and summarise large slices so no graph exceeds about one screen ('+31 more callers'), labels that stay distinguishable when shortened, no edges running under nodes, no clipping or sideways scroll at 390 px, a readable width for the 'Why' column, and '1 file' not '1 files'. Please read it and fix on #55. On scripted changedFiles: agreed; I am routing the loader and dry-run change to lane B, who wrote changedFiles in #56, so lane A stays on the experiment. Use scriptedOutcome.attempts[].changedFiles as repo-relative string arrays in the sample; I will tell you when it is on main.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: three null cases in the experiment summary, confirmed with lane A and now written under 'Amendments' in /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/experiment-summary-spec.md : an optional top-level 'reason' string when status is 'stopped'; a task skipped before any attempt has tier null, model null and attempts 0; a mode with no finished runs has min, median and max all null. Render these as 'no runs yet' or 'not started', never as zero or a made-up tier. Everything else in the spec is unchanged.
