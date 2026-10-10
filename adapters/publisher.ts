@@ -62,6 +62,7 @@ export class GitHubPublisher implements PublishPort {
   async publishPr(input: PublishPrInput): Promise<string> {
     if (!input.config.repo.slug) throw new Error('repo.slug is required to open a GitHub pull request');
     await this.command('git', ['push', '-u', 'origin', `HEAD:${input.branch}`], { cwd: input.checkoutPath });
+    if (input.config.integrations.entire) await this.pushCheckpoints(input);
     try {
       const { stdout } = await this.command(
         'gh',
@@ -89,6 +90,24 @@ export class GitHubPublisher implements PublishPort {
         cwd: input.checkoutPath,
       });
       return stdout.trim();
+    }
+  }
+
+  private async pushCheckpoints(input: PublishPrInput): Promise<void> {
+    const options = { cwd: input.checkoutPath };
+    const { stdout: messages } = await this.command('git', [
+      'log', '--format=%B', '--end-of-options', `origin/${input.config.repo.baseBranch}..${input.branch}`, '--',
+    ], options);
+    const ids = new Set(Array.from(messages.matchAll(/^Entire-Checkpoint:\s*([A-Za-z0-9]+)\s*$/gm), (match) => match[1]!));
+    if (!ids.size) return;
+    const { stdout: refsOutput } = await this.command('git', ['for-each-ref', '--format=%(refname)', 'refs/entire/checkpoints/'], options);
+    const refs = refsOutput.trim().split(/\r?\n/).filter((ref) => ids.has(ref.split('/').at(-1)!));
+    for (const id of ids) {
+      if (!refs.some((ref) => ref.endsWith(`/${id}`))) throw new Error(`Entire checkpoint ref missing for ${id}`);
+    }
+    const { stdout: remotes } = await this.command('git', ['remote'], options);
+    for (const remote of ['origin', ...(remotes.split(/\r?\n/).includes('entire') ? ['entire'] : [])]) {
+      await this.command('git', ['push', remote, ...refs.map((ref) => `${ref}:${ref}`)], options);
     }
   }
 }

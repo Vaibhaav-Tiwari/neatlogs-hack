@@ -35,6 +35,48 @@ describe('GitHubPublisher', () => {
     await publisher.publishPr({ ...input, task: { taskId: 'T1', title: 'Fix replay', body: '', issueNumber: null, issueUrl: null, size: 'small', outcomes: ['passed'] }, runId: 'run', attempt: 1, scopeWarnings: ['vercel.json'] });
     expect(body).toContain('Scope warning: out-of-scope changes: vercel.json');
   });
+  it.each([false, true])('pushes only task checkpoint refs to origin and optional Entire remote (%s)', async (entireRemote) => {
+    const calls: string[][] = [];
+    const ref = 'refs/entire/checkpoints/VN/01M4PROOF';
+    const publisher = new GitHubPublisher(async (file, args) => {
+      calls.push([file, ...args]);
+      if (args[0] === 'log') return { stdout: 'task\nEntire-Checkpoint: 01M4PROOF\n', stderr: '' };
+      if (args[0] === 'for-each-ref') return { stdout: `${ref}\nrefs/entire/checkpoints/XX/OTHER\n`, stderr: '' };
+      if (args[0] === 'remote') return { stdout: `origin\n${entireRemote ? 'entire\n' : ''}`, stderr: '' };
+      if (args[0] === 'push') return { stdout: '', stderr: '' };
+      return { stdout: 'https://github.com/acme/payments/pull/42', stderr: '' };
+    });
+    await publisher.publishPr({ checkoutPath: '/worker', branch: 'worker', config: { ...config, integrations: { ...config.integrations, entire: true } },
+      task: { taskId: 'T1', title: 'Fix', body: '', issueNumber: null, issueUrl: null, size: 'small', outcomes: ['passed'] }, runId: 'r', attempt: 1 });
+    expect(calls.filter((call) => call[1] === 'push')).toEqual([
+      ['git', 'push', '-u', 'origin', 'HEAD:worker'],
+      ['git', 'push', 'origin', `${ref}:${ref}`],
+      ...(entireRemote ? [['git', 'push', 'entire', `${ref}:${ref}`]] : []),
+    ]);
+  });
+
+  it('surfaces missing checkpoint refs instead of opening a PR without its evidence', async () => {
+    let opened = false;
+    const publisher = new GitHubPublisher(async (file, args) => {
+      if (file === 'gh') opened = true;
+      return { stdout: args[0] === 'log' ? 'Entire-Checkpoint: 01M4MISSING\n' : '', stderr: '' };
+    });
+    await expect(publisher.publishPr({ checkoutPath: '/worker', branch: 'worker', config: { ...config, integrations: { ...config.integrations, entire: true } },
+      task: { taskId: 'T1', title: 'Fix', body: '', issueNumber: null, issueUrl: null, size: 'small', outcomes: ['passed'] }, runId: 'r', attempt: 1 })).rejects.toThrow('checkpoint ref missing');
+    expect(opened).toBe(false);
+  });
+
+  it('does not upload unrelated refs when the task has no checkpoint trailer', async () => {
+    const calls: string[] = [];
+    const publisher = new GitHubPublisher(async (file, args) => {
+      calls.push(`${file} ${args.join(' ')}`);
+      return { stdout: args[0] === 'log' ? 'ordinary commit\n' : 'https://github.com/acme/payments/pull/42', stderr: '' };
+    });
+    await publisher.publishPr({ checkoutPath: '/worker', branch: 'worker', config: { ...config, integrations: { ...config.integrations, entire: true } },
+      task: { taskId: 'T1', title: 'Fix', body: '', issueNumber: null, issueUrl: null, size: 'small', outcomes: ['passed'] }, runId: 'r', attempt: 1 });
+    expect(calls.filter((call) => call.startsWith('git push'))).toEqual(['git push -u origin HEAD:worker']);
+    expect(calls.some((call) => call.includes('for-each-ref'))).toBe(false);
+  });
   it('counts commits ahead of the base branch and publishes a PR from Tally', async () => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
     const command: PublishCommand = async (file, args, options) => {
