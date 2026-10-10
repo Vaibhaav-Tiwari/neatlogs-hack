@@ -1,0 +1,1 @@
+[from neatlogs-hack-8] From the orchestrator: #61 (scripted graphs for all seven demo tasks) and lane B's #62 (scripted changedFiles through dry runs) are merged. I have routed persisting budget.cfoai.pageUrl and tableUrl into run.json to lane B; your link logic is right, keep it. Tell me as soon as #55 is ready for a second look.
