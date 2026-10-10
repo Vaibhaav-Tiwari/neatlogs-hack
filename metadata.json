@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KQJ7FWBNZWEMH8XBBCAYRA",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/live-attempt-flush",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/cfoai.ts",
+    "agent/router.ts",
+    "cli/main.ts",
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/ledger-row.schema.json",
+    "schema/money.ts",
+    "schema/schema.test.ts",
+    "schema/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4620837,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 159006976,
+    "output_tokens": 479555,
+    "api_call_count": 1208
+  }
+}

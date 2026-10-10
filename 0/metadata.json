@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KQJ7FWBNZWEMH8XBBCAYRA",
+  "session_id": "01a125af-3ac6-7c02-a43b-a467b6fc3d3a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T20:20:15.394013Z",
+  "branch": "ao/neatlogs-hack-2/live-attempt-flush",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "adapters/cfoai.ts",
+    "agent/router.ts",
+    "cli/main.ts",
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/ledger-row.schema.json",
+    "schema/money.ts",
+    "schema/schema.test.ts",
+    "schema/types.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "85d72efdfa0b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 4620837,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 159006976,
+    "output_tokens": 479555,
+    "api_call_count": 1208
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T20:20:14.827303Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 84,
+    "human_modified": 18,
+    "human_removed": 0,
+    "total_committed": 84,
+    "total_lines_changed": 102,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
