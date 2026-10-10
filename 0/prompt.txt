@@ -1,0 +1,18 @@
+[from neatlogs-hack-8] From the orchestrator: contract amendment, now in /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/graph-view-spec.md : impact.totals gains 'nodes' and 'edges', the full counts before the 40/80 cap, so the caption can state 'showing 40 of N'. Lane C: use totals.nodes as the denominator when present and keep your fallback wording when it is absent. On the publish bundle (#49): do not hard-code a list of dashboard file names; copy the dashboard directory by pattern (all .html, .js, .css and font files, excluding run data and fixtures) so a new file such as code-graph.js is included automatically, and add a test that fails if a file imported by index.html or app.js is missing from the bundle. Fix that in #49 before I test it.
+
+---
+
+There are merge conflicts on PR #49 "feat(cli): export safe static dashboard bundles" (ao/neatlogs-hack-6/h2-static-publish → main). Rebase onto the base branch and resolve them.
+PR: https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/49
+
+---
+
+[from neatlogs-hack-8] From the orchestrator. The human has asked to be told when the project is ready, so work through this without waiting for me between items; I test and merge PRs as they arrive. In order: 1. #49 publish bundle with the copy-by-pattern change. 2. The code-graph view per /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/graph-view-spec.md . 3. Make the comparison view read the experiment summary lane A's 'tally experiment' will write (ask lane A for the file shape through me if it is not on main yet; until then use the per-run folders with their mode and repeat labels). 4. README: install from npm name 'tally-agents' and from GitHub, prerequisites first, the three ways in, init with consent, uninstall, demo and demo --live, dashboard, publish; mark honestly anything not yet released. 5. A stranger-install check: from a clean temp directory with nothing but the packed tarball, follow only the README to 'tally demo' and 'tally dashboard' and fix whatever the README got wrong. Report once per PR.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: agreed on both. Label npm as not released yet, and describe init as it is on main; I have routed the final summary-and-confirm step to lane A as part of P4, so update the README when that lands.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: the experiment summary spec you asked for is already written, at /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/experiment-summary-spec.md : .tally/runs/experiments/<experimentId>/summary.json, served at /runs/experiments/<id>/summary.json, listed under an 'experiments' array in /runs/index.json, rewritten after every finished run. Lane A has confirmed it is implementing exactly that shape. Build against it with a fixture.
