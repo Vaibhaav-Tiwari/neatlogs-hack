@@ -15,6 +15,7 @@ class FakeCfoaiClient implements CfoaiMcpClient {
     ['Agent spend', 3],
   ]);
   editStatus = 'applied';
+  editReason: string | undefined;
 
   async connect() {
     this.connected += 1;
@@ -36,7 +37,7 @@ class FakeCfoaiClient implements CfoaiMcpClient {
       for (const [row, value] of update.values.rows) {
         this.values.set(row, value);
       }
-      return { structuredContent: { status: this.editStatus } };
+      return { structuredContent: { status: this.editStatus, reason: this.editReason } };
     }
     throw new Error(`unexpected tool ${name}`);
   }
@@ -231,6 +232,21 @@ describe('CfoaiBudgetAdapter', () => {
       status: 'missing',
       detail: 'cfo.ai MCP tool edit_table_blocks is missing. Run `tally login cfoai` to connect cfo.ai.',
     });
+  });
+
+  it('accepts already-satisfied no-op receipts only after verifying Agent spend and tier row read-backs', async () => {
+    const client = new FakeCfoaiClient();
+    client.editStatus = 'no_op';
+    client.editReason = 'already_satisfied';
+    for (const row of ['Tier spend - cheap', 'Tier spend - middle', 'Tier spend - top', 'Run spend - current', 'Run spend - cumulative']) client.values.set(row, 0);
+    const adapter = new CfoaiBudgetAdapter({ client, now });
+    await adapter.writeCumulativeActualSpend(0);
+    await adapter.writeSpendDetail({ attempts: [], cumulativeRunSpendNanos: 0 });
+    expect(adapter.status().status).toBe('ok');
+    const call = client.callTool.bind(client);
+    client.callTool = async (name, args) => name === 'edit_table_blocks' ? { structuredContent: { status: 'no_op', reason: 'already_satisfied' } } : call(name, args);
+    await expect(adapter.writeCumulativeActualSpend(1_000)).rejects.toThrow('read-back');
+    expect(adapter.status()).toMatchObject({ status: 'error', detail: expect.stringContaining('write failed:') });
   });
 
   it('rejects a write when cfo.ai does not apply the update', async () => {

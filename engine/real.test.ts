@@ -294,6 +294,7 @@ describe('runRealTally', () => {
     const contexts: Array<{ entireSessionId?: string | null }> = [];
     const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'native'), latestRunDir: join(dir, 'latest'), now: fixedNow,
       ports: { intake: { tasks: async (...args) => (await intake.tasks(...args)).map(t => ({ ...t, firstAttemptCeilingUsd: 0.001 })) },
+        worktrees: { checkoutPathFor: async () => null, commitWorkInProgress: async () => null },
         signals, worker, usage: worker, sessions: worker, publisher: worker, trace: new FakeTrace(),
         history: { lookup: async () => null, record: async () => {} },
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
@@ -301,6 +302,21 @@ describe('runRealTally', () => {
         workerTraceDrain: { drainWorker: async c => { contexts.push(c); } } } });
     expect(result.ledger[0]).toMatchObject({ result: 'stopped', checkpointId: null, entireSessionId: 'native-session-1', sessionId: 'session-1' });
     expect(contexts[0]?.entireSessionId).toBe('native-session-1');
+  });
+  it.each([false, true])('records zero-token startup as error and retries only once (always zero: %s)', async (alwaysZero) => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const usage = worker.usageFor.bind(worker);
+    worker.usageFor = async () => alwaysZero || worker.starts.length === 1 ? null : usage();
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier } });
+    expect(worker.starts).toHaveLength(2);
+    expect(result.ledger[0]).toMatchObject({ result: 'error', resultReason: 'worker never started', estimatedCostNanos: 0 });
+    expect(result.ledger[1]?.attemptId).toContain('startup-retry');
+    expect(result.ledger[1]?.result).toBe(alwaysZero ? 'error' : 'passed');
+    expect(verifier.calls).toBe(alwaysZero ? 0 : 1);
+    expect(new Set(result.ledger.map((row) => row.attemptId)).size).toBe(2);
   });
   it.each([
     { dryRun: true, source: 'cfoai', enabled: false },
@@ -348,6 +364,7 @@ describe('runRealTally', () => {
     const tasks: BacklogIntakePort = { tasks: async (...args) => (await intake.tasks(...args)).map((task) => ({ ...task, firstAttemptCeilingUsd: 0.001 })) };
     const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
       ports: { intake: tasks, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        worktrees: { checkoutPathFor: async () => null, commitWorkInProgress: async () => null },
         handoff: { summaryFor: async () => ({ type: 'entire-handoff', summary: 'Continue partial calc.ts.', branch: 'tally/t1-1' }) } } });
     expect(result.ledger.map((row) => row.result)).toEqual(['stopped', 'passed']);
     expect(worker.starts[1]).toMatchObject({ continueBranch: 'tally/t1-1', continueSessionId: 'session-1' });
@@ -792,7 +809,7 @@ describe('runRealTally', () => {
       },
     });
 
-    expect(worker.usageCalls).toBe(1);
+    expect(worker.usageCalls).toBe(2);
     expect(result.ledger[0]!.tokens.total).toBe(tokens.total);
     expect(result.ledger[0]!.estimatedCostNanos).toBeGreaterThan(0);
   });
@@ -1106,7 +1123,7 @@ describe('runRealTally', () => {
     expect(result.runState.budget).toMatchObject({ source: 'config', limitNanos: usdToNanos(10) });
     expect(cfoai.writes).toEqual([]);
     expect(cfoai.detailWrites).toEqual([]);
-    expect(result.runState.integrations.cfoai).toMatchObject({ status: 'missing' });
+    expect(result.runState.integrations.cfoai).toMatchObject({ status: 'error' });
     expect(readFileSync(join(result.outputDir, 'cfoai-spend-fallback.csv'), 'utf8')).toContain(result.ledger[0]!.attemptId);
   });
 

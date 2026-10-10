@@ -29,6 +29,8 @@ export interface AoAdapterOptions {
   usageSettlePolls?: number;
   usageSettleMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+  startupTimeoutMs?: number;
 }
 
 interface AoSessionJson {
@@ -197,6 +199,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
       if (project) args.push('--project', project);
       if (input.sessionMode) args.push('--mode', input.sessionMode);
       args.push('--branch', branch, '--harness', input.harness, '--model', input.model, '--name', input.name);
+      if (!patch && !untracked.length) args.push('--prompt', input.prompt);
       sessionId = parseSpawn((await this.command('ao', args, { cwd: this.options.cwd })).stdout);
       const current = (await this.session(sessionId)).session;
       if (current?.branch !== branch) throw new Error(`continuation branch mismatch: expected ${branch}, got ${current?.branch}`);
@@ -217,7 +220,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
         if (parent !== root && !parent.startsWith(root + sep)) throw new Error('handoff file escapes worker checkout');
         await cp(source, target, { dereference: false, force: false, errorOnExist: true });
       }
-      await this.command('ao', ['send', '--session', sessionId, '--message', input.prompt], { cwd: this.options.cwd });
+      if (patch || untracked.length) await this.command('ao', ['send', '--session', sessionId, '--message', input.prompt], { cwd: this.options.cwd });
       return { sessionId, branch, checkoutPath };
     } catch (error) {
       if (sessionId) await this.stop(sessionId, 'continuation preparation failed');
@@ -233,12 +236,22 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     let needsInputState: AoSessionJson['session'] | undefined;
     let needsInputFingerprint: string | null = null;
     const timeoutMs = options.timeoutMs;
-    const deadline = timeoutMs === undefined ? null : Date.now() + timeoutMs;
+    const now = this.options.now ?? Date.now;
+    const began = now();
+    const deadline = timeoutMs === undefined ? null : began + timeoutMs;
+    const startupDeadline = began + (this.options.startupTimeoutMs ?? 60_000);
+    let usedTokens = false;
     for (;;) {
       const session = await this.session(sessionId);
       const state = session.session;
       const status = state?.status ?? state?.activity?.state ?? 'unknown';
-      if (deadline !== null && Date.now() >= deadline) {
+      const usage = await this.usageFor(sessionId).catch(() => null);
+      usedTokens ||= (usage?.tokens.total ?? 0) > 0;
+      if (!usedTokens && (state?.isTerminated || status === 'terminated' || (status === 'idle' && now() >= startupDeadline))) {
+        await this.stop(sessionId, 'worker never started');
+        return this.resultFrom(state, 'never_started', 'worker never started');
+      }
+      if (deadline !== null && now() >= deadline) {
         const reason = `worker exceeded wall-clock limit of ${Math.round(timeoutMs! / 1000)}s`;
         try {
           await this.stop(sessionId, reason);
@@ -252,7 +265,6 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
       }
       if (isNeedsInput(state?.status) || isNeedsInput(state?.activity?.state)) {
         idlePolls = 0;
-        const usage = await this.usageFor(sessionId).catch(() => null);
         const fingerprint = progressFingerprint(state, usage);
         needsInputPolls = fingerprint === needsInputFingerprint ? needsInputPolls + 1 : 1;
         needsInputFingerprint = fingerprint;
@@ -273,7 +285,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
         needsInputPolls = 0;
         needsInputState = undefined;
         needsInputFingerprint = null;
-        idlePolls += 1;
+        idlePolls = usedTokens ? idlePolls + 1 : 0;
         if (idlePolls >= this.idleStablePolls) return this.resultFrom(state, 'idle');
         await this.sleep(this.pollMs);
         continue;
