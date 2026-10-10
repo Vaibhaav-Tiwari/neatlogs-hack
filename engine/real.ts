@@ -545,6 +545,9 @@ async function runAttempt(input: {
       checkpointId = null;
       checkpointUrl = null;
     }
+    if (!entireSessionId) {
+      entireSessionId = await input.ports.checkpoints.sessionIdFor?.({ sessionId: started.sessionId, branch, checkoutPath }).catch(() => null) ?? null;
+    }
   }
   } catch (error) {
     result = 'error';

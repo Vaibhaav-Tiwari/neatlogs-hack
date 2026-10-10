@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { EntireCheckpointAdapter, type CommandRunner } from './entire-checkpoints.js';
 
 describe('EntireCheckpointAdapter', () => {
+  it('finds a zero-turn stopped native session without a checkpoint in the shared repository', async () => {
+    const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', command: async (file, args, options) => {
+      expect(file).toBe('entire');
+      expect(args).toEqual(['session', 'list', '--json']);
+      expect(options?.cwd).toBe('/repo');
+      return { stdout: JSON.stringify([
+        { session_id: 'older', worktree_id: 'worker-22', branch: 'same-branch' },
+        { session_id: 'native-stopped', worktree_id: 'worker-23', branch: 'same-branch', turns: 0, status: 'active' },
+      ]), stderr: '' };
+    } });
+    expect(await adapter.sessionIdFor({ sessionId: 'worker-23', branch: 'same-branch', checkoutPath: '/deleted/worktree' })).toBe('native-stopped');
+    expect(await adapter.sessionIdFor({ sessionId: 'worker-24', branch: 'same-branch' })).toBeNull();
+  });
+
+  it('rejects ambiguous native sessions and tolerates missing Entire session metadata', async () => {
+    const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', command: async () => ({ stdout: JSON.stringify([
+      { session_id: 'a', worktree_path: '/worker' }, { session_id: 'b', worktree_path: '/worker' },
+    ]), stderr: '' }) });
+    expect(await adapter.sessionIdFor({ sessionId: 'ao-worker', checkoutPath: '/worker' })).toBeNull();
+    const missing = new EntireCheckpointAdapter({ repoPath: '/repo', command: async () => { throw new Error('missing'); } });
+    expect(await missing.sessionIdFor({ sessionId: 'ao-worker' })).toBeNull();
+  });
   it('generates a handoff summary only with explicit opt-in (fake provider)', async () => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
     const runner: CommandRunner = async (file, args, options) => {
