@@ -21,7 +21,21 @@ describe('parseCli', () => {
     expect(parseCli(['run', '--dry-run', '--budget', '40', '--only', 'T3', '--baseline', '--config', 'x/tally.yaml', '--dashboard', '--port', '0'])).toEqual({
       kind: 'command',
       command: 'run',
-      options: { config: 'x/tally.yaml', dryRun: true, baseline: true, budgetUsd: 40, only: 'T3', dashboard: true, port: 0, plan: false, live: false, loginTarget: undefined },
+      options: {
+        config: 'x/tally.yaml',
+        dryRun: true,
+        baseline: true,
+        budgetUsd: 40,
+        only: 'T3',
+        dashboard: true,
+        port: 0,
+        plan: false,
+        live: false,
+        loginTarget: undefined,
+        output: undefined,
+        limit: undefined,
+        keyword: undefined,
+      },
     });
   });
 
@@ -29,7 +43,21 @@ describe('parseCli', () => {
     expect(parseCli(['run'])).toEqual({
       kind: 'command',
       command: 'run',
-      options: { config: 'tally.yaml', dryRun: false, baseline: false, budgetUsd: undefined, only: undefined, dashboard: false, port: undefined, plan: false, live: false, loginTarget: undefined },
+      options: {
+        config: 'tally.yaml',
+        dryRun: false,
+        baseline: false,
+        budgetUsd: undefined,
+        only: undefined,
+        dashboard: false,
+        port: undefined,
+        plan: false,
+        live: false,
+        loginTarget: undefined,
+        output: undefined,
+        limit: undefined,
+        keyword: undefined,
+      },
     });
   });
 
@@ -37,7 +65,21 @@ describe('parseCli', () => {
     expect(parseCli(['login', 'cfoai'])).toEqual({
       kind: 'command',
       command: 'login',
-      options: { config: 'tally.yaml', dryRun: false, baseline: false, budgetUsd: undefined, only: undefined, dashboard: false, port: undefined, plan: false, live: false, loginTarget: 'cfoai' },
+      options: {
+        config: 'tally.yaml',
+        dryRun: false,
+        baseline: false,
+        budgetUsd: undefined,
+        only: undefined,
+        dashboard: false,
+        port: undefined,
+        plan: false,
+        live: false,
+        loginTarget: 'cfoai',
+        output: undefined,
+        limit: undefined,
+        keyword: undefined,
+      },
     });
     expect(parseCli(['login'])).toMatchObject({ kind: 'error' });
   });
@@ -50,10 +92,19 @@ describe('parseCli', () => {
     expect(parseCli(['demo', '--live'])).toMatchObject({ kind: 'command', command: 'demo', options: { live: true } });
   });
 
+  it('parses market options', () => {
+    expect(parseCli(['market', '--output', 'out/market', '--limit', '3', '--keyword', 'GitHub Copilot'])).toMatchObject({
+      kind: 'command',
+      command: 'market',
+      options: { output: 'out/market', limit: 3, keyword: 'GitHub Copilot' },
+    });
+  });
+
   it('rejects a budget that is not a positive number', () => {
     expect(parseCli(['run', '--budget', 'lots'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['run', '--budget', '-5'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['dashboard', '--port', 'lots'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['market', '--limit', '0'])).toMatchObject({ kind: 'error' });
   });
 
   it('rejects unknown commands and unknown flags', () => {

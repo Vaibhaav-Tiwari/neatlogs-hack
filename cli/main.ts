@@ -7,10 +7,11 @@ import { runDoctor } from '../engine/doctor.js';
 import { planTally, readPlanBudget } from '../engine/plan.js';
 import { RunError, runDemo, runTally } from '../engine/run.js';
 import { loginCfoai } from '../adapters/cfoai.js';
+import { CrustDataError, runCrustDataMarketSearch } from '../adapters/crustdata.js';
 import { nanosToUsd } from '../schema/index.js';
 import { startDashboardServer } from './dashboard-server.js';
 
-export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'doctor', 'login'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'doctor', 'login', 'market'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -36,6 +37,12 @@ export interface CliOptions {
   live: boolean;
   /** Integration to authenticate for `tally login`. */
   loginTarget: 'cfoai' | undefined;
+  /** Directory for `tally market` output. */
+  output: string | undefined;
+  /** CrustData result limit for `tally market`. */
+  limit: number | undefined;
+  /** Keyword for `tally market`. */
+  keyword: string | undefined;
 }
 
 export type ParsedCli =
@@ -60,6 +67,7 @@ Commands:
   init     Set up tally.yaml for the current repository
   doctor   Check that each integration is connected
   login    Connect an integration, e.g. tally login cfoai
+  market   Search CrustData for companies adopting coding agents
 
 Options:
   --config <path>   Path to tally.yaml (default: tally.yaml)
@@ -72,6 +80,9 @@ Options:
   --port <number>   Dashboard port (default: 5177; use 0 for any free port)
   --plan            Size and route tasks, but do not spawn workers
   --live            For demo: use live read-only integrations with fake workers
+  --output <dir>    Output directory for tally market (default: .tally/market/latest)
+  --limit <number>  Result limit for tally market (default: 10)
+  --keyword <text>  CrustData keyword for tally market (default: AI coding)
   -h, --help        Show this help
   -v, --version     Show the version`;
 
@@ -92,6 +103,9 @@ export function parseCli(argv: string[]): ParsedCli {
         port: { type: 'string' },
         plan: { type: 'boolean', default: false },
         live: { type: 'boolean', default: false },
+        output: { type: 'string' },
+        limit: { type: 'string' },
+        keyword: { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
         version: { type: 'boolean', short: 'v', default: false },
       },
@@ -128,6 +142,13 @@ export function parseCli(argv: string[]): ParsedCli {
       return { kind: 'error', message: `--port must be an integer from 0 to 65535, got "${values.port}"` };
     }
   }
+  let limit: number | undefined;
+  if (values.limit !== undefined) {
+    limit = Number(values.limit);
+    if (!Number.isInteger(limit) || limit <= 0 || limit > 100) {
+      return { kind: 'error', message: `--limit must be an integer from 1 to 100, got "${values.limit}"` };
+    }
+  }
   return {
     kind: 'command',
     command: name as Command,
@@ -142,6 +163,9 @@ export function parseCli(argv: string[]): ParsedCli {
       plan: values.plan,
       live: values.live,
       loginTarget: name === 'login' ? 'cfoai' : undefined,
+      output: values.output,
+      limit,
+      keyword: values.keyword,
     },
   };
 }
@@ -245,8 +269,25 @@ async function doctorCommand(options: CliOptions, io: CliIO): Promise<number> {
   return lines.some((line) => line.status !== 'connected') ? 1 : 0;
 }
 
+async function marketCommand(options: CliOptions, io: CliIO): Promise<number> {
+  try {
+    const result = await runCrustDataMarketSearch({
+      outputDir: options.output,
+      limit: options.limit,
+      keyword: options.keyword,
+    });
+    io.stdout(`wrote ${result.queryPath}`);
+    io.stdout(`wrote ${result.companiesPath}`);
+    io.stdout(`market: ${result.companies.length} companies from ${result.totalCount ?? 'unknown'} matches`);
+    io.stdout(`credits: ${result.creditCost ?? 'not reported'}`);
+    return 0;
+  } catch (e) {
+    return reportError('tally market', e, io);
+  }
+}
+
 function reportError(prefix: string, error: unknown, io: CliIO): number {
-  if (error instanceof ConfigError || error instanceof BacklogError || error instanceof RunError) {
+  if (error instanceof ConfigError || error instanceof BacklogError || error instanceof RunError || error instanceof CrustDataError) {
     io.stderr(`${prefix}: ${error.message}`);
     return 2;
   }
@@ -260,6 +301,7 @@ const handlers: Record<Command, Handler> = {
   init: stub('init'),
   doctor: doctorCommand,
   login: loginCommand,
+  market: marketCommand,
 };
 
 const consoleIO: CliIO = {
