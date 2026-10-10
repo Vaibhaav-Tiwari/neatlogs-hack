@@ -79,6 +79,7 @@ export function frameAt(run, ledger, fraction) {
         spentNanos: 0,
         escalated: false,
         prUrl: null,
+        changedFiles: undefined,
       };
     }
     const settled = last.result !== 'running' && seen.length === all.length;
@@ -92,6 +93,7 @@ export function frameAt(run, ledger, fraction) {
       spentNanos: seen.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
       escalated: seen.length > 1,
       prUrl: settled ? task.prUrl : null,
+      changedFiles: settled ? task.changedFiles : undefined,
     };
   });
 

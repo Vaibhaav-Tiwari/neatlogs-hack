@@ -3,6 +3,7 @@
 
 import { frameAt } from './replay-core.js';
 import { displayedCost, isRunning, withLiveCosts } from './live-state.js';
+import { createCodeGraph } from './code-graph.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -574,6 +575,8 @@ function taskImpact(task, attempts) {
     task.routing?.historyChangedDecision === true ||
     task.routing?.historyChanged === true ||
     attempts.some((row) => row.historyChangedDecision === true || row.historyChanged === true || row.routing?.historyChangedDecision === true);
+  const totals = task.impact?.totals;
+  if (totals) items.push(`<span>${esc(totals.filesTouched)} files · ${esc(totals.dependents)} dependents</span>`);
   return `${changed ? '<span class="history-mark">history changed route</span>' : ''}${items.length ? `<span class="impact">${items.join('')}</span>` : ''}`;
 }
 
@@ -598,7 +601,15 @@ function taskDecision(attempts) {
   return `${carry}<p>${esc(first.decision)}</p>${last?.attempt !== first.attempt ? `<p class="reason">Final decision: ${esc(last.decision)}</p>` : ''}${last?.resultReason ? `<p class="reason ${last.result === 'stopped' ? 'over' : ''}">${esc(last.resultReason)}</p>` : ''}`;
 }
 
+const taskGraphs = new Map();
 function drawTasks(run, ledger) {
+  const graphTasks = run.tasks.filter((task) => task.impact?.source !== 'none' && task.impact?.nodes?.length > 0);
+  const keys = new Set(graphTasks.map((task) => `${run.runId}:${task.taskId}`));
+  for (const [key, graph] of taskGraphs) if (!keys.has(key)) { graph.dispose(); taskGraphs.delete(key); }
+  for (const task of graphTasks) {
+    const key = `${run.runId}:${task.taskId}`;
+    if (!taskGraphs.has(key)) taskGraphs.set(key, createCodeGraph(task));
+  }
   const body = run.tasks
     .map((task, index) => {
       const attempts = ledger.filter((row) => row.taskId === task.taskId).sort((a, b) => a.attempt - b.attempt);
@@ -622,7 +633,7 @@ function drawTasks(run, ledger) {
         <td class="why">${taskDecision(attempts)}</td>
         <td class="money">${costCell(task.spentNanos ?? 0, null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</td>
         <td class="state">${attempts.some((row) => row.result === 'stopped') ? '<span class="stamp">Stopped and escalated</span>' : statusMark(task.status, STATUS_WORD[task.status] ?? task.status)}</td>
-      </tr>`;
+      </tr>${keys.has(`${run.runId}:${task.taskId}`) ? `<tr class="graph-row"><td colspan="8"><div data-graph-slot="${esc(task.taskId)}"></div></td></tr>` : ''}`;
     })
     .join('');
 
@@ -633,6 +644,12 @@ function drawTasks(run, ledger) {
        <th class="money">Total cost</th><th>Status</th></tr></thead>
      <tbody>${body}</tbody>`,
   );
+  for (const task of graphTasks) {
+    const graph = taskGraphs.get(`${run.runId}:${task.taskId}`);
+    const slot = [...document.getElementById('tasks').querySelectorAll('[data-graph-slot]')].find((node) => node.dataset.graphSlot === task.taskId);
+    if (!slot.contains(graph.element)) slot.append(graph.element);
+    graph.update(task, ledger.filter((row) => row.taskId === task.taskId).sort((a,b) => a.attempt - b.attempt));
+  }
 }
 
 function isSuspectPass(row, run) {

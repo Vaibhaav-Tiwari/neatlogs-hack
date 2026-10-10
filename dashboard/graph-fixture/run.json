@@ -1,0 +1,582 @@
+{
+  "schemaVersion": 1,
+  "runId": "sample-code-graph",
+  "mode": "tally",
+  "dryRun": true,
+  "status": "finished",
+  "repo": "demo/invoice-ledger",
+  "baseCommit": "sample",
+  "startedAt": "2026-10-11T03:00:00Z",
+  "updatedAt": "2026-10-11T03:01:00Z",
+  "endedAt": "2026-10-11T03:01:00Z",
+  "budget": {
+    "source": "config",
+    "limitNanos": 10000000000,
+    "spentNanos": 800000000
+  },
+  "tasks": [
+    {
+      "taskId": "G1",
+      "title": "Reject negative refund amounts",
+      "size": "small",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "cheap",
+      "model": "sample-model",
+      "spentNanos": 200000000,
+      "escalated": false,
+      "prUrl": null,
+      "impact": {
+        "source": "scripted",
+        "query": "Reject negative refund amounts",
+        "nodes": [
+          {
+            "id": "src/refund.py",
+            "kind": "target",
+            "weight": 1
+          }
+        ],
+        "edges": [],
+        "totals": {
+          "filesTouched": 1,
+          "dependents": 0,
+          "testsPresent": false
+        },
+        "truncated": false
+      },
+      "changedFiles": [
+        "src/refund.py"
+      ]
+    },
+    {
+      "taskId": "G2",
+      "title": "Make repeated charges idempotent",
+      "size": "medium",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 2,
+      "tier": "middle",
+      "model": "sample-model",
+      "spentNanos": 400000000,
+      "escalated": true,
+      "prUrl": null,
+      "impact": {
+        "source": "scripted",
+        "query": "Make repeated charges idempotent",
+        "nodes": [
+          {
+            "id": "src/payments/charge.py",
+            "kind": "target",
+            "weight": 5
+          },
+          {
+            "id": "src/payments/store.py",
+            "kind": "target",
+            "weight": 4
+          },
+          {
+            "id": "src/api/checkout.py",
+            "kind": "caller",
+            "weight": 3
+          },
+          {
+            "id": "src/jobs/reconcile.py",
+            "kind": "caller",
+            "weight": 2
+          },
+          {
+            "id": "src/payments/receipt.py",
+            "kind": "coChange",
+            "weight": 2
+          },
+          {
+            "id": "tests/payments/test_idempotency.py",
+            "kind": "test",
+            "weight": 3
+          }
+        ],
+        "edges": [
+          {
+            "from": "src/api/checkout.py",
+            "to": "src/payments/charge.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/jobs/reconcile.py",
+            "to": "src/payments/store.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/payments/charge.py",
+            "to": "src/payments/receipt.py",
+            "kind": "changesWith"
+          },
+          {
+            "from": "tests/payments/test_idempotency.py",
+            "to": "src/payments/charge.py",
+            "kind": "tests"
+          }
+        ],
+        "totals": {
+          "filesTouched": 2,
+          "dependents": 3,
+          "testsPresent": true
+        },
+        "truncated": false
+      },
+      "changedFiles": [
+        "src/payments/charge.py",
+        "src/payments/store.py",
+        "src/database/migrations/charge_key_unique.py"
+      ]
+    },
+    {
+      "taskId": "G3",
+      "title": "Change the shared ledger transaction boundary",
+      "size": "large",
+      "status": "failed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "middle",
+      "model": "sample-model",
+      "spentNanos": 200000000,
+      "escalated": false,
+      "prUrl": null,
+      "impact": {
+        "source": "scripted",
+        "query": "Change the shared ledger transaction boundary",
+        "nodes": [
+          {
+            "id": "src/ledger/transaction.py",
+            "kind": "target",
+            "weight": 50
+          },
+          {
+            "id": "src/services/service_01/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 40
+          },
+          {
+            "id": "src/services/service_02/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 39
+          },
+          {
+            "id": "src/services/service_03/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 38
+          },
+          {
+            "id": "src/services/service_04/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 37
+          },
+          {
+            "id": "src/services/service_05/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 36
+          },
+          {
+            "id": "src/services/service_06/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 35
+          },
+          {
+            "id": "src/services/service_07/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 34
+          },
+          {
+            "id": "src/services/service_08/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 33
+          },
+          {
+            "id": "src/services/service_09/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 32
+          },
+          {
+            "id": "src/services/service_10/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 31
+          },
+          {
+            "id": "src/services/service_11/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 30
+          },
+          {
+            "id": "src/services/service_12/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 29
+          },
+          {
+            "id": "src/services/service_13/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 28
+          },
+          {
+            "id": "src/services/service_14/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 27
+          },
+          {
+            "id": "src/services/service_15/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 26
+          },
+          {
+            "id": "src/services/service_16/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 25
+          },
+          {
+            "id": "src/services/service_17/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 24
+          },
+          {
+            "id": "src/services/service_18/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 23
+          },
+          {
+            "id": "src/services/service_19/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 22
+          },
+          {
+            "id": "src/services/service_20/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 21
+          },
+          {
+            "id": "src/services/service_21/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 20
+          },
+          {
+            "id": "src/services/service_22/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 19
+          },
+          {
+            "id": "src/services/service_23/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 18
+          },
+          {
+            "id": "src/services/service_24/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 17
+          },
+          {
+            "id": "src/services/service_25/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 16
+          },
+          {
+            "id": "src/services/service_26/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 15
+          },
+          {
+            "id": "src/services/service_27/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 14
+          },
+          {
+            "id": "src/services/service_28/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 13
+          },
+          {
+            "id": "src/services/service_29/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 12
+          },
+          {
+            "id": "src/services/service_30/ledger_adapter.py",
+            "kind": "caller",
+            "weight": 11
+          },
+          {
+            "id": "src/services/service_31/ledger_adapter.py",
+            "kind": "coChange",
+            "weight": 10
+          },
+          {
+            "id": "src/services/service_32/ledger_adapter.py",
+            "kind": "coChange",
+            "weight": 9
+          },
+          {
+            "id": "src/services/service_33/ledger_adapter.py",
+            "kind": "coChange",
+            "weight": 8
+          },
+          {
+            "id": "src/services/service_34/ledger_adapter.py",
+            "kind": "coChange",
+            "weight": 7
+          },
+          {
+            "id": "src/services/service_35/ledger_adapter.py",
+            "kind": "coChange",
+            "weight": 6
+          },
+          {
+            "id": "src/services/service_36/ledger_adapter.py",
+            "kind": "test",
+            "weight": 5
+          },
+          {
+            "id": "src/services/service_37/ledger_adapter.py",
+            "kind": "test",
+            "weight": 4
+          },
+          {
+            "id": "src/services/service_38/ledger_adapter.py",
+            "kind": "test",
+            "weight": 3
+          },
+          {
+            "id": "src/services/service_39/ledger_adapter.py",
+            "kind": "test",
+            "weight": 2
+          }
+        ],
+        "edges": [
+          {
+            "from": "src/services/service_01/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_02/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_03/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_04/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_05/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_06/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_07/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_08/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_09/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_10/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_11/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_12/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_13/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_14/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_15/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_16/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_17/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_18/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_19/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_20/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_21/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_22/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_23/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_24/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_25/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_26/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_27/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_28/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_29/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_30/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "calls"
+          },
+          {
+            "from": "src/services/service_31/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "changesWith"
+          },
+          {
+            "from": "src/services/service_32/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "changesWith"
+          },
+          {
+            "from": "src/services/service_33/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "changesWith"
+          },
+          {
+            "from": "src/services/service_34/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "changesWith"
+          },
+          {
+            "from": "src/services/service_35/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "changesWith"
+          },
+          {
+            "from": "src/services/service_36/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "tests"
+          },
+          {
+            "from": "src/services/service_37/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "tests"
+          },
+          {
+            "from": "src/services/service_38/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "tests"
+          },
+          {
+            "from": "src/services/service_39/ledger_adapter.py",
+            "to": "src/ledger/transaction.py",
+            "kind": "tests"
+          }
+        ],
+        "totals": {
+        "filesTouched": 1,
+        "dependents": 79,
+        "nodes": 85,
+        "edges": 96,
+          "testsPresent": true
+        },
+        "truncated": true
+      },
+      "changedFiles": []
+    }
+  ],
+  "integrations": {
+    "neatlogs": {
+      "status": "off",
+      "detail": "Scripted graph fixture; no live integration."
+    },
+    "entire": {
+      "status": "off",
+      "detail": "Scripted graph fixture; no live integration."
+    },
+    "cfoai": {
+      "status": "off",
+      "detail": "Scripted graph fixture; no live integration."
+    },
+    "github": {
+      "status": "off",
+      "detail": "Scripted graph fixture; no live integration."
+    },
+    "slack": {
+      "status": "off",
+      "detail": "Scripted graph fixture; no live integration."
+    }
+  }
+}

@@ -279,6 +279,43 @@ th.num, td.num { text-align: right; }
 
 /* ---------- narrower screens ---------- */
 
+.tasks .graph-row > td { padding: 0 4px 12px; border-top: 0; }
+.code-graph { width: min(1040px, calc(100vw - 100px)); }
+.code-graph summary { cursor: pointer; font: 500 14px/1.5 var(--mono); padding: 6px 0; }
+.code-graph summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.graph-paper { border-top: 1px solid var(--rule-soft); padding-top: 10px; }
+.graph-caption { font: 400 16px/1.4 var(--serif); }
+.graph-query { font: 400 12px/1.5 var(--mono); color: var(--ink-2); margin-top: 4px; overflow-wrap: anywhere; }
+.impact-graph { display: block; width: 100%; overflow: visible; }
+.graph-edge { fill: none; stroke: var(--rule-soft); stroke-width: 1.2; }
+.edge-changesWith { stroke-dasharray: 4 4; }
+.edge-tests { stroke-width: 2; }
+.graph-node rect { fill: var(--paper); stroke: var(--ink); stroke-width: 1; transition: stroke-width 180ms ease; }
+.graph-node.kind-target rect { stroke-width: 2; }
+.graph-node.kind-coChange rect { stroke-dasharray: 4 3; }
+.graph-node.kind-test rect { stroke-dasharray: 1 3; }
+.graph-node.in-progress rect { stroke-width: 3; }
+.graph-node.stopped rect { stroke: var(--vermilion); stroke-width: 3; }
+.graph-node.edited rect { stroke-width: 3; }
+.graph-node:focus { outline: none; }
+.graph-node:focus rect { stroke-width: 4; }
+.graph-path { font: 400 12px var(--mono); fill: var(--ink); }
+.graph-role { font: 400 11px var(--mono); fill: var(--ink-2); }
+.graph-attempts { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 8px 0; margin: 0; list-style: none; border-top: 1px solid var(--rule-soft); font: 400 12px/1.5 var(--mono); }
+.graph-stop { color: var(--vermilion); font-weight: 600; }
+.graph-outside { font: 400 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+.graph-outside.outside { border-left: 3px solid var(--vermilion); padding-left: 10px; color: var(--vermilion); }
+@media (max-width: 560px) { .code-graph { width: calc(100vw - 36px); } }
+@media (prefers-reduced-motion: reduce) { .graph-node rect { transition: none; } }
+@media print {
+  .tasks-section:has(.code-graph[open]) { display: block !important; }
+  .tasks-section .tasks { min-width: 0; }
+  .tasks-section:has(.code-graph[open]) .tasks tr:not(.graph-row), .tasks-section:has(.code-graph[open]) thead { display: none; }
+  .code-graph { width: 100%; break-inside: avoid; }
+  .code-graph summary { font-size: 10pt; }
+  .graph-node rect { fill: white; transition: none; }
+}
+
 @media (max-width: 1100px) {
   .sheet { padding: 20px 20px 40px; }
   .head { flex-direction: column; align-items: flex-start; gap: 18px; }
