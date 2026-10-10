@@ -12,14 +12,45 @@ export function graphLayout(nodes, width) {
   const phone = width < 620;
   const boxWidth = phone ? width - 32 : Math.floor((width - 100) / 3);
   const positioned = [];
+  const summaries = [];
+  const headings = [];
   let next = 28;
   const groups = phone ? [['target'], ['caller'], ['coChange', 'test']] : [['caller'], ['target'], ['coChange', 'test']];
   groups.forEach((group, col) => {
-    const files = nodes.filter((node) => group.includes(node.kind));
-    files.forEach((node, row) => positioned.push({ ...node, x: phone ? 16 : 16 + col * (boxWidth + 34), y: phone ? next + row * 68 : 28 + row * 68, width: boxWidth }));
-    if (phone) next += files.length * 68 + (files.length ? 16 : 0);
+    let y = phone ? next : 28;
+    const x = phone ? 16 : 16 + col * (boxWidth + 34);
+    for (const kind of group) {
+      const all = nodes.filter((node) => node.kind === kind);
+      if (!all.length) continue;
+      const files = kind === 'target' ? all : all.slice(0, kind === 'caller' ? 3 : 2);
+      const parts = files.map(node => node.id.split('/'));
+      const prefix = [];
+      while (parts.every(path => path.length > prefix.length + 1 && path[prefix.length] === parts[0][prefix.length])) prefix.push(parts[0][prefix.length]);
+      const shared = files.length > 1 ? prefix.join('/') : '';
+      headings.push({ x, y, width: boxWidth, text: `${kindLabel[kind]}${shared ? ` · ${shared}/` : ''}` });
+      y += 24;
+      files.forEach((node, row) => positioned.push({ ...node, label: shared ? node.id.slice(shared.length + 1) : node.id, x, y: y + row * 62, width: boxWidth }));
+      y += files.length * 62;
+      // Reserve the summary line even when the group has no hidden files.
+      summaries.push({ x, y, text: all.length > files.length ? `+${all.length - files.length} more ${kind === 'coChange' ? 'co-change files' : `${kind.toLowerCase()}s`}` : '' });
+      y += 28;
+    }
+    if (phone) next = y + 12;
   });
-  return { nodes: positioned, height: Math.max(108, ...positioned.map((node) => node.y + 78)) };
+  return { nodes: positioned, headings, summaries, height: Math.max(108, ...summaries.map(item => item.y + 28)) };
+}
+
+export function edgePath(from, to, phone) {
+  const y1 = from.y + 25, y2 = to.y + 25;
+  if (phone || from.x === to.x) {
+    const rail = Math.min(from.x, to.x) - 8;
+    return `M${from.x} ${y1} H${rail} V${y2} H${to.x}`;
+  }
+  const rightward = from.x < to.x;
+  const x1 = rightward ? from.x + from.width : from.x;
+  const x2 = rightward ? to.x : to.x + to.width;
+  const mid = (x1 + x2) / 2;
+  return `M${x1} ${y1} C${mid} ${y1} ${mid} ${y2} ${x2} ${y2}`;
 }
 
 function svgNode(tag, attrs = {}, text) {
@@ -36,7 +67,8 @@ export function createCodeGraph(task) {
   const svg = details.querySelector('svg');
   const edges = svgNode('g', { class: 'graph-edges' });
   const files = svgNode('g');
-  svg.append(edges, files);
+  const annotations = svgNode('g', { class: 'graph-group-labels' });
+  svg.append(edges, files, annotations);
   const groups = new Map();
   let currentTask = task;
   let attempts = [];
@@ -50,8 +82,8 @@ export function createCodeGraph(task) {
     const key = JSON.stringify([Math.round(width), nextNodes, currentTask.impact.edges]);
     if (key === layoutKey) return;
     layoutKey = key;
-    nodes = nextNodes;
-    const positioned = graphLayout(nodes, width);
+    const positioned = graphLayout(nextNodes, width);
+    nodes = positioned.nodes;
     svg.setAttribute('viewBox', `0 0 ${width} ${positioned.height}`);
     svg.setAttribute('height', positioned.height);
     const positions = new Map(positioned.nodes.map((node) => [node.id, node]));
@@ -59,9 +91,7 @@ export function createCodeGraph(task) {
     for (const edge of (currentTask.impact.edges ?? []).slice(0, 80)) {
       const from = positions.get(edge.from), to = positions.get(edge.to);
       if (!from || !to) continue;
-      const x1 = from.x + from.width / 2, y1 = from.y + 25;
-      const x2 = to.x + to.width / 2, y2 = to.y + 25;
-      edges.append(svgNode('path', { d: `M${x1} ${y1} C${x1} ${(y1+y2)/2} ${x2} ${(y1+y2)/2} ${x2} ${y2}`, class: `graph-edge edge-${['calls','changesWith','tests'].includes(edge.kind) ? edge.kind : 'calls'}` }));
+      edges.append(svgNode('path', { d: edgePath(from, to, width < 620), class: `graph-edge edge-${['calls','changesWith','tests'].includes(edge.kind) ? edge.kind : 'calls'}` }));
     }
     for (const node of positioned.nodes) {
       let group = groups.get(node.id);
@@ -73,8 +103,13 @@ export function createCodeGraph(task) {
       group.setAttribute('transform', `translate(${node.x} ${node.y})`);
       group.querySelector('rect').setAttribute('width', node.width);
       group.querySelector('title').textContent = `${node.id}${node.symbol ? ` (${node.symbol})` : ''}`;
-      group.querySelector('.graph-path').textContent = shortPath(node.id, Math.max(18, Math.floor((node.width - 20) / 7.4)));
+      group.querySelector('.graph-path').textContent = shortPath(node.label, Math.max(18, Math.floor((node.width - 20) / 7.4)));
     }
+    annotations.replaceChildren(...positioned.headings.map(item => {
+      const label = svgNode('text', { x: item.x, y: item.y - 5, class: 'graph-group-label' }, shortPath(item.text, Math.floor(item.width / 7.4)));
+      label.append(svgNode('title', {}, item.text));
+      return label;
+    }), ...positioned.summaries.map(item => svgNode('text', { x: item.x, y: item.y, class: 'graph-group-label' }, item.text)));
     for (const [id, group] of groups) if (!positions.has(id)) { group.remove(); groups.delete(id); }
   }
 
@@ -92,9 +127,10 @@ export function createCodeGraph(task) {
       group.querySelector('.graph-role').textContent = `${kindLabel[node.kind]} · ${state === 'edited' ? 'edited [x]' : state}`;
     }
     const totals = task.impact.totals ?? {};
-    const limited = task.impact.truncated || (task.impact.nodes?.length ?? 0) > nodes.length;
-    details.querySelector('.graph-caption').textContent = `${totals.filesTouched ?? 0} target ${totals.filesTouched === 1 ? 'file' : 'files'}, ${totals.dependents ?? 0} dependents, ${totals.testsPresent ? 'tests present' : 'no tests found'} → ${task.size ?? 'unsized'}.${limited ? ` Showing ${nodes.length}${Number.isFinite(totals.nodes) ? ` of ${totals.nodes}` : ''} nodes; slice truncated, totals cover the full graph.` : ''}`;
-    details.querySelector('summary').textContent = `Code impact · ${task.taskId}`;
+    const limited = task.impact.truncated || (task.impact.nodes?.length ?? 0) > 40;
+    const shown = nodes.length;
+    details.querySelector('.graph-caption').textContent = `${totals.filesTouched ?? 0} target ${totals.filesTouched === 1 ? 'file' : 'files'}, ${totals.dependents ?? 0} ${totals.dependents === 1 ? 'dependent' : 'dependents'}, ${totals.testsPresent ? 'tests present' : 'no tests found'} → ${task.size ?? 'unsized'}.${limited || shown < (task.impact.nodes?.length ?? 0) ? ` Showing ${shown}${Number.isFinite(totals.nodes) ? ` of ${totals.nodes}` : ''} nodes; ${limited ? 'slice truncated' : 'relations grouped'}, totals cover the full graph.` : ''}`;
+    details.querySelector('summary').textContent = `Code graph · ${task.taskId} · ${task.impact.totals?.filesTouched ?? 0} target ${task.impact.totals?.filesTouched === 1 ? 'file' : 'files'}`;
     details.querySelector('.graph-query').textContent = `${task.impact.source === 'scripted' ? 'Sample graph' : task.impact.source === 'entire-graph' ? 'Entire code graph' : 'Code search'}${task.impact.query ? ` · ${task.impact.query}` : ''}`;
     svg.setAttribute('aria-label', `Code impact for ${task.title}`);
     const timeline = details.querySelector('.graph-attempts');
@@ -111,7 +147,7 @@ export function createCodeGraph(task) {
     const predicted = new Set((task.impact.nodes ?? []).map((node) => node.id));
     const outside = [...edited].filter((path) => !predicted.has(path)).sort();
     const note = details.querySelector('.graph-outside');
-    note.textContent = outside.length ? `Edited outside ${limited ? 'displayed slice (prediction truncated)' : 'predicted slice'}: ${outside.join(', ')}` : task.changedFiles ? `${edited.size} files edited; all within the predicted slice.` : '';
+    note.textContent = outside.length ? `Edited outside ${limited ? 'displayed slice (prediction truncated)' : 'predicted slice'}: ${outside.join(', ')}` : task.changedFiles ? `${edited.size} ${edited.size === 1 ? 'file' : 'files'} edited; all within the predicted slice.` : '';
     note.classList.toggle('outside', outside.length > 0);
   }
   details.addEventListener('toggle', () => update(currentTask, attempts));
