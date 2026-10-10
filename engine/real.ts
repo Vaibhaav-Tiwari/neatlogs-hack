@@ -20,7 +20,7 @@ import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
 import { FilePriceHistory } from '../adapters/history-file.js';
-import { historyAttributes, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
+import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { CommandVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
@@ -280,7 +280,7 @@ async function recordHistory(input: { ports: RealRunPorts; row: LedgerRow; dryRu
   await input.ports.history.record(outcome);
   if (input.dryRun || !input.ports.trace) return;
   await input.ports.trace.span(
-    'tally.history.record',
+    historyTraceName(outcome),
     {
       sessionId: input.row.runId,
       taskId: input.row.taskId,
