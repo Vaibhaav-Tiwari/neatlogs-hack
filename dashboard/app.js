@@ -123,6 +123,17 @@ function drawNotice(run, source) {
   draw('notice', lines.join(' '));
 }
 
+function sourceLabel(source) {
+  if (source.sample && source.replaying) return `Reading bundled sample fixture as a replay from ${config.sample}`;
+  if (source.sample) return `Reading bundled sample fixture from ${config.sample}`;
+  if (source.replaying) return `Replaying run files from ${config.data}`;
+  return config.data.includes('/latest/') || config.data.endsWith('/latest/') ? `Reading latest run files from ${config.data}` : `Reading run files from ${config.data}`;
+}
+
+function drawDataSource(source) {
+  draw('data-source', `Data source: <span class="fig">${esc(sourceLabel(source))}</span>`);
+}
+
 function drawHeadline(run, baseline) {
   const passed = passedCount(run);
   const each = perMergedPr(run);
@@ -246,6 +257,34 @@ function tierCell(tier, model) {
   return tier ? `<b>${esc(tier)}</b><span class="model">${esc(model ?? '')}</span>` : '<span class="blank">not routed yet</span>';
 }
 
+function attemptCountCell(task, attempts, awaiting) {
+  const countText = attempts.length === 1 ? '1 attempt' : `${attempts.length} attempts`;
+  const ids = attempts.map((row) => `${row.taskId}/${row.attempt}`).join(', ');
+  const extra = awaiting ? `${ids ? `${ids}, ` : ''}${task.taskId}/${attempts.length + 1} pending` : ids;
+  return `<span class="attempt-count">${esc(countText)}</span>${extra ? `<span class="attempt-list">Ledger rows: ${esc(extra)}</span>` : ''}`;
+}
+
+function finalRouteCell(task, attempts, awaiting) {
+  const stopped = attempts.find((row) => row.result === 'stopped');
+  const last = attempts[attempts.length - 1];
+  if (attempts.length === 0) return tierCell(task.tier, task.model);
+  const note =
+    stopped && last && last.attempt > stopped.attempt
+      ? `<span class="model">stopped on ${esc(stopped.tier)}, continued on ${esc(last.tier)}</span>`
+      : awaiting
+        ? '<span class="model">waiting for the next model up</span>'
+        : `<span class="model">${esc(last?.result ?? task.status)}</span>`;
+  return `${tierCell(task.tier ?? last?.tier, task.model ?? last?.model)}${note}`;
+}
+
+function taskDecision(attempts) {
+  if (attempts.length === 0) return '<span class="blank">No model has been paid to try yet.</span>';
+  const first = attempts[0];
+  const last = attempts[attempts.length - 1];
+  const carry = attempts.length > 1 && last?.escalatedFrom ? `<p class="carried">Latest attempt continues the previous work.</p>` : '';
+  return `${carry}<p>${esc(first.decision)}</p>${last?.attempt !== first.attempt ? `<p class="reason">Final decision: ${esc(last.decision)}</p>` : ''}${last?.resultReason ? `<p class="reason ${last.result === 'stopped' ? 'over' : ''}">${esc(last.resultReason)}</p>` : ''}`;
+}
+
 function drawTasks(run, ledger) {
   const body = run.tasks
     .map((task, index) => {
@@ -253,68 +292,48 @@ function drawTasks(run, ledger) {
       const last = attempts[attempts.length - 1];
       // A stopped or failed attempt with the task still open means the next model has not started yet.
       const awaiting = last && !isRunning(last) && last.result !== 'passed' && ['running', 'pending'].includes(task.status);
-      const lines = Math.max(1, attempts.length + (awaiting ? 1 : 0));
       const issue = link(task.issueUrl, `#${task.issueNumber}`);
       const pr = link(task.prUrl, 'pull request');
-      const lead = `<td class="no fig" rowspan="${lines}">${index + 1}</td>
-        <td class="task" rowspan="${lines}">
+      const classes = [`t-${esc(task.status)}`, attempts.some((row) => row.result === 'stopped') ? 'has-stop' : ''].join(' ');
+      return `<tr class="${classes}">
+        <td class="no fig">${index + 1}</td>
+        <td class="task">
           <p class="title">${esc(task.title)}</p>
           <p class="refs">${[esc(task.taskId), issue, pr].filter(Boolean).join('<span class="gap"></span>')}</p>
           ${task.statusReason ? `<p class="why-status">${esc(task.statusReason)}</p>` : ''}
         </td>
-        <td class="size" rowspan="${lines}">${task.size ? esc(task.size) : '<span class="blank">unsized</span>'}</td>`;
-
-      if (attempts.length === 0) {
-        const waiting = task.status === 'pending' ? 'Waiting to be sized and routed.' : task.status === 'running' ? 'Running; the decision has not reached the ledger yet.' : '';
-        return `<tr class="t-${esc(task.status)} first last">${lead}
-          <td class="tier">${tierCell(task.tier, task.model)}</td>
-          <td class="why">${task.status === 'skipped' ? '' : `<span class="blank">${waiting}</span>`}</td>
-          <td class="money">${task.spentNanos ? `<p class="fig cost">${usd(task.spentNanos)}</p>` : ''}</td>
-          <td class="state">${statusMark(task.status, STATUS_WORD[task.status] ?? task.status)}</td></tr>`;
-      }
-
-      const rows = attempts.map((row, i) => {
-        const stopped = row.result === 'stopped';
-        const kind = isRunning(row) ? 'running' : row.result;
-        const carried = row.escalatedFrom
-          ? `<p class="carried">Carried forward from attempt ${i}${row.handoff === 'entire-handoff' ? ', continuing its branch with the Entire handoff' : row.handoff === 'restart' ? ', starting again from scratch' : ''}.</p>`
-          : '';
-        const classes = [`a-${esc(kind)}`, i === 0 ? 'first' : '', i === lines - 1 ? 'last' : ''].join(' ');
-        return `<tr class="${classes}">${i === 0 ? lead : ''}
-          <td class="tier">${attempts.length > 1 || awaiting ? `<span class="nth">Attempt ${row.attempt}</span>` : ''}${tierCell(row.tier, row.model)}</td>
-          <td class="why">${carried}<p>${esc(row.decision)}</p>${row.resultReason ? `<p class="reason ${stopped ? 'over' : ''}">${esc(row.resultReason)}</p>` : ''}</td>
-          <td class="money">${costCell(row.estimatedCostNanos, row.ceilingNanos, stopped, row.costSource)}</td>
-          <td class="state">${stopped ? '<span class="stamp">Stopped at ceiling</span>' : statusMark(kind, RESULT_WORD[kind] ?? kind)}</td></tr>`;
-      });
-      if (awaiting) {
-        rows.push(`<tr class="a-pending last">
-          <td class="tier"><span class="nth">Attempt ${attempts.length + 1}</span><span class="blank">next model up</span></td>
-          <td class="why"><span class="blank">Handing the work to a stronger model.</span></td>
-          <td class="money"></td><td class="state">${statusMark('pending', 'Pending')}</td></tr>`);
-      }
-      return rows.join('');
+        <td class="size">${task.size ? esc(task.size) : '<span class="blank">unsized</span>'}</td>
+        <td class="tier">${finalRouteCell(task, attempts, awaiting)}</td>
+        <td class="attempts">${attemptCountCell(task, attempts, awaiting)}</td>
+        <td class="why">${taskDecision(attempts)}</td>
+        <td class="money">${costCell(task.spentNanos ?? 0, null, attempts.some((row) => row.result === 'stopped'), attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource)}</td>
+        <td class="state">${attempts.some((row) => row.result === 'stopped') ? '<span class="stamp">Stopped and escalated</span>' : statusMark(task.status, STATUS_WORD[task.status] ?? task.status)}</td>
+      </tr>`;
     })
     .join('');
 
   draw(
     'tasks',
     `<thead><tr>
-       <th class="no">No.</th><th>Task</th><th>Size</th><th>Model chosen</th><th>Why</th>
-       <th class="money">Cost against ceiling</th><th>Status</th></tr></thead>
+       <th class="no">No.</th><th>Task</th><th>Size</th><th>Ended up on</th><th>Attempts</th><th>Why</th>
+       <th class="money">Total cost</th><th>Status</th></tr></thead>
      <tbody>${body}</tbody>`,
   );
 }
 
 function drawLedger(run, ledger) {
+  const seenTasks = new Set();
   const rows = ledger
     .map((row) => {
       const running = isRunning(row);
       const kind = running ? 'running' : row.result;
+      const groupStart = !seenTasks.has(row.taskId);
+      seenTasks.add(row.taskId);
       const links = [link(row.prUrl, 'PR'), link(row.traceUrl, 'trace'), link(row.checkpointUrl, 'checkpoint')].filter(Boolean);
       const tokenSplit = `${count(row.tokens.uncachedInput)} in, ${count(row.tokens.cachedInput)} cached, ${count(row.tokens.output)} out`;
-      return `<tr class="a-${esc(kind)}">
+      return `<tr class="a-${esc(kind)} ${groupStart ? 'group-start' : ''}">
         <td class="fig">${esc(row.taskId)}/${row.attempt}</td>
-        <td class="l-task">${esc(row.taskTitle)}${row.escalatedFrom ? '<span class="l-note">continues the attempt above it</span>' : ''}</td>
+        <td class="l-task"><span class="l-task-id">${esc(row.taskId)}</span>${esc(row.taskTitle)}${row.escalatedFrom ? '<span class="l-note">continues the attempt above it</span>' : ''}</td>
         <td><span class="fig">${esc(row.model)}</span><span class="l-note">${esc(row.tier)} tier, ${esc(row.harness)}</span></td>
         <td class="num"><span class="fig">${count(row.tokens.total)}</span><span class="l-note">${tokenSplit}</span></td>
         <td class="num fig ${row.result === 'stopped' ? 'over' : ''}">${usd(row.estimatedCostNanos)}${row.costSource === 'simulated' ? '<span class="l-note">simulated</span>' : row.costSource === 'ao-estimate' ? '<span class="l-note">orchestrator estimate</span>' : ''}</td>
@@ -340,10 +359,10 @@ function drawLedger(run, ledger) {
 }
 
 function drawFoot(source) {
-  const from = source.sample ? config.sample : config.data;
+  const from = sourceLabel(source);
   draw(
     'foot',
-    `<p>Read-only. Reads <span class="fig">${esc(from)}run.json</span> and <span class="fig">ledger.json</span> every ${(config.intervalMs / 1000).toLocaleString()} s.
+    `<p>Read-only. <span class="fig">${esc(from)}</span>; polls run.json and ledger.json every ${(config.intervalMs / 1000).toLocaleString()} s.
      Last read at ${new Date().toLocaleTimeString()}.</p>
      <p>Cost is tokens used multiplied by the list price in tally.yaml, whether a worker ran on an API key or a subscription.</p>`,
   );
@@ -352,6 +371,7 @@ function drawFoot(source) {
 function drawAll(state, source) {
   drawRun(state.run);
   drawNotice(state.run, source);
+  drawDataSource(source);
   drawHeadline(state.run, source.baseline);
   drawBudget(state.run, state.ledger);
   drawIntegrations(state.run);
