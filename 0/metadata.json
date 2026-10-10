@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KE5SFGEVF6AFBAFXNGKC3C",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T17:36:07.565248Z",
+  "branch": "ao/neatlogs-hack-5/c3-c4-cfoai-spend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/cfoai.test.ts",
+    "adapters/cfoai.ts",
+    "demo/tally.live.yaml",
+    "demo/tally.yaml",
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/tally-config.schema.json",
+    "schema/types.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "a5324a6477ed",
+  "checkpoint_transcript_start": 4474,
+  "transcript_lines_at_start": 4474,
+  "compact_transcript_start": 508,
+  "token_usage": {
+    "input_tokens": 155922,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5693824,
+    "output_tokens": 14830,
+    "api_call_count": 33
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T17:36:07.409453Z",
+    "agent_lines": 297,
+    "agent_removed": 6,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 297,
+    "total_lines_changed": 303,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
