@@ -23,7 +23,7 @@ import { FilePriceHistory } from '../adapters/history-file.js';
 import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { GitHubPublisher, type PublishPort } from '../adapters/publisher.js';
-import { CommandVerifier, type VerifierPort } from '../adapters/verifier.js';
+import { CommandVerifier, EntireGraphVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
 import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
 import { type BacklogTask } from './backlog.js';
@@ -125,7 +125,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     intake: overrides.intake ?? new ConfigBacklogIntake(),
     signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals),
     worker: overrides.worker ?? ao,
-    verifier: overrides.verifier ?? new CommandVerifier(),
+    verifier: overrides.verifier ?? (config.integrations.entire ? new EntireGraphVerifier() : new CommandVerifier()),
     usage: overrides.usage ?? ao,
     sessions: overrides.sessions ?? ao,
     history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
