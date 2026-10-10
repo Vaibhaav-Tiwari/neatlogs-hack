@@ -31,9 +31,12 @@ describe('sizeFromSignals', () => {
     expect(sizeFromSignals(task(), signals({ filesTouched: 4 })).size).toBe('medium');
   });
 
-  it('labels a few files with many dependents by the larger of the two', () => {
-    expect(sizeFromSignals(task(), signals({ filesTouched: 2, dependents: 5 })).size).toBe('medium');
-    expect(sizeFromSignals(task(), signals({ filesTouched: 2, dependents: 14 })).size).toBe('large');
+  it('keeps two targets small and treats dependency breadth only as uncertainty', () => {
+    const few = sizeFromSignals(task(), signals({ filesTouched: 2, dependents: 5 }));
+    const many = sizeFromSignals(task(), signals({ filesTouched: 2, dependents: 14 }));
+    expect(few.size).toBe('small');
+    expect(many.size).toBe('small');
+    expect(many.confidence).toBeLessThan(few.confidence);
   });
 
   it('labels many files large', () => {

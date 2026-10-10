@@ -23,6 +23,15 @@ const config: TallyConfig = {
 };
 
 describe('GitHubPublisher', () => {
+  it('diffs the worker branch against its recorded attempt base, preserving unusual filenames', async () => {
+    let diffArgs: string[] = [];
+    const publisher = new GitHubPublisher(async (_file, args) => {
+      diffArgs = args;
+      return { stdout: 'src/space name.ts\0tests/a.ts\0', stderr: '' };
+    });
+    expect(await publisher.changedFiles({ checkoutPath: '/worker', branch: 'worker', config, baseCommit: 'fixed-sha' })).toEqual(['src/space name.ts', 'tests/a.ts']);
+    expect(diffArgs).toEqual(['diff', '--name-only', '-z', '--end-of-options', 'fixed-sha', 'worker', '--']);
+  });
   it('reads NUL-separated changed paths and includes scope warnings in the PR', async () => {
     let body = '';
     const publisher = new GitHubPublisher(async (file, args) => {

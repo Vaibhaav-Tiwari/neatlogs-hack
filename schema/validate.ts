@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { Ajv, type ValidateFunction } from 'ajv';
 import addFormatsModule from 'ajv-formats';
+import type { TaskImpact } from './types.js';
 
 export interface ValidationResult {
   ok: boolean;
@@ -20,6 +21,7 @@ const ajv = new Ajv({ allErrors: true });
 
 const ledgerRow = ajv.compile(load('ledger-row.schema.json'));
 const runState = ajv.compile(load('run-state.schema.json'));
+const taskImpact = ajv.compile({ $ref: 'https://tally.dev/schema/run-state.schema.json#/definitions/impact' });
 const config = ajv.compile(load('tally-config.schema.json'));
 
 function run(validate: ValidateFunction, value: unknown, prefix = ''): ValidationResult {
@@ -39,7 +41,27 @@ export function validateLedger(value: unknown): ValidationResult {
 }
 
 export function validateRunState(value: unknown): ValidationResult {
-  return run(runState, value);
+  const result = run(runState, value);
+  if (!result.ok) return result;
+  const tasks = (value as { tasks: Array<{ impact?: { nodes: Array<{ id: string }>; edges: Array<{ from: string; to: string }> } }> }).tasks;
+  const errors: string[] = [];
+  for (const [index, task] of tasks.entries()) {
+    if (!task.impact) continue;
+    errors.push(...validateTaskImpact(task.impact).errors.map((error) => `/tasks/${index}/impact${error}`));
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateTaskImpact(value: unknown): ValidationResult {
+  const result = run(taskImpact, value);
+  if (!result.ok) return result;
+  const impact = value as TaskImpact;
+  const ids = new Set(impact.nodes.map((node) => node.id));
+  const errors: string[] = [];
+  if (ids.size !== impact.nodes.length) errors.push('/nodes must have unique ids');
+  if (impact.edges.some((edge) => !ids.has(edge.from) || !ids.has(edge.to))) errors.push('/edges must reference included nodes');
+  if (impact.totals.nodes < impact.nodes.length || impact.totals.edges < impact.edges.length) errors.push('/totals must include at least the displayed nodes and edges');
+  return { ok: errors.length === 0, errors };
 }
 
 export function validateConfig(value: unknown): ValidationResult {

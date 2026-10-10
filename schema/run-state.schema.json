@@ -92,7 +92,38 @@
         "model": { "type": ["string", "null"] },
         "spentNanos": { "type": "integer", "minimum": 0 },
         "escalated": { "type": "boolean" },
-        "prUrl": { "type": ["string", "null"], "format": "uri" }
+        "prUrl": { "type": ["string", "null"], "format": "uri" },
+        "changedFiles": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/relativePath" } },
+        "impact": { "$ref": "#/definitions/impact" }
+      }
+    },
+    "relativePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+" },
+    "impact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "query", "nodes", "edges", "totals", "truncated"],
+      "properties": {
+        "source": { "enum": ["entire-graph", "code-search", "scripted", "none"] },
+        "query": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "nodes": { "type": "array", "maxItems": 40, "items": {
+          "type": "object", "additionalProperties": false, "required": ["id", "kind"],
+          "properties": {
+            "id": { "$ref": "#/definitions/relativePath" },
+            "kind": { "enum": ["target", "caller", "coChange", "test"] },
+            "symbol": { "type": "string" }, "weight": { "type": "number" }
+          }
+        } },
+        "edges": { "type": "array", "maxItems": 80, "items": {
+          "type": "object", "additionalProperties": false, "required": ["from", "to", "kind"],
+          "properties": {
+            "from": { "$ref": "#/definitions/relativePath" }, "to": { "$ref": "#/definitions/relativePath" },
+            "kind": { "enum": ["calls", "changesWith", "tests"] }
+          }
+        } },
+        "totals": { "type": "object", "additionalProperties": false, "required": ["filesTouched", "dependents", "testsPresent", "nodes", "edges"], "properties": {
+          "filesTouched": { "type": "integer", "minimum": 0 }, "dependents": { "type": "integer", "minimum": 0 }, "testsPresent": { "type": "boolean" },
+          "nodes": { "type": "integer", "minimum": 0 }, "edges": { "type": "integer", "minimum": 0 }
+        } }
       }
     },
     "integration": {
