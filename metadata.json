@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KKW4TTEAHJDFZ9PGTXJKHG",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-6/task-code-graphs",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/code-graph.js",
+    "dashboard/graph-fixture/README.md",
+    "dashboard/graph.test.config.mjs",
+    "dashboard/styles.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16938,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1117568,
+    "output_tokens": 9162,
+    "api_call_count": 9
+  }
+}

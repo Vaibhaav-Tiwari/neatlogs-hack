@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KKW4TTEAHJDFZ9PGTXJKHG",
+  "session_id": "01a125ae-c722-75d0-93f1-147e3e8f6ffa",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T19:15:43.334012Z",
+  "branch": "ao/neatlogs-hack-6/task-code-graphs",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/code-graph.js",
+    "dashboard/graph-fixture/README.md",
+    "dashboard/graph.test.config.mjs",
+    "dashboard/styles.css"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "c065dad00a7f",
+  "checkpoint_transcript_start": 4736,
+  "transcript_lines_at_start": 4736,
+  "compact_transcript_start": 556,
+  "token_usage": {
+    "input_tokens": 16938,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1117568,
+    "output_tokens": 9162,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T19:15:43.123599Z",
+    "agent_lines": 198,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 198,
+    "total_lines_changed": 203,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
