@@ -3,7 +3,7 @@ import { usdToNanos } from '../schema/money.js';
 import type { TaskSize } from '../schema/types.js';
 import { routeTask, type RouteDecision } from './router.js';
 import type { SizeEstimate } from './sizer.js';
-import { FakeBudget, FakeHistory, sampleConfig, task } from './testing/fakes.js';
+import { FakeBudget, FakeHistory, RecordingTrace, sampleConfig, task } from './testing/fakes.js';
 
 const config = sampleConfig();
 
@@ -183,5 +183,22 @@ describe('routeTask', () => {
         }
       }
     }
+  });
+
+  it('traces the routing decision when a trace port is provided', async () => {
+    const trace = new RecordingTrace();
+    const decision = await routeTask({
+      task: task(),
+      estimate: estimate('small', 0.9),
+      config,
+      ports: { budget: new FakeBudget(usdToNanos(40)), trace },
+    });
+    expect(decision.action).toBe('start');
+    expect(trace.spans).toHaveLength(1);
+    expect(trace.spans[0]).toMatchObject({
+      name: 'tally.route',
+      attributes: { taskId: 'T1', size: 'small', confidence: 0.9, action: 'start', tier: 'bronze' },
+      error: null,
+    });
   });
 });
