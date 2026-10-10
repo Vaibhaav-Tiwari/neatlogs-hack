@@ -287,6 +287,9 @@ th.num, td.num { text-align: right; }
 }
 @media (max-width: 560px) {
   body { font-size: 16px; }
+  .sheet { padding: 16px 14px 34px; }
+  .sheet > section { margin-top: 26px; }
+  .brand { align-items: flex-start; gap: 12px; }
   h1 { font-size: 40px; }
   .mark { width: 56px; height: 56px; }
   .run { grid-template-columns: 1fr; }
@@ -294,8 +297,74 @@ th.num, td.num { text-align: right; }
   .budget-figs { flex-direction: column; gap: 4px; }
   .budget-figs b { font-size: 28px; }
   .int + .int { border-left: 0; padding-left: 0; border-top: 1px solid var(--rule-soft); }
+  .run-picker { align-items: stretch; gap: 8px; }
+  .run-picker label, .run-picker select, .picker-note { width: 100%; }
+  .notice { font-size: 15px; padding: 9px 11px; }
+  .data-source { overflow-wrap: anywhere; }
+  .tasks, .ledger { min-width: 900px; }
+}
+@media (max-width: 430px) {
+  .sheet { padding-left: 10px; padding-right: 10px; }
+  .brand { gap: 10px; }
+  h1 { font-size: 36px; }
+  .strap { font-size: 15.5px; }
+  .big { font-size: 44px; }
+  h2 { font-size: 20px; }
+  .h2-note { display: block; margin-left: 0; margin-top: 2px; font-size: 14px; }
+  .bar { height: 38px; }
+  .scroll {
+    margin-left: -10px;
+    margin-right: -10px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  th, td { padding-left: 10px; padding-right: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .live { animation: none; }
+}
+
+@media print {
+  @page { size: landscape; margin: 12mm; }
+  * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  html, body { background: #fff; }
+  body { font-size: 10pt; color: #000; }
+  a { text-decoration: none; }
+  .sheet { max-width: none; padding: 0; }
+  .head { align-items: flex-start; gap: 18px; padding-bottom: 8px; }
+  .mark { width: 42px; height: 42px; }
+  h1 { font-size: 30pt; }
+  .strap, .notice, .data-source, .foot { font-size: 9pt; }
+  .run { gap: 3px 18px; }
+  .run dt { font-size: 8pt; }
+  .run dd { font-size: 8.5pt; }
+  .run-picker, .summary, .integrations, .tasks-section { display: none !important; }
+  .ledger-section { margin-top: 10mm !important; break-before: auto; }
+  .ledger-section .section-note { font-size: 9pt; margin-bottom: 3mm; }
+  .scroll { overflow: visible; }
+  .ledger {
+    min-width: 0;
+    table-layout: fixed;
+    border-top-width: 1pt;
+    border-bottom-width: 1pt;
+  }
+  .ledger th, .ledger td {
+    padding: 3pt 4pt;
+    font-size: 7.5pt;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+  .ledger .fig, .ledger .l-note, .ledger .evidence-id code { font-size: 7pt; }
+  .ledger th:nth-child(1), .ledger td:nth-child(1) { width: 7%; }
+  .ledger th:nth-child(2), .ledger td:nth-child(2) { width: 20%; }
+  .ledger th:nth-child(3), .ledger td:nth-child(3) { width: 17%; }
+  .ledger th:nth-child(4), .ledger td:nth-child(4) { width: 11%; }
+  .ledger th:nth-child(5), .ledger td:nth-child(5),
+  .ledger th:nth-child(6), .ledger td:nth-child(6),
+  .ledger th:nth-child(7), .ledger td:nth-child(7) { width: 8%; }
+  .ledger th:nth-child(8), .ledger td:nth-child(8) { width: 11%; }
+  .ledger th:nth-child(9), .ledger td:nth-child(9) { width: 10%; }
+  .l-links a, .evidence-id { display: block; margin-right: 0; white-space: normal; }
   .live { animation: none; }
 }
