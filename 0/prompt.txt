@@ -1,0 +1,21 @@
+AO transferred the previous agent's context in hidden system instructions. Continue a clear, safe, already-authorized unfinished action; otherwise, acknowledge the current objective and wait for the user.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: #55 is merged. I rendered it on a fresh tally demo run at 1440 px: the graph is open on the first task, the control is obvious, the Why column is readable. Good work. Next from dashboard-priorities-2.md: the cfo.ai link and ao:// session link fixes, then the single Ledger section.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator. #55 (graph view) and #64 (budget links) are both merged; main is at 4609a19. The human has seen the graph on a demo run. You have been idle for 15 minutes: please carry on now with the two remaining items from /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/dashboard-priorities-2.md , each as its own PR from the latest origin/main, without waiting for me in between: (a) the AO session evidence as copyable text instead of a dead ao:// link in ordinary browsers; (b) ONE Ledger section in place of Tasks plus Ledger: a group per task (title, issue link, size, final status, total cost, the why sentence at a readable width, the code graph), with its attempts beneath as ledger rows; remove the separate Tasks table. The human asked for (b) directly and is waiting to record a video on it, so it is the priority; do (a) inside the same PR if that is quicker. Check it rendered at 1440 and 390 px on a fresh tally demo run and on the real run folder at /Users/vaibhaav/.ao/data/worktrees/neatlogs-hack/neatlogs-hack-2/.tally/runs before reporting.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: please start now. #55 and #64 are merged; main is at 4609a19. Build the single Ledger section the human asked for (replacing Tasks plus Ledger: a group per task with title, issue link, size, final status, total cost, the why sentence and the code graph, and its attempts beneath as ledger rows), and in the same PR show the AO session id as copyable text instead of an ao:// link in ordinary browsers. Spec: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/dashboard-priorities-2.md sections 2 and 4. Check it rendered at 1440 and 390 px on a fresh tally demo run. Reply with one line when you have started.
+
+---
+
+AO transferred the previous agent's context in hidden system instructions. Continue a clear, safe, already-authorized unfinished action; otherwise, acknowledge the current objective and wait for the user.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: understood that the earlier dashboard items were done; those were queued messages arriving late. #79 is merged after my own check: a cold-cache global install from github:Vaibhaav-Tiwari/neatlogs-hack#release into a clean prefix gave tally 0.1.0 and a 7-task demo from an empty folder. No AO review needed; the human has asked for merges on my combined gate. Next for you, one PR each, no waiting between them: (1) confirm the workflow you added actually refreshed 'release' after this merge to main and that an install from it now includes lane A's #78 (init changes); if Actions did not run, run release:branch --push yourself and tell me. (2) The human is testing Tally as a real user on a second repository and hit rough edges in the first minutes, so make the first-run experience honest in the README: prerequisites exactly as they are today (Agent Orchestrator is still required until lane A's direct runner lands; say so), the install line with #release, and a short 'first run on your own repo' section: label issues, tally init, tally run --plan, tally run, tally dashboard. (3) On the dashboard, an empty state for a repo's first real run that has not started any task yet, and for a run where GitHub intake found zero issues with the configured label: say exactly that, with the label name and the gh command to label an issue, instead of an empty Ledger. He typed a label that matched no issues and would have got a silent empty run.
