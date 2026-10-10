@@ -1,11 +1,10 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runCommand } from './command.js';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { capImpact } from '../agent/impact.js';
 import type { SizingSignals, SizingSignalsPort, TaskInput } from '../agent/ports.js';
 import type { IntegrationState, TaskImpact } from '../schema/types.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync = runCommand;
 
 export interface CommandResult {
   stdout: string;

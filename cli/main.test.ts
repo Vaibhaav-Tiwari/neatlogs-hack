@@ -1,7 +1,11 @@
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as initModule from '../engine/init.js';
+import * as runModule from '../engine/run.js';
+import type { RunState } from '../schema/types.js';
+import { CommandError } from '../adapters/command.js';
 import { COMMANDS, main, parseCli } from './main.js';
 
 function capture() {
@@ -22,6 +26,29 @@ async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 describe('parseCli', () => {
+  it('explains an empty GitHub intake with the repo, label and labeling command without a stack', async () => {
+    const state = JSON.parse(readFileSync(new URL('../schema/fixtures/finished-run/run.json', import.meta.url), 'utf8')) as RunState;
+    state.tasks = [];
+    state.repo = 'acme/static-site';
+    state.backlog = { source: 'github-issues', issueLabel: 'ready-for-tally' };
+    const spy = vi.spyOn(runModule, 'runTally').mockResolvedValueOnce({ runState: state, ledger: [], outputDir: '/tmp/example', runStatePath: '/tmp/example/run.json', ledgerPath: '/tmp/example/ledger.json', latestRunDir: '/tmp/example/latest' });
+    try {
+      const { io, out, err } = capture();
+      expect(await main(['run'], io)).toBe(0);
+      expect(out.join('\n')).toContain('No matching open issues with label "ready-for-tally" in acme/static-site');
+      expect(out.join('\n')).toContain("gh issue edit <issue-number> --repo 'acme/static-site' --add-label 'ready-for-tally'");
+      expect(err).toEqual([]);
+    } finally { spy.mockRestore(); }
+  });
+  it('prints missing AO requirements without an unhandled stack trace', async () => {
+    const message = 'Agent Orchestrator (AO) is required; looked in PATH and app bundles; set TALLY_AO_BIN to its executable path.';
+    const spy = vi.spyOn(initModule, 'runInit').mockRejectedValueOnce(new CommandError(message, 'ENOENT'));
+    try {
+      const { io, err } = capture();
+      expect(await main(['init', '--yes'], io)).toBe(2);
+      expect(err).toEqual([`tally init: ${message}`]);
+    } finally { spy.mockRestore(); }
+  });
   it('prints an actionable init error for a static repo under --yes without writing configuration', async () => {
     await withTempCwd(async () => {
       writeFileSync('index.html', '<h1>Static site</h1>');

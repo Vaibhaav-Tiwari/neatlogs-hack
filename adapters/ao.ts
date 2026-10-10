@@ -1,13 +1,10 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runCommand } from './command.js';
 import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import type { LiveUsage, LiveUsagePort, SessionControlPort } from '../agent/ports.js';
 import type { TokenUsage } from '../schema/index.js';
 import type { WorkerPort, WorkerResult, WorkerStartInput } from '../engine/real.js';
-
-const execFileAsync = promisify(execFile);
 
 export interface CommandResult {
   stdout: string;
@@ -17,6 +14,7 @@ export interface CommandResult {
 export type CommandRunner = (file: string, args: string[], options?: { cwd?: string }) => Promise<CommandResult>;
 
 export interface AoAdapterOptions {
+  aoBin?: string;
   requiredBaseCommit?: string;
   project?: string;
   cwd?: string;
@@ -49,10 +47,6 @@ interface AoSessionJson {
     message?: string | null;
     detail?: string | null;
   };
-}
-
-function defaultCommand(file: string, args: string[], options?: { cwd?: string }): Promise<CommandResult> {
-  return execFileAsync(file, args, { cwd: options?.cwd });
 }
 
 function parseSpawn(stdout: string): string {
@@ -128,7 +122,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(private readonly options: AoAdapterOptions = {}) {
-    this.command = options.command ?? defaultCommand;
+    this.command = options.command ?? ((file, args, commandOptions) => runCommand(file, args, { ...commandOptions, aoBin: options.aoBin }));
     this.fetchImpl = options.fetch ?? fetch;
     this.usageBaseUrl = options.usageBaseUrl ?? 'http://127.0.0.1:3001/api/v1';
     this.pollMs = options.pollMs ?? 5000;

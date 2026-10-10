@@ -150,6 +150,7 @@ export interface RunState {
   status: RunStatus;
   /** The repository the run worked on, as written in tally.yaml. */
   repo: string;
+  backlog?: { source: 'github-issues' | 'file'; issueLabel?: string; file?: string };
   /** Commit every task branched from. */
   baseCommit: string | null;
   startedAt: string;
@@ -204,6 +205,8 @@ export interface TallyConfig {
     baseBranch: string;
     /** Agent Orchestrator project id, when it differs from the default for the checkout. */
     aoProject?: string;
+    /** AO CLI fallback path, relative to tally.yaml; PATH and TALLY_AO_BIN take precedence. */
+    aoBin?: string;
     /** Let the worker push/open its own PR. Defaults to false; Tally publishes after verification. */
     workerPublishesPr?: boolean;
     blockOutOfScopeChanges?: boolean;

@@ -1,9 +1,8 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runCommand } from './command.js';
 import type { TallyConfig } from '../schema/index.js';
 import { type BacklogTask, loadFileBacklog } from '../engine/backlog.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync = runCommand;
 
 export type GithubCommand = (file: string, args: string[], options?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }>;
 

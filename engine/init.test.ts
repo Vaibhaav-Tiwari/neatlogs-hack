@@ -101,6 +101,7 @@ describe('runInit', () => {
     const command: InitCommandRunner = async (file, args) => {
       if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
       if (args[0] === 'agent') return { stdout: JSON.stringify({ installed: [{ id: 'codex' }] }), stderr: '' };
+      if (args[0] === 'status' || file === 'gh') return { stdout: 'ok', stderr: '' };
       if (args[1] === 'get') return { stdout: JSON.stringify({ project: { config: { postCreate: ['echo preserved'], worker: { agentConfig: { permissions: 'default' } } } } }), stderr: '' };
       expect(printed.join('\n')).toContain('Requested worker rules (not yet enforced)');
       expect(printed.join('\n')).toContain('git add and git commit');
@@ -147,7 +148,10 @@ describe('runInit', () => {
       if (joined === 'git rev-parse --show-toplevel') return { stdout: repo, stderr: '' };
       if (joined === 'git branch --show-current') return { stdout: 'main\n', stderr: '' };
       if (joined === 'git remote get-url origin') return { stdout: 'git@github.com:acme/widgets.git\n', stderr: '' };
+      if (joined === 'git --version') return { stdout: 'git version test', stderr: '' };
       if (joined === 'ao agent ls --refresh --json') return { stdout: JSON.stringify({ installed: [{ id: 'codex' }] }), stderr: '' };
+      if (joined === 'ao status' || file === 'gh') return { stdout: 'ok', stderr: '' };
+      if (file === 'entire') return { stdout: args[0] === 'status' ? '{"enabled":true}' : 'ok', stderr: '' };
       if (file === 'ao' && args[0] === 'project' && args[1] === 'get') {
         if (!projectAdded) throw new Error('missing project');
         return { stdout: JSON.stringify({ project: { config: {} } }), stderr: '' };
@@ -166,6 +170,7 @@ describe('runInit', () => {
       cwd: repo,
       command,
       print: () => {},
+      env: { NEATLOGS_API_KEY: 'fake-test-key' },
       readLine: async () => answers[prompt++]!,
       doctor: async () => [{ product: 'AO daemon', status: 'connected', detail: 'ok', fix: null }],
     });

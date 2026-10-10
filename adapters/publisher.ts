@@ -1,9 +1,8 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runCommand } from './command.js';
 import type { BacklogTask } from '../engine/backlog.js';
 import type { TallyConfig } from '../schema/index.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync = runCommand;
 
 export type PublishCommand = (file: string, args: string[], options?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }>;
 
