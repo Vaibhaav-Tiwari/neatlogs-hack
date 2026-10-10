@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4JTCQ8GP4A84R33Y2DT5X1P",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/root",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "schema/fixtures/finished-run/tally.yaml",
+    "schema/schema.test.ts",
+    "schema/tally-config.schema.json",
+    "schema/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 5902,
+    "cache_read_tokens": 1406092,
+    "output_tokens": 4685,
+    "api_call_count": 5
+  }
+}

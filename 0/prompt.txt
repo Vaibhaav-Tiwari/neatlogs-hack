@@ -1,0 +1,22 @@
+[from neatlogs-hack-1] Addition to PART 1, new spike S7. The user now also has LLM API keys for Amazon Nova (Micro, Lite, Pro, Nova 2 Lite) and Claude (Haiku, Sonnet 4.6, Opus 4.6). They will fill these fields in ~/.tally/.env: LLM_PROVIDER (bedrock | anthropic | gateway), LLM_API_KEY, LLM_API_KEY_CLAUDE, LLM_BASE_URL, LLM_REGION, LLM_MODEL_IDS. They may still be empty when you get here; if so, say so and answer from docs only. Find out: (1) which AO harnesses can run a coding session on these keys: Claude Code against Bedrock or a custom base URL for the Claude models, and which harness (opencode, aider, codex with a custom provider, or other) can drive Nova models; (2) whether AO's usage endpoint still reports tokens and estimated cost for such sessions; (3) list prices per million input and output tokens for each of the seven models, with the source. Add model tiers to the tally.yaml schema so a tier is {name, harness, model id, provider, input price, output price}. Never print key values. Do not spend more than a few cents testing.
+
+---
+
+[from neatlogs-hack-1] Resuming you after the user stopped the session. This message replaces the earlier follow-ups; here is everything in one place.
+
+DONE (seen on your branch, thank you): Entire enabled, TypeScript scaffold, schema + fixtures, CLI stubs, README. 5 commits, not pushed.
+
+1. PUBLISHING IS AUTHORISED. Push ao/neatlogs-hack-2/root to origin (Vaibhaav-Tiwari/neatlogs-hack) now and open a PR against main titled "Schema, scaffold and CLI stubs". Lanes B and C are starting immediately and will base on your branch, so do not rewrite its history.
+
+2. LLM KEYS ARE A LiteLLM GATEWAY. In ~/.tally/.env: LLM_PROVIDER=litellm, LLM_API_KEY, LLM_BASE_URL (ends in /v1), LLM_MODEL_IDS=nova-micro,nova-lite,nova-2-lite,nova-pro,claude-haiku,claude-sonnet-4.6,claude-opus-4.6. The fields LLM_API_KEY_CLAUDE and LLM_REGION do not exist. LiteLLM is OpenAI-compatible and usually also serves the Anthropic format at /v1/messages on the same host.
+
+3. TEST CALLS ON THAT KEY ARE AUTHORISED, including reading the key's budget and spend. Keep total test spend under 0.50 USD. Never print the key.
+
+4. WRITE YOUR SPIKE FINDINGS TO A FILE NOW: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-1/spike-findings.md. One section per spike (S1-S7) plus the fly-doom-jev test check. For each: the answer in one line, the command and real output that proves it, and what is still unverified. Write what you already know first, then update the file as you finish the rest. The other lanes read this file.
+
+5. REMAINING WORK, in order:
+   a. S7: can Claude Code run as an AO worker against the gateway (ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN, gateway model ids) for the three Claude models; which harness can drive the Nova models (codex custom provider, opencode, aider); how per-session env/provider config is passed through ao spawn; whether AO's usage endpoint and the gateway both report tokens and cost; the key's max budget and current spend; list prices for all seven models with sources.
+   b. Any of S1, S3, S4, S5 and the fly-doom-jev test check not yet finished. Skip S6 unless `claude mcp list` shows cfoai connected.
+   c. Then lane A proper: the run loop, ledger writer, dry-run mode with simulated workers (`tally demo` and `tally run --dry-run`), then the adapters (AO spawn/status/kill + usage polling, GitHub issues intake, Entire, neatlogs, cfo.ai with the CSV fallback). Lane B owns agent/ and will define the ports it needs from you in agent/ports.ts; lane C owns dashboard/ and demo/. Stay out of those folders.
+
+Open one PR per coherent piece rather than one giant PR. Report with `ao report` at each milestone.
