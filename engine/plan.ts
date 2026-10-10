@@ -94,7 +94,8 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
       ? await routeBaseline({ task: taskInput, estimate, config, ports: { budget, history } })
       : await routeTask({ task: taskInput, estimate, config, ports: { budget, history } });
     if (route.action === 'start') {
-      budget.reserve(route.ceilingNanos);
+      const ceiling = task.firstAttemptCeilingUsd === undefined || options.baseline ? route.ceilingNanos : Math.min(route.ceilingNanos ?? Infinity, usdToNanos(task.firstAttemptCeilingUsd));
+      budget.reserve(ceiling);
       planned.push({
         taskId: task.taskId,
         title: task.title,
@@ -102,8 +103,8 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         tier: route.tier.name,
         model: route.tier.model,
         harness: route.tier.harness,
-        ceilingNanos: route.ceilingNanos,
-        decision: route.reason,
+        ceilingNanos: ceiling,
+        decision: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.reason : `${route.reason} Deliberate first-attempt ceiling override: $${task.firstAttemptCeilingUsd.toFixed(3)} (normal ceiling remains an upper bound).`,
         skipped: false,
       });
     } else {

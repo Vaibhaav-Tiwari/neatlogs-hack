@@ -280,6 +280,21 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it('uses a first-attempt override to stop via the watcher and escalates with the normal ceiling', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    const wait = worker.wait.bind(worker);
+    worker.wait = (sessionId) => sessionId === 'session-1' ? new Promise(() => {}) : wait(sessionId);
+    const overridingIntake: BacklogIntakePort = { tasks: async (...args) => (await intake.tasks(...args)).map((task) => ({ ...task, firstAttemptCeilingUsd: 0.001 })) };
+    const result = await runRealTally({ configPath, dryRun: true, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: overridingIntake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]), handoff: { summaryFor: async () => ({ type: 'entire-handoff', summary: 'Partial implementation: continue calc.ts.' }) } } });
+    expect(result.ledger.map((row) => row.result)).toEqual(['stopped', 'passed']);
+    expect(worker.stopped).toContain('session-1');
+    expect(worker.starts.map((start) => start.tier.name)).toEqual(['cheap', 'middle']);
+    expect(worker.starts.map((start) => start.ceilingNanos)).toEqual([usdToNanos(0.001), usdToNanos(0.5)]);
+    expect(worker.starts[1]?.prompt).toContain('Partial implementation: continue calc.ts.');
+  });
   it.each([false, true])('records scope warnings and only blocks when configured: %s', async (block) => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('aoProject: "payments"', `aoProject: "payments", blockOutOfScopeChanges: ${block}`));
