@@ -99,21 +99,30 @@ const nullSignals: SizingSignalsPort = {
   },
 };
 
-function defaultPorts(config: TallyConfig, configPath: string): RealRunPorts {
+function hasPort<K extends keyof RealRunPorts>(ports: Partial<RealRunPorts>, key: K): ports is Partial<RealRunPorts> & Pick<RealRunPorts, K> {
+  return Object.prototype.hasOwnProperty.call(ports, key);
+}
+
+function resolvePorts(config: TallyConfig, configPath: string, overrides: Partial<RealRunPorts> = {}): RealRunPorts {
   const ao = new AoCliAdapter();
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
-  const trace = config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
-  const localHistory = new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
-  const cfoai = config.integrations.cfoai || config.budget.source === 'cfoai' ? new CfoaiBudgetAdapter({ config: config.budget.cfoai }) : undefined;
+  const localHistory = hasPort(overrides, 'history') ? null : new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
+  const trace = hasPort(overrides, 'trace') ? overrides.trace : config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
+  const cfoai = hasPort(overrides, 'cfoai')
+    ? overrides.cfoai
+    : config.integrations.cfoai || config.budget.source === 'cfoai'
+      ? new CfoaiBudgetAdapter({ config: config.budget.cfoai })
+      : undefined;
   return {
-    intake: new ConfigBacklogIntake(),
-    signals: config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals,
-    worker: ao,
-    verifier: new CommandVerifier(),
-    usage: ao,
-    sessions: ao,
-    history: config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory }) : localHistory,
+    intake: overrides.intake ?? new ConfigBacklogIntake(),
+    signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals),
+    worker: overrides.worker ?? ao,
+    verifier: overrides.verifier ?? new CommandVerifier(),
+    usage: overrides.usage ?? ao,
+    sessions: overrides.sessions ?? ao,
+    history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
+    ...(overrides.handoff ? { handoff: overrides.handoff } : {}),
     ...(trace ? { trace } : {}),
     ...(cfoai ? { cfoai } : {}),
   };
@@ -413,7 +422,7 @@ async function runAttempt(input: {
 
 export async function runRealTally(options: RealRunOptions): Promise<RunResult> {
   const config = loadConfig(options.configPath);
-  const ports = { ...defaultPorts(config, options.configPath), ...options.ports };
+  const ports = resolvePorts(config, options.configPath, options.ports);
   const now = options.now ?? (() => new Date());
   const started = now();
   const runId = runIdFrom(started);

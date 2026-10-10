@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runDoctor, type DoctorRunner } from './doctor.js';
 
@@ -35,6 +38,62 @@ describe('runDoctor', () => {
       status: 'missing',
       detail: 'Tally has no cached cfo.ai token. Run `tally login cfoai` to connect cfo.ai.',
       fix: 'tally login cfoai',
+    });
+  });
+
+  it('reports target AO worker auto mode from tally.yaml', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-'));
+    mkdirSync(join(dir, 'repo'));
+    const configPath = join(dir, 'tally.yaml');
+    writeFileSync(
+      configPath,
+      `version: 1
+repo: { path: "repo", baseBranch: "main", aoProject: "fly-doom-jev" }
+test: { command: "npm test" }
+backlog: { source: "file", file: "backlog.yaml" }
+tiers:
+  - name: cheap
+    harness: claude-code
+    provider: test
+    model: test-model
+    price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 }
+    ceilingFraction: 1
+ceilings:
+  bySizeUsd: { small: 1, medium: 2, large: 3 }
+budget: { source: config, usd: 10 }
+integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
+`,
+    );
+    writeFileSync(join(dir, 'backlog.yaml'), 'tasks: []\n');
+    const runner: DoctorRunner = async (file, args) => {
+      const command = `${file} ${args.join(' ')}`;
+      if (command === 'ao status') return { stdout: 'ok', stderr: '' };
+      if (command === 'ao project get fly-doom-jev --json') {
+        return {
+          stdout: JSON.stringify({
+            project: {
+              config: {
+                worker: { agent: 'claude-code', agentConfig: { permissions: 'default' } },
+              },
+            },
+          }),
+          stderr: '',
+        };
+      }
+      return { stdout: 'ok', stderr: '' };
+    };
+
+    const lines = await runDoctor({
+      runner,
+      configPath,
+      env: { NEATLOGS_API_KEY: 'set' },
+      cfoaiCheck: async () => ({ status: 'ok', detail: 'connected' }),
+    });
+
+    expect(lines.find((line) => line.product === 'AO worker auto mode')).toMatchObject({
+      status: 'broken',
+      detail: expect.stringContaining('worker permission mode is default'),
+      fix: expect.stringContaining('ao project set-config fly-doom-jev --config-json'),
     });
   });
 });
