@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KE89DFA4SK7AR1R7QMM86P",
+  "session_id": "01a125ae-c722-75d0-93f1-147e3e8f6ffa",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T17:37:29.335672Z",
+  "branch": "ao/neatlogs-hack-6/f5-impact-history",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dashboard/app.js",
+    "dashboard/styles.css"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "dc1c5e833ac3",
+  "checkpoint_transcript_start": 2876,
+  "transcript_lines_at_start": 2876,
+  "compact_transcript_start": 313,
+  "token_usage": {
+    "input_tokens": 16773,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 651648,
+    "output_tokens": 2549,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T17:37:29.208054Z",
+    "agent_lines": 53,
+    "agent_removed": 14,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 53,
+    "total_lines_changed": 67,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
