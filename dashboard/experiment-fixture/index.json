@@ -1,0 +1,46 @@
+{
+  "runs": [
+    {
+      "id": "sample-baseline-1",
+      "path": "./experiment-fixture/sample-baseline-1/",
+      "updatedAt": "2026-10-11T01:04:00Z",
+      "status": "finished",
+      "mode": "baseline",
+      "repo": "demo/invoice-ledger"
+    },
+    {
+      "id": "sample-baseline-2",
+      "path": "./experiment-fixture/sample-baseline-2/",
+      "updatedAt": "2026-10-11T01:04:00Z",
+      "status": "finished",
+      "mode": "baseline",
+      "repo": "demo/invoice-ledger"
+    },
+    {
+      "id": "sample-tally-1",
+      "path": "./experiment-fixture/sample-tally-1/",
+      "updatedAt": "2026-10-11T01:04:00Z",
+      "status": "finished",
+      "mode": "tally",
+      "repo": "demo/invoice-ledger"
+    },
+    {
+      "id": "sample-tally-2",
+      "path": "./experiment-fixture/sample-tally-2/",
+      "updatedAt": "2026-10-11T01:04:00Z",
+      "status": "finished",
+      "mode": "tally",
+      "repo": "demo/invoice-ledger"
+    }
+  ],
+  "experiments": [
+    {
+      "id": "exp-scripted-comparison",
+      "path": "./experiment-fixture/experiments/exp-scripted-comparison/",
+      "updatedAt": "2026-10-11T01:04:00Z",
+      "repo": "demo/invoice-ledger",
+      "real": false,
+      "status": "finished"
+    }
+  ]
+}

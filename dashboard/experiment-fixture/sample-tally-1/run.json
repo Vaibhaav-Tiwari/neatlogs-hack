@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "runId": "sample-tally-1",
+  "mode": "tally",
+  "repeat": 1,
+  "dryRun": true,
+  "status": "finished",
+  "repo": "demo/invoice-ledger",
+  "baseCommit": "scripted",
+  "startedAt": "2026-10-11T01:00:00Z",
+  "updatedAt": "2026-10-11T01:04:00Z",
+  "endedAt": "2026-10-11T01:04:00Z",
+  "budget": {
+    "source": "config",
+    "limitNanos": 20000000000,
+    "spentNanos": 14000000000
+  },
+  "tasks": [
+    {
+      "taskId": "E1",
+      "title": "First scripted task",
+      "size": "small",
+      "status": "passed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "cheap",
+      "model": "sample-model",
+      "spentNanos": 7000000000,
+      "escalated": false,
+      "prUrl": null
+    },
+    {
+      "taskId": "E2",
+      "title": "Second scripted task",
+      "size": "small",
+      "status": "failed",
+      "statusReason": null,
+      "attempts": 1,
+      "tier": "cheap",
+      "model": "sample-model",
+      "spentNanos": 7000000000,
+      "escalated": false,
+      "prUrl": null
+    }
+  ],
+  "integrations": {
+    "neatlogs": {
+      "status": "off",
+      "detail": "Scripted comparison fixture."
+    },
+    "entire": {
+      "status": "off",
+      "detail": "Scripted comparison fixture."
+    },
+    "cfoai": {
+      "status": "off",
+      "detail": "Scripted comparison fixture."
+    },
+    "github": {
+      "status": "off",
+      "detail": "Scripted comparison fixture."
+    },
+    "slack": {
+      "status": "off",
+      "detail": "Scripted comparison fixture."
+    }
+  }
+}
