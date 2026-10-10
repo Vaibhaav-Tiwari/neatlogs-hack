@@ -24,8 +24,9 @@ class DryRunState implements WorkerPort, LiveUsagePort, SessionControlPort, Veri
   private readonly sessions = new Map<string, DrySession>();
 
   async start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string | null; checkoutPath: string | null }> {
-    const scripts = input.task.scriptedAttempts ?? input.task.outcomes.map((result) => ({ result, resultReason: null, tokens: zeroTokens(), handoff: null, decision: null }));
-    const script = scripts[input.attempt - 1] ?? scripts[scripts.length - 1];
+    const scripts: ScriptedAttempt[] =
+      input.task.scriptedAttempts ?? input.task.outcomes.map((result) => ({ result, resultReason: null, tokens: zeroTokens(), handoff: null, decision: null }));
+    const script = scripts.find((candidate) => candidate.tier === input.tier.name) ?? scripts[input.attempt - 1] ?? scripts[scripts.length - 1];
     if (!script) throw new Error(`dry-run task ${input.task.taskId} has no scripted attempt ${input.attempt}`);
     const sessionId = `dry-${input.task.taskId}-${input.attempt}`;
     const branch = `dry/${input.task.taskId}/${input.attempt}`;
@@ -46,7 +47,7 @@ class DryRunState implements WorkerPort, LiveUsagePort, SessionControlPort, Veri
 
   async wait(sessionId: string): Promise<WorkerResult> {
     const session = this.session(sessionId);
-    if (session.script.result !== 'stopped') return resultFor(session, 'idle');
+    if (session.script.result !== 'stopped' || session.ceilingNanos === null) return resultFor(session, 'idle');
     if (session.stopped) return resultFor(session, 'terminated');
     return new Promise((resolve) => {
       session.resolve = resolve;
