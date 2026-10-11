@@ -254,6 +254,7 @@ npm test
 | `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
 | `tally init` | Preview files and AO changes, then ask final default-No consent. `--dry-run` previews; `--yes` applies defaults without prompts. Scoped worker allow-list enforcement is not yet installed. |
 | `tally uninstall` | Confirm removal of init-owned configuration and AO settings; preserve history and credentials. |
+| `tally logo` | Replay the first-run logo animation. It plays once by itself, the first time you run bare `tally` or `tally init` in a terminal; after that bare `tally` and `--help` show a small still mark. Nothing is drawn when output is piped, in CI, on `TERM=dumb`, or for any other command. `TALLY_NO_ANIMATION=1` turns the motion off and `NO_COLOR` gives plain text. |
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 | `tally login cfoai` | Sign in to cfo.ai; tokens are cached outside the repository. |
 | `tally traces drain --run <id>` | Recover only that finished run's worker traces, verify readable spans, then update saved status and worker trace ids. Use `--output <run-dir>` for a run stored elsewhere. |
