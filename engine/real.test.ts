@@ -446,6 +446,40 @@ describe('runRealTally', () => {
     }
     expect(result.runState.status).toBe('finished');
   });
+  it.each([
+    ['ao', 'claude-code'], ['ao', 'codex'], ['direct', 'claude-code'], ['direct', 'codex'],
+  ] as const)('reads worker traces after closure for %s/%s and reports delivery honestly', async (runner, harness) => {
+    for (const delivered of [true, false]) {
+      const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
+      const config = loadConfig(configPath);
+      config.runner = runner;
+      config.tiers.forEach(tier => { tier.harness = harness; });
+      writeFileSync(configPath, stringifyYaml(config));
+      const worker = new FakeWorker();
+      let reads = 0, drains = 0;
+      const result = await runRealTally({ configPath, dryRun: false, baseline: false,
+        outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+        ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+          trace: new FakeTrace(), verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+          workerTraceDrain: { drainWorker: async () => { expect(worker.stopped).toContain('session-1'); drains++; } },
+          workerTraceReader: { verifyFor: async context => {
+            expect(worker.stopped).toContain('session-1');
+            expect(context).toEqual({ runId: 'run-20261011-030000Z', taskId: 'T1', attempt: 1,
+              nativeSessionId: runner === 'direct' ? 'session-1' : null });
+            reads++;
+            return delivered ? 'c'.repeat(32) : null;
+          } },
+        },
+      });
+      expect(reads).toBe(1);
+      expect(drains).toBe(harness === 'codex' ? 1 : 0);
+      expect(result.ledger[0]?.workerTraceId).toBe(delivered ? 'c'.repeat(32) : null);
+      expect(result.runState.integrations.neatlogs.status).toBe(delivered ? 'ok' : 'missing');
+      const saved = JSON.parse(readFileSync(join(result.outputDir, 'ledger.json'), 'utf8'));
+      expect(saved[0].workerTraceId).toBe(result.ledger[0]?.workerTraceId);
+    }
+  });
+
   it('continues the watcher-stopped branch on escalation and publishes only the verified attempt', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
@@ -1446,6 +1480,7 @@ describe('runRealTally', () => {
         sessions: worker,
         publisher: worker,
         trace: new FakeTrace(),
+        workerTraceReader: { verifyFor: async () => 'd'.repeat(32) },
         history: { lookup: async () => null, record: async () => {} },
         cfoai,
       },
