@@ -9,6 +9,16 @@ import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 import { runUninstall } from './uninstall.js';
 
 describe('runInit', () => {
+  it('stops mixed AO init before consent, integration connection or settings writes', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-mixed-gate-'));
+    const onboarding = vi.fn(async () => undefined);
+    const command = vi.fn(detectedAgents(repo, ['claude-code', 'codex']));
+    await expect(runInit({ cwd: repo, command, runner: 'ao', harnessChoice: 'mixed', yes: true, allowClaude: true,
+      testCommand: 'true', setupCommand: '', print: () => {}, onboarding })).rejects.toThrow('Mixed AO harnesses are not supported yet');
+    expect(onboarding).not.toHaveBeenCalled();
+    expect(existsSync(join(repo, 'tally.yaml'))).toBe(false);
+    expect(command.mock.calls.some(([, args]) => args[0] === 'project')).toBe(false);
+  });
   it.each([false, true])('installs Claude AO prelaunch settings and restores ownership (doctor recovery: %s)', async recover => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-ao-claude-'));
     const original = { postCreate: ['echo existing'], worker: { agentConfig: { permissions: 'auto', effort: 'high' } }, env: { KEEP: 'yes' } };

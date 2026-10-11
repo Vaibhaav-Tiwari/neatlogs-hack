@@ -327,6 +327,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
       config.runner = setup.runner;
       if (options.harnessChoice) config.tiers = setup.tiers;
     }
+    if ((config.runner ?? 'ao') === 'ao') aoWorkerMode(config);
     await consentClaude(config, options, readLine, print);
   }
   const validation = validateConfig(config);
@@ -407,6 +408,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
   const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Enable cfo.ai budget integration? y/N', 'N'));
   const { runner, tiers } = await chooseSetup(options, command, repoRoot, readLine, print);
+  if (runner === 'ao') aoWorkerMode({ tiers });
   const projectId = runner === 'ao' ? basename(repoRoot) : '';
   const config: TallyConfig = {
     version: 1,

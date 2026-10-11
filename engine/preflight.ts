@@ -43,9 +43,9 @@ export function withWorkerAutoMode(config: unknown): Record<string, unknown> {
   return withWorkerPermissionMode(config, 'auto');
 }
 
-export function aoWorkerMode(config: TallyConfig): 'default' | 'auto' {
+export function aoWorkerMode(config: Pick<TallyConfig, 'tiers'>): 'default' | 'auto' {
   const harnesses = new Set(config.tiers.map(tier => tier.harness));
-  if (harnesses.size > 1) throw new Error('Mixed AO harnesses need per-harness permission modes; use Claude-only or Codex-only tiers, or runner: direct. No worker was started.');
+  if (harnesses.size > 1) throw new Error('Mixed AO harnesses are not supported yet; use Claude-only or Codex-only tiers, or runner: direct. No harness was substituted or worker started.');
   return harnesses.has('claude-code') ? 'default' : 'auto';
 }
 
