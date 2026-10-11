@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4NBP1T6CNKNF6AZXVHYA09X",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/direct-host-commit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/direct.test.ts",
+    "adapters/direct.ts",
+    "engine/direct.test.ts",
+    "engine/real.test.ts",
+    "engine/real.ts",
+    "schema/ledger-row.schema.json",
+    "schema/schema.test.ts",
+    "schema/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6526769,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 272346624,
+    "output_tokens": 840068,
+    "api_call_count": 1987
+  }
+}
