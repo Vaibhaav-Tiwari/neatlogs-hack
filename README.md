@@ -48,6 +48,8 @@ prints the size, confidence, route and ceiling without starting a worker.
 `runner: direct` needs Claude Code installed on PATH and signed in with
 `claude auth login`. Keep each tier's `harness: claude-code` and explicit model;
 the usual test command, list prices, budgets and integrations still apply.
+`claudeCode.allow` must contain the tool rules consented to in `tally init`;
+Tally passes that list verbatim and refuses to launch Claude without it.
 Direct workers use scoped file-edit and git/test/setup allow rules with
 `--permission-mode dontAsk`, never bypass-permissions. Push and `gh` are denied
 to workers; Tally verifies and publishes. Setup runs in the new worktree before

@@ -12,6 +12,7 @@ const input: WorkerStartInput = {
     price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0.1, outputUsdPerMTok: 5 } },
   harness: 'claude-code', model: 'haiku', name: 'tally-test', prompt: 'edit, test, commit', ceilingNanos: 1000,
 };
+const approvedRules = ['Edit(./**)', 'Write(./**)', 'Bash(git add *)', 'Bash(git commit *)', 'Bash(git status)', 'Bash(git diff *)', 'Bash(make test)', 'Bash(make setup)'];
 
 function processFake() {
   const child = Object.assign(new EventEmitter(), { pid: 12345, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough() });
@@ -42,6 +43,12 @@ describe('Claude live usage', () => {
 });
 
 describe('direct Claude worker', () => {
+  it('requires explicit consent before any command or worktree mutation', async () => {
+    const command = vi.fn();
+    const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'make test' }, command });
+    await expect(runner.start(input)).rejects.toThrow('run tally init');
+    expect(command).not.toHaveBeenCalled();
+  });
   it('rejects a wrong base and a setup failure before launching any agent', async () => {
     const launch = vi.fn();
     const calls: string[] = [];
@@ -50,17 +57,17 @@ describe('direct Claude worker', () => {
       if (file === 'sh') throw new Error('setup failed');
       return { stdout: file === 'claude' ? '{"loggedIn":true}' : 'actual-base', stderr: '' };
     };
-    const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', requiredBaseCommit: 'wrong-base', test: { command: 'true' }, command, launch });
+    const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', requiredBaseCommit: 'wrong-base', test: { command: 'true' }, approvedRules, command, launch });
     await expect(runner.start(input)).rejects.toThrow('base commit mismatch');
     expect(launch).not.toHaveBeenCalled();
-    const failingSetup = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true', setupCommand: 'make setup' }, command, launch });
+    const failingSetup = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true', setupCommand: 'make setup' }, approvedRules, command, launch });
     await expect(failingSetup.start(input)).rejects.toThrow('setup failed');
     expect(launch).not.toHaveBeenCalled();
     expect(calls.some(c => c.startsWith('git worktree remove'))).toBe(true);
   });
   it('handles split JSON and an unterminated final line, and fails on malformed output', async () => {
     const fake = processFake();
-    const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, command: async (file) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch, signal: () => fake.child.emit('close', null, 'SIGTERM') });
+    const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, approvedRules, command: async (file) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch, signal: () => fake.child.emit('close', null, 'SIGTERM') });
     const started = await runner.start(input);
     fake.child.stdout.write('{"type":"assistant","message":{"id":"m","usage":');
     fake.child.stdout.write('{"input_tokens":10,"output_tokens":2}}}\n');
@@ -81,7 +88,7 @@ describe('direct Claude worker', () => {
   it('bounds a healthy-but-hung process by the wall clock and escalates TERM to KILL', async () => {
     const fake = processFake();
     const signals: string[] = [];
-    const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, command: async (file) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch, stopGraceMs: 1,
+    const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, approvedRules, command: async (file) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch, stopGraceMs: 1,
       signal: (_pid, signal) => { signals.push(signal); if (signal === 'SIGKILL') fake.child.emit('close', null, signal); } });
     const started = await runner.start(input);
     expect((await runner.wait(started.sessionId, { timeoutMs: 1 })).status).toBe('timeout');
@@ -89,19 +96,20 @@ describe('direct Claude worker', () => {
     await runner.release(started.sessionId);
   });
   it('uses scoped explicit permissions, exact model, no publishing or bypass, and enables partial JSON', () => {
-    const args = claudeArguments(input, '/tmp/work', 'session', { command: 'make test', setupCommand: 'make setup' });
+    const args = claudeArguments(input, 'session', approvedRules);
     expect(args).toContain('haiku');
     expect(args).toContain('--include-partial-messages');
-    expect(args).toContain('Edit(//tmp/work/**)');
+    expect(args).toContain('Edit(./**)');
     expect(args.join(' ')).not.toMatch(/dangerously|bypass|fallback-model/);
     expect(args).toContain('Bash(git push *)'); // denied, never allowed
     expect(args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools')).join(' ')).not.toContain('git push');
     expect(args).toContain('dontAsk');
   });
-  it('does not broaden the consented allow-list with new or arbitrary commands', () => {
-    const args = claudeArguments(input, '/tmp/work', 'session', { command: 'make test' }, ['Edit(./**)', 'Bash(make test)', 'Bash(*)']);
+  it('passes the consented allow-list verbatim without adding or substituting rules', () => {
+    const rules = ['Edit(./**)', 'Write(./**)', 'Bash(make test)'];
+    const args = claudeArguments(input, 'session', rules);
     const allow = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools'));
-    expect(allow).toEqual(['Read(//tmp/work/**)', 'Edit(//tmp/work/**)', 'Bash(make test)']);
+    expect(allow).toEqual(rules);
   });
   it('fails clearly on missing or signed-out Claude without substituting a harness', async () => {
     await expect(checkDirectHarness('claude-code', async () => { throw new Error('ENOENT'); })).rejects.toThrow('Claude Code is required');
@@ -118,7 +126,7 @@ describe('direct Claude worker', () => {
       return { stdout: args.includes('auth') ? '{"loggedIn":true}' : args.includes('rev-parse') ? 'base\n' : '', stderr: '' };
     });
     const signal = vi.fn(() => fake.child.emit('close', null, 'SIGTERM'));
-    const worker = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'make test', setupCommand: 'make setup' }, command, launch: fake.launch, signal });
+    const worker = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'make test', setupCommand: 'make setup' }, approvedRules, command, launch: fake.launch, signal });
     const started = await worker.start(input);
     expect(calls.findIndex(c => c.file === 'sh')).toBeGreaterThan(calls.findIndex(c => c.args[0] === 'worktree'));
     expect(fake.launch.mock.calls[0]?.[2]?.cwd).toBe(started.checkoutPath);
@@ -141,7 +149,7 @@ describe('direct Claude worker', () => {
   it('does not call a nonzero process exit successful and keeps permission denials visible', async () => {
     const fake = processFake();
     const signal = vi.fn();
-    const worker = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, command: async (_file, args) => ({ stdout: args.includes('auth') ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch, signal });
+    const worker = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, approvedRules, command: async (_file, args) => ({ stdout: args.includes('auth') ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch, signal });
     const started = await worker.start(input);
     fake.emit({ type: 'result', is_error: true, result: 'permission denied', permission_denials: [{ tool_name: 'Bash' }], usage: { input_tokens: 1 } });
     fake.child.emit('close', 1, null);

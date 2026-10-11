@@ -3,7 +3,7 @@ import { CommandError, runCommand } from '../adapters/command.js';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { TallyConfig } from '../schema/index.js';
 import { ConfigError } from './config.js';
-import { checkDirectHarness } from '../adapters/direct.js';
+import { checkDirectHarness, requireClaudeConsent } from '../adapters/direct.js';
 
 export type PreflightRunner = (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 
@@ -150,6 +150,7 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
     if (resolvedBacklog && !existsSync(resolvedBacklog)) problems.push(`backlog.file does not exist: ${resolvedBacklog}`);
     if (config.repo.workerPublishesPr) problems.push('runner: direct requires repo.workerPublishesPr: false; Tally publishes the verified branch');
     if (problems.length) throw new ConfigError(configPath, problems);
+    if (config.tiers.some(tier => tier.harness === 'claude-code')) requireClaudeConsent(config.claudeCode?.allow);
     for (const harness of new Set(config.tiers.map(tier => tier.harness))) await checkDirectHarness(harness, runner);
     return;
   }
