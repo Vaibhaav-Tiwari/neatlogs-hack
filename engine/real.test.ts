@@ -788,6 +788,35 @@ describe('runRealTally', () => {
     expect(prompt).not.toContain('/tmp/');
   });
 
+  it.each(['codex', 'claude-code'] as const)('gives direct %s script verification and host-commit instructions through escalation', async harness => {
+    const { dir, configPath } = fixture();
+    const config = loadConfig(configPath);
+    config.runner = 'direct';
+    config.tiers.forEach(tier => { tier.harness = harness; });
+    writeFileSync(configPath, stringifyYaml(config));
+    const worker = new FakeWorker();
+    await runRealTally({ configPath, dryRun: false, baseline: false,
+      outputDir: join(dir, 'prompt'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: false, reason: 'test failed' }, { passed: true, reason: null }]),
+        handoff: { summaryFor: async () => ({ type: 'entire-handoff', summary: 'Continue partial calc.ts.' }) },
+      },
+    });
+    expect(worker.starts).toHaveLength(2);
+    for (const { prompt } of worker.starts) {
+      expect(prompt).toContain('Run the exact Tally verification script path supplied below');
+      expect(prompt).toContain('never a raw pipeline');
+      expect(prompt).not.toContain('Run this verification command');
+      expect(prompt).not.toContain('Add a new commit');
+      expect(prompt).toContain('Tally');
+      if (harness === 'codex') {
+        expect(prompt).toContain('Leave your finished changes uncommitted');
+        expect(prompt).toContain('Do not run git add, git commit');
+      } else expect(prompt).toContain('You do not need to commit; Tally commits your work');
+    }
+    expect(worker.starts[1]!.prompt).toContain('Leave your changes for Tally to commit');
+  });
+
   it('fails a real task that leaves the worker branch with no commits ahead of base', async () => {
     const { dir, configPath } = fixture();
     writeFileSync(configPath, stringifyYaml({ ...loadConfig(configPath), runner: 'direct' }));
