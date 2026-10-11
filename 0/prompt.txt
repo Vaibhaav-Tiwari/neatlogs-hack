@@ -148,3 +148,7 @@ now the onboarding flow cna you check from start to end on something completely 
 ---
 
 see we will update the npm package and the issues you raised prs for have been merged right
+
+---
+
+the issues are onboarding specific except the 4th ig? like the first 3 can be done in one pr? if yes do it
