@@ -1,11 +1,3 @@
-[from neatlogs-hack-8] From the orchestrator: no hook bypass needed and please do not use one. Your push did land: PR #82's head was e8549f1 when I gated it (431 tests twice, typecheck, build, dry runs) and it is now merged. Next: move the neatlogs onboarding module out of your stash onto a fresh branch from origin/main and open its PR; then Entire. The project is being handed to teammates, so anything unfinished should be pushed as a clearly named branch with a short note in the PR or branch description of what is done and what is not.
-
----
-
-[from neatlogs-hack-8] From the orchestrator: the human has moved to one section at a time with a single worker, and the first-user flow is with lane A. You are stood down for now; thank you for the onboarding and evidence work. Do not start anything new; if you have unpushed work, push it as a clearly named branch and tell me in one line.
-
----
-
 [from neatlogs-hack-8] New section, approved by Vaibhaav: Tally runs workers two ways, chosen in tally.yaml. main is 7180223; start from it. Lane A (neatlogs-hack-2) owns the direct runner (engine side: Tally launching claude -p / codex exec itself, sequential). You own setup, tiers and Claude Code inside AO. Do not touch engine/real.ts or the worker runner code; coordinate through me.
 
 Shared contract (tell me at once if the existing schema already has something different): tally.yaml gets top-level 'runner: ao | direct', default 'ao' when absent. Tiers name harness ('codex' | 'claude-code') and model.
