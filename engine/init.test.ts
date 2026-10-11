@@ -2,11 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { stringify as stringifyYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultCommand, runInit, type InitCommandRunner } from './init.js';
 import { installRecordPath } from './install-record.js';
-import { sampleConfig } from '../agent/testing/fakes.js';
 
 describe('runInit', () => {
   function detectedAgents(repo: string, installed = ['claude-code']): InitCommandRunner {
@@ -163,68 +161,6 @@ describe('runInit', () => {
       await defaultCommand('ao', ['project', 'set-config', 'test', '--config-json', JSON.stringify(next), '--json']);
       expect(JSON.parse(requests[1]!.body!).config.worker.agentConfig.effort).toBe('high');
     } finally { vi.unstubAllGlobals(); }
-  });
-  it('runs guided onboarding when re-init enables a previously skipped integration', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'tally-reinit-onboarding-'));
-    const config = sampleConfig({ repo: { path: '.', baseBranch: 'main' } });
-    writeFileSync(join(repo, 'tally.yaml'), stringifyYaml(config));
-    const onboarding = vi.fn(async ({ config: proposed, integrationNames }: { config: typeof config; integrationNames?: readonly string[] }) => {
-      expect(integrationNames).toEqual(['cfoai']);
-      proposed.budget = {
-        source: 'cfoai',
-        usd: 40,
-        cfoai: { orgId: '42', scenario: 'Main Scenario', table: 'Tally agent budget' },
-      };
-    });
-    const command: InitCommandRunner = async (file, args) => {
-      if (file === 'ao' && args[0] === 'status') return { stdout: 'ok', stderr: '' };
-      if (file === 'git' && args[0] === 'rev-parse') return { stdout: repo, stderr: '' };
-      if (file === 'git' && args[0] === 'branch') return { stdout: 'main', stderr: '' };
-      if (file === 'git' && args[0] === '--version') return { stdout: 'git version test', stderr: '' };
-      if (file === 'gh') return { stdout: 'ok', stderr: '' };
-      return { stdout: '{}', stderr: '' };
-    };
-    const result = await runInit({
-      cwd: repo,
-      command,
-      onboarding,
-      cfoaiCheck: async () => ({ status: 'ok', detail: 'fake connected' }),
-      doctor: async () => [],
-      print: () => {},
-      readLine: async (question, fallback) => question === 'Enable cfo.ai integration? y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '',
-    });
-    expect(result.applied).toBe(true);
-    expect(onboarding).toHaveBeenCalledOnce();
-    expect(parseYaml(readFileSync(join(repo, 'tally.yaml'), 'utf8'))).toMatchObject({
-      integrations: { cfoai: true },
-      budget: { source: 'cfoai', cfoai: { orgId: '42', scenario: 'Main Scenario' } },
-    });
-  });
-  it('returns to the local budget when re-init disables cfo.ai', async () => {
-    const repo = mkdtempSync(join(tmpdir(), 'tally-reinit-cfoai-off-'));
-    const config = sampleConfig({
-      repo: { path: '.', baseBranch: 'main' },
-      budget: { source: 'cfoai', usd: 40, cfoai: { orgId: '42', scenario: 'Main Scenario' } },
-      integrations: { neatlogs: false, entire: false, cfoai: true, slack: false },
-    });
-    writeFileSync(join(repo, 'tally.yaml'), stringifyYaml(config));
-    const result = await runInit({
-      cwd: repo,
-      command: async (file, args) => file === 'ao' && args[0] === 'status'
-        ? { stdout: 'ok', stderr: '' }
-        : file === 'git' && args[0] === 'rev-parse'
-          ? { stdout: repo, stderr: '' }
-          : file === 'git' && args[0] === 'branch'
-            ? { stdout: 'main', stderr: '' }
-            : file === 'git'
-              ? { stdout: 'git version test', stderr: '' }
-              : { stdout: 'ok', stderr: '' },
-      doctor: async () => [],
-      print: () => {},
-      readLine: async (question, fallback) => question === 'Enable cfo.ai integration? y/N' ? 'N' : question === 'Apply these changes? y/N' ? 'y' : fallback ?? '',
-    });
-    expect(result.applied).toBe(true);
-    expect(parseYaml(readFileSync(join(repo, 'tally.yaml'), 'utf8')).budget).toEqual({ source: 'config', usd: 40 });
   });
   it('detects repo defaults, registers AO with setup post-create, writes tally.yaml and runs doctor', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-repo-'));

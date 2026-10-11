@@ -13,8 +13,6 @@ export interface OnboardingContext {
   ui: OnboardingUi;
   /** Actual target root, independent of the CLI process's working directory. */
   repoRoot?: string;
-  /** Re-init may configure only integrations that were just enabled. */
-  integrationNames?: readonly ('cfoai' | 'neatlogs' | 'entire')[];
 }
 
 export interface OnboardingResult {

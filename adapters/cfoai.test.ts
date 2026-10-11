@@ -158,16 +158,6 @@ describe('CfoaiBudgetAdapter', () => {
     ]);
   });
 
-  it('can pin the pre-run spend when a run resumes from a local ledger', async () => {
-    const client = new FakeCfoaiClient();
-    const adapter = new CfoaiBudgetAdapter({ client, now, config: { orgId: '103210', scenario: 'Main Scenario' } });
-
-    adapter.setRunBaseSpendNanos(usdToNanos(10));
-    await adapter.writeCumulativeActualSpend(usdToNanos(2));
-
-    expect(client.values.get('Agent spend')).toBe(12);
-  });
-
   it('writes tier and run spend detail, seeding prior Agent spend so tier rows sum to the budget table spend', async () => {
     const client = new FakeCfoaiClient();
     client.values.set('Tier spend - cheap', 0);

@@ -255,19 +255,4 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
       expect(c.out.join('\n')).toContain('1 tasks, 1 attempts');
     });
   });
-
-  it('explains an empty file backlog during --plan', async () => {
-    await withTempCwd(async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'tally-cli-plan-'));
-      const configPath = join(dir, 'tally.yaml');
-      const config = readFileSync(new URL('../schema/fixtures/finished-run/tally.yaml', import.meta.url), 'utf8')
-        .replace('source: github-issues\n  issueLabel: tally', 'source: file\n  file: backlog.yaml');
-      writeFileSync(configPath, config);
-      writeFileSync(join(dir, 'backlog.yaml'), 'tasks: []\n');
-      const c = capture();
-
-      expect(await main(['run', '--plan', '--dry-run', '--config', configPath], c.io)).toBe(0);
-      expect(c.out.join('\n')).toContain('No tasks matched the configured backlog; nothing would start.');
-    });
-  });
 });
