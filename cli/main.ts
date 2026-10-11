@@ -284,7 +284,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
     if (result.runState.tasks.length === 0 && result.runState.backlog?.source === 'github-issues') {
       const label = result.runState.backlog.issueLabel ?? 'tally';
       const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
-      io.stdout(`No matching open issues with label ${JSON.stringify(label)} in ${result.runState.repo}; nothing started. Label an issue with: gh issue edit <issue-number> --repo ${quote(result.runState.repo)} --add-label ${quote(label)}`);
+      io.stdout(`No runnable open issues with label ${JSON.stringify(label)} in ${result.runState.repo}; nothing started. Issues already linked to open PRs are excluded. Label an issue with: gh issue edit <issue-number> --repo ${quote(result.runState.repo)} --add-label ${quote(label)}`);
     }
     printIntegrations(result, io);
     printRunSummary(result, io, dashboard?.url);
