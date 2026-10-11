@@ -145,6 +145,22 @@ Worker tracing additionally needs harness hooks and usable read access for Tally
 
 Entire being off does not prevent Tally sizing tasks from issue text and repository evidence. Being on adds Graph and checkpoints, but **past-failure checkpoint recall needs an accessible repository mirrored to Entire**. Capture alone is not mirroring. Brain is a separate memory extension; Tally does not install or use it. Generated summaries are off by default and require separate approval.
 
+### Reading Entire's Doctor Status
+
+Run `tally doctor` again after init. When Entire is on, it reports separate checks:
+
+| Doctor line | What it establishes |
+| --- | --- |
+| `Entire CLI: connected` | The CLI is available. |
+| `Entire graph plugin: connected` | The Graph command is installed; this is not proof that hosted recall works. |
+| `Entire repository: connected` | Session capture is enabled in this repository. |
+| `Entire checkpoint recall: connected` | Hosted checkpoint search answered successfully, even if it returned no matching checkpoints. |
+| `Entire checkpoint recall: broken` | Hosted search failed. The line includes the actual reason and a mirroring/account-access fix, not another instruction to enable capture. |
+
+For example, a repository that is not mirrored can have the first three checks connected while checkpoint recall is broken. The fix text is `check Entire repository mirroring and account access; entire enable alone does not enable hosted search`. Doctor exits nonzero for a broken check, but this does not mean repository or Graph sizing is unavailable.
+
+The run's Entire integration detail likewise separates `Graph sizing: ok` from `checkpoint recall unavailable: ...`. Its combined status can be `missing` even while sizing works. Routing decisions include the recall-unavailable reason rather than implying past failures were consulted. Generated/tool-owned and gitignored paths are excluded from sizing; related search hits remain context, not automatic files-to-edit targets.
+
 ### Preview, Flags and Re-Init
 
 Inspect a proposal without applying installation changes:
@@ -289,7 +305,7 @@ Direct Codex uses a workspace-write sandbox with network disabled and no bypass/
 | GitHub timeout/reset/5xx | Read-only intake and PR discovery retry network-class failures up to three attempts with a printed retry line. Auth/not-found errors and publishing writes are not blindly retried. Follow the surfaced `gh` diagnostic command; check auth/network before retrying a run that might already have published. |
 | Plan has no tasks | Check `gh issue list --label tally --state open`, using your chosen label. Already-closing open PRs are excluded. A zero-task run prints the repository, label and issue-labeling command and starts no worker. |
 | Larger-than-expected route or budget skip | Inspect named target files, confidence, test coverage, selected tiers and ceilings. `--budget` is a run cap; the monthly cfo.ai budget is separate. The next escalation ceiling must fit too. |
-| Entire enabled but no recall | Capture is not hosted search. The repository must be mirrored to Entire and accessible to the logged-in account for checkpoint recall. Do not fix this by repeatedly running `entire enable`, or assume Brain is installed. |
+| `Entire checkpoint recall: broken` while Graph/capture are connected | Read the reported search error. Capture is not hosted search: checkpoint recall needs repository mirroring and account access. Sizing can still work; do not repeatedly run `entire enable` or assume Brain is installed. |
 | Worker trace missing, especially on a two-/three-digit issue | Older prompt prefixes exceeded hook name limits; current prefixes and read-back cover all four runner/harness paths. Historical missing rows are not proof of delivery. Check hooks, trust, read credentials and the saved run; use `tally traces drain --run RUN_ID` for finished-run recovery without starting another worker. |
 | cfo.ai unreachable or write failed | Check `tally login cfoai` and doctor; review the displayed fallback/source. Keep the CSV fallback and reconcile before changing cells manually or rerunning work. |
 | Dashboard still running after completion | Expected: inspect the saved run, then Ctrl+C. Use `--port 0` if the default port is occupied. |
