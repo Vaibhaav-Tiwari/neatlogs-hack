@@ -9,6 +9,7 @@ import type { WorkerPort, WorkerResult, WorkerStartInput } from '../engine/real.
 import type { TallyConfig, TokenUsage } from '../schema/index.js';
 import { runCommand } from './command.js';
 import type { CommandRunner } from './ao.js';
+import { checkHarness } from '../engine/harness.js';
 import { claudeAllowList } from '../engine/harness.js';
 
 type Json = Record<string, unknown>;
@@ -63,12 +64,9 @@ export class ClaudeUsageMeter {
 
 export async function checkDirectHarness(harness: string, command: CommandRunner = runCommand): Promise<void> {
   if (harness !== 'claude-code') throw new Error(`Direct runner does not support harness "${harness}" yet; no harness will be substituted.`);
-  let loggedIn = false;
-  try { loggedIn = record(JSON.parse((await command('claude', ['auth', 'status'])).stdout)).loggedIn === true; }
-  catch (error) {
-    throw new Error(`Claude Code is required for runner: direct with harness: claude-code; install claude and run claude auth login. ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (!loggedIn) throw new Error('Claude Code is signed out; run claude auth login before starting Tally. No harness will be substituted.');
+  const status = await checkHarness(harness, command);
+  if (!status.installed) throw new Error(`Claude Code is required for runner: direct; ${status.detail}. ${status.fix}. No harness will be substituted.`);
+  if (!status.signedIn) throw new Error(`${status.detail}; run ${status.fix} before starting Tally. No harness will be substituted.`);
 }
 
 export function claudeArguments(input: WorkerStartInput, checkoutPath: string, sessionId: string, test: TallyConfig['test'], approvedRules?: string[]): string[] {

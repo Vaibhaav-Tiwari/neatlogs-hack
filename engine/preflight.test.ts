@@ -47,7 +47,7 @@ describe('real run preflight', () => {
       calls.push(`${file} ${args.join(' ')}`);
       return { stdout: '{"loggedIn":true}', stderr: '' };
     });
-    expect(calls).toEqual(['claude auth status']);
+    expect(calls).toEqual(['claude --version', 'claude auth status']);
     config.tiers[0]!.harness = 'codex';
     await expect(validateRealRunConfig(config, configPath, async () => ({ stdout: '{}', stderr: '' }))).rejects.toThrow('no harness will be substituted');
   });
