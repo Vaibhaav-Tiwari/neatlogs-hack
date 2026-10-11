@@ -165,9 +165,12 @@ the filesystem: an interrupted call may require checking its outcome.
 
 Run `tally init` again to connect a product you skipped. It proposes an
 integration-only diff, preserves the rest of your config and AO ownership,
-and asks for confirmation (default No). `--dry-run` shows the diff without
-writing. With no proposed changes it exits cleanly. Interrupted re-init
-writes can be resumed using the command printed in the error.
+and runs guided onboarding for each newly enabled product before asking for
+confirmation (default No). `--dry-run` shows the diff without writing. With no
+proposed changes it exits cleanly. Interrupted re-init writes can be resumed
+using the command printed in the error. Disabling cfo.ai also returns the
+budget source to the saved local USD budget instead of leaving an unusable
+`source: cfoai` configuration behind.
 
 `tally run --dry-run` runs the same loop with simulated workers instead of
 real ones.
@@ -230,6 +233,44 @@ stop threshold due to polling or metering lag and is never clipped to the cap.
 | `demo/` | Sample backlog and scripted outcomes for `tally demo`. |
 
 ## Configuration
+
+### How the integrations cooperate
+
+The integrations are deliberately complementary rather than competing sources
+of truth during one run:
+
+1. The backlog is read from GitHub or the configured file. Entire graph signals
+   are used for sizing when enabled; the graph is indexed once per run and
+   Tally falls back to repository code search if it is unavailable.
+2. The CFO agent routes each task and enforces the local safety ceiling. When
+   cfo.ai is enabled, its live monthly budget and spend are the accounting
+   authority. Tally still writes the local integer-nanos ledger and a
+   `cfoai-spend-fallback.csv`; a resumed run reconciles only the spend that is
+   missing remotely and can re-sync a prior failed fallback.
+3. neatlogs records route, ceiling, worker and verification evidence. Trace
+   export is optional telemetry: a network/export failure does not execute a
+   task twice or turn completed work into a failed run. Worker hook batches are
+   drained outside the worker sandbox and failed batches stay queued for a
+   later run.
+4. Verification, changed-file scope, checkpoint metadata and the final ledger
+   are persisted locally. A passing task is published as a branch/PR; Tally
+   does not merge it.
+
+For the first live handoff from one operator to another, use this sequence:
+
+1. Run `tally init` or re-run it to enable integrations; complete the guided
+   setup and review the proposed diff.
+2. Run `tally doctor`, then `tally run --plan --dry-run`; confirm the task count,
+   route, ceiling and budget source.
+3. Run `tally run --dry-run` and inspect the generated `run.json`, `ledger.json`
+   and dashboard before spending real worker time.
+4. Start one real labeled task with `tally run --only <task-id>`. Check the PR,
+   verification result, cfo.ai spend, neatlogs trace/worker evidence and
+   Entire checkpoint metadata.
+5. Hand over the branch, `tally.yaml`, the latest run directory and any
+   pending integration fix printed by `tally doctor`. Keep credentials outside
+   the repository; the next operator can rerun onboarding without rewriting
+   unrelated configuration.
 
 With neatlogs on, Tally drains the completed Codex worker's hook spool from
 its own process, outside the worker sandbox. It uses the official package's

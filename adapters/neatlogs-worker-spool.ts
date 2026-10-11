@@ -48,7 +48,7 @@ export class NeatlogsWorkerSpoolAdapter implements WorkerTraceDrainPort {
 
   constructor(options: { root?: string; env?: Record<string, string>; exporter?: Exporter; maxBatches?: number; lockWaitMs?: number; lockIsOpen?: (path: string) => Promise<boolean> } = {}) {
     const env = options.env ?? loadEnv();
-    this.root = options.root ?? getRuntimeRoot(process.env);
+    this.root = options.root ?? getRuntimeRoot(options.env ?? process.env);
     this.exporter = options.exporter ?? (env.NEATLOGS_API_KEY ? new TraceExporter({ apiKey: env.NEATLOGS_API_KEY, endpoint: env.NEATLOGS_ENDPOINT ?? 'https://ingest.neatlogs.com', timeoutMs: 15000 }) : null);
     this.maxBatches = options.maxBatches ?? 128;
     this.lockWaitMs = options.lockWaitMs ?? 5000;

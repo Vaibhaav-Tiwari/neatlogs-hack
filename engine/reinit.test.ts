@@ -30,12 +30,14 @@ function fixture(owned = true) {
 }
 
 describe('consented integration re-init', () => {
+  const noOnboarding = async () => {};
+
   it.each(['decline', 'dry-run'] as const)('shows a diff but writes nothing on %s', async (mode) => {
     const f = fixture();
     const before = readFileSync(f.path, 'utf8');
     const recordBefore = readFileSync(installRecordPath(f.path), 'utf8');
     const output: string[] = [];
-    const result = await runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, dryRun: mode === 'dry-run', print: (line) => output.push(line),
+    const result = await runInit({ cwd: f.cwd, command: f.command, onboarding: noOnboarding, env: { NEATLOGS_API_KEY: 'fake-key' }, dryRun: mode === 'dry-run', print: (line) => output.push(line),
       readLine: async (question, fallback) => {
         if (question.startsWith('Enable neatlogs')) return 'y';
         if (question === 'Apply these changes? y/N') { expect(fallback).toBe('N'); return ''; }
@@ -51,7 +53,7 @@ describe('consented integration re-init', () => {
 
   it.each([true, false])('connects a skipped product, preserving all other settings and ownership: owned=%s', async (owned) => {
     const f = fixture(owned);
-    const result = await runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, print: () => {}, doctor: async () => [],
+    const result = await runInit({ cwd: f.cwd, command: f.command, onboarding: noOnboarding, env: { NEATLOGS_API_KEY: 'fake-key' }, print: () => {}, doctor: async () => [],
       readLine: async (question, fallback) => question.startsWith('Enable neatlogs') || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
     expect(result.applied).toBe(true);
     expect(loadConfig(f.path)).toEqual({ ...f.config, integrations: { ...f.config.integrations, neatlogs: true } });
@@ -74,7 +76,7 @@ describe('consented integration re-init', () => {
   it('checks prerequisites before writing any re-init changes', async () => {
     const f = fixture();
     const before = readFileSync(f.path, 'utf8');
-    await expect(runInit({ cwd: f.cwd, command: f.command, env: {}, print: () => {},
+    await expect(runInit({ cwd: f.cwd, command: f.command, onboarding: noOnboarding, env: {}, print: () => {},
       readLine: async (question, fallback) => question.startsWith('Enable neatlogs') ? 'y' : fallback ?? '' })).rejects.toThrow('NEATLOGS_API_KEY');
     expect(readFileSync(f.path, 'utf8')).toBe(before);
     expect(existsSync(reinitPath(f.path))).toBe(false);
@@ -82,14 +84,14 @@ describe('consented integration re-init', () => {
 
   it('recovers after doctor fails but refuses intervening user edits', async () => {
     const f = fixture();
-    await expect(runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, print: () => {}, doctor: async () => { throw new Error('doctor stopped'); },
+    await expect(runInit({ cwd: f.cwd, command: f.command, onboarding: noOnboarding, env: { NEATLOGS_API_KEY: 'fake-key' }, print: () => {}, doctor: async () => { throw new Error('doctor stopped'); },
       readLine: async (question, fallback) => question.startsWith('Enable neatlogs') || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' })).rejects.toThrow('rerun tally init');
     const proposed = readFileSync(f.path, 'utf8');
     writeFileSync(f.path, `${proposed}\n# user edit\n`);
-    await expect(runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, yes: true, print: () => {}, doctor: async () => [] })).rejects.toThrow('preserve your edits');
+    await expect(runInit({ cwd: f.cwd, command: f.command, onboarding: noOnboarding, env: { NEATLOGS_API_KEY: 'fake-key' }, yes: true, print: () => {}, doctor: async () => [] })).rejects.toThrow('preserve your edits');
     expect(readFileSync(f.path, 'utf8')).toContain('# user edit');
     writeFileSync(f.path, proposed);
-    expect((await runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, yes: true, print: () => {}, doctor: async () => [] })).applied).toBe(true);
+    expect((await runInit({ cwd: f.cwd, command: f.command, onboarding: noOnboarding, env: { NEATLOGS_API_KEY: 'fake-key' }, yes: true, print: () => {}, doctor: async () => [] })).applied).toBe(true);
     expect(existsSync(reinitPath(f.path))).toBe(false);
   });
 });

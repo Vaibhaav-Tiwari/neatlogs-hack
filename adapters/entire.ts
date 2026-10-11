@@ -88,6 +88,7 @@ export class EntireSizingAdapter implements SizingSignalsPort {
   private readonly repoPath: string;
   private readonly runner: CommandRunner;
   private readonly topSymbols: number;
+  private graphIndexPromise: Promise<void> | null = null;
   private graphStatus: IntegrationState = {
     status: 'missing',
     detail: 'Entire graph has not succeeded yet. Falling back to code search. Fix: run `entire enable` in this repository.',
@@ -120,7 +121,11 @@ export class EntireSizingAdapter implements SizingSignalsPort {
   }
 
   private async entireGraphSignals(query: string): Promise<SizingSignals> {
-    await this.runner.run('entire', ['graph', 'index', '--repo', this.repoPath]);
+    this.graphIndexPromise ??= this.runner.run('entire', ['graph', 'index', '--repo', this.repoPath]).then(() => undefined).catch((error) => {
+      this.graphIndexPromise = null;
+      throw error;
+    });
+    await this.graphIndexPromise;
     const search = await this.runner.run('entire', [
       'graph',
       'search',

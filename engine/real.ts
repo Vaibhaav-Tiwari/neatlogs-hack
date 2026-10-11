@@ -86,6 +86,8 @@ export interface WorktreePort {
 export interface CfoaiBudgetPort extends BudgetPort {
   budgetLimitNanos(): Promise<number>;
   currentSpendNanos?(): Promise<number>;
+  /** Set the spend baseline used for cumulative writes and detail reconciliation. */
+  setRunBaseSpendNanos?(nanos: number, detailBaseSpendNanos?: number): void;
   writeCumulativeActualSpend(runSpendNanos: number): Promise<void>;
   writeSpendDetail?(input: { attempts: Array<{ tier: string; costNanos: number }>; cumulativeRunSpendNanos: number }): Promise<{ skippedTiers: string[] }>;
   status(): IntegrationState;
@@ -239,6 +241,7 @@ function portStatus(port: unknown, fallback: RunState['integrations']['entire'])
 }
 
 function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource }): RunState['integrations'] {
+  const cfoaiEnabled = config.integrations.cfoai || config.budget.source === 'cfoai';
   const cfoaiStatus = ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
   return {
     neatlogs: config.integrations.neatlogs ? (ports.workerTraceDrain?.status?.().status === 'missing' ? ports.workerTraceDrain.status() : traceStatus(ports.trace)) : { status: 'off', detail: null },
@@ -248,7 +251,7 @@ function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { 
           detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.',
         })
       : { status: 'off', detail: null },
-    cfoai: config.integrations.cfoai
+    cfoai: cfoaiEnabled
       ? options.dryRun && options.budgetSource === 'cfoai' && cfoaiStatus.status === 'ok'
         ? { status: 'ok', detail: 'budget read; spend not written in a dry run' }
         : cfoaiStatus
@@ -743,16 +746,25 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const outputDir = options.outputDir ? resolve(options.outputDir) : defaultOutputDir(runId);
   const ledgerPath = resolve(outputDir, 'ledger.json');
   const ledger = loadLedger(ledgerPath);
+  const savedLedgerLength = ledger.length;
+  const savedRun = existsSync(resolve(outputDir, 'run.json')) ? JSON.parse(readFileSync(resolve(outputDir, 'run.json'), 'utf8')) as RunState : null;
+  const savedLedgerSpend = ledgerSpend(ledger);
+  const remoteIncludesSavedSpend = ledger.length === 0 || (savedRun?.dryRun === false && savedRun.integrations.cfoai?.status === 'ok');
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
   let budgetSource: BudgetSource = 'config';
   let cfoaiWriteFailure: string | null = null;
   let committedBeforeRunNanos = 0;
-  if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
+  let cfoaiAccountingReady = false;
+  const cfoaiEnabled = config.integrations.cfoai || config.budget.source === 'cfoai';
+  if (cfoaiEnabled && ports.cfoai) {
     try {
       const [limit, currentSpend] = await Promise.all([ports.cfoai.budgetLimitNanos(), ports.cfoai.currentSpendNanos?.() ?? Promise.resolve(0)]);
+      const runBaseSpend = remoteIncludesSavedSpend ? Math.max(0, currentSpend - savedLedgerSpend) : currentSpend;
+      ports.cfoai.setRunBaseSpendNanos?.(runBaseSpend, currentSpend);
+      cfoaiAccountingReady = true;
       if (options.budgetUsd === undefined && config.budget.source === 'cfoai') {
         budgetLimitNanos = limit;
-        committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
+        committedBeforeRunNanos = runBaseSpend;
         budgetSource = 'cfoai';
       }
     } catch {
@@ -764,11 +776,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (options.dryRun) return;
     const cumulative = ledgerSpend(ledger);
     appendCfoaiFallback(outputDir, row, cumulative);
-    if (!config.integrations.cfoai || !ports.cfoai) return;
+    if (!cfoaiEnabled || !ports.cfoai) return;
     try {
       await ports.cfoai.writeCumulativeActualSpend(cumulative);
       await ports.cfoai.writeSpendDetail?.({
-        attempts: ledger.map((attempt) => ({ tier: attempt.tier, costNanos: attempt.estimatedCostNanos })),
+        // If the prior run reported a successful cfo.ai write, saved rows are
+        // already represented remotely. Otherwise this is the first sync of
+        // the local fallback ledger and all rows must be sent.
+        attempts: (remoteIncludesSavedSpend ? ledger.slice(savedLedgerLength) : ledger).map((attempt) => ({ tier: attempt.tier, costNanos: attempt.estimatedCostNanos })),
         cumulativeRunSpendNanos: cumulative,
       });
       cfoaiWriteFailure = null;
@@ -781,7 +796,6 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (options.only === undefined) return true;
     return task.taskId === options.only || String(task.issueNumber) === options.only;
   });
-  const savedRun = existsSync(resolve(outputDir, 'run.json')) ? JSON.parse(readFileSync(resolve(outputDir, 'run.json'), 'utf8')) as RunState : null;
   const resolvedBase = options.requiredBaseCommit !== undefined || (!savedRun?.baseCommit && !options.dryRun)
     ? await ports.worktrees.commitFor?.(resolve(dirname(options.configPath), config.repo.path), config.repo.baseBranch).catch(() => null) ?? null
     : null;
@@ -834,7 +848,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       budget: {
         source: budgetSource,
         limitSource: options.budgetUsd === undefined ? budgetSource : 'cli',
-        systemOfRecord: config.integrations.cfoai && ports.cfoai ? 'cfoai' : 'ledger',
+        systemOfRecord: cfoaiAccountingReady ? 'cfoai' : 'ledger',
         ...((config.budget.source === 'cfoai' || config.integrations.cfoai) && config.budget.cfoai
           ? { cfoai: {
             ...(config.budget.cfoai.pageUrl ? { pageUrl: config.budget.cfoai.pageUrl } : {}),
@@ -1084,8 +1098,19 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   }
 
   const endedAt = now().toISOString();
+  let traceFlushFailure: string | null = null;
+  try {
+    await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
+  } catch {
+    // Optional telemetry must not turn a completed run into a failed command.
+    traceFlushFailure = 'neatlogs flush failed; the run completed and local evidence was retained.';
+  }
   const runState = writeCurrent(options.stopRequested?.() ? 'interrupted' : 'finished', endedAt);
-  await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
+  if (traceFlushFailure) {
+    runState.integrations.neatlogs = { status: 'error', detail: traceFlushFailure };
+    assertValid(runState, ledger);
+    writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
+  }
   const paths = writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
   return { runState, ledger, ...paths };
 }
