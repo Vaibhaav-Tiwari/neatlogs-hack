@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4NHEXM1STHNQ8GJWWK5S3ET",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/all-worker-trace-readback",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "engine/real.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6240,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1127808,
+    "output_tokens": 978,
+    "api_call_count": 6
+  }
+}
