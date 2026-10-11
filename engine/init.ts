@@ -12,6 +12,8 @@ import { loadEnv } from './env.js';
 import { withWorkerAutoMode, workerPermissionMode } from './preflight.js';
 import { configureIntegrations } from '../onboarding/index.js';
 import { loadConfig } from './config.js';
+import { readPlanBudget } from './plan.js';
+import { formatUsd } from '../schema/money.js';
 import { applyReinit, finishReinit, prepareReinit, readReinit, reinitPath } from './reinit.js';
 
 export interface InitCommandResult {
@@ -42,6 +44,7 @@ export interface InitOptions {
   issueLabel?: string;
   integrations?: Partial<Record<'neatlogs' | 'entire' | 'cfoai', boolean>>;
   verbose?: boolean;
+  readBudget?: typeof readPlanBudget;
 }
 
 export interface InitResult {
@@ -355,7 +358,6 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     print('No setup command found. Leave it blank if no environment setup is needed; Tally will not invent an install command.');
     if (!options.yes && !options.dryRun) setupCommand = (await readLine('Setup command (shell command; optional)', '')).trim() || null;
   }
-  const budgetUsd = parseBudget(options.budgetUsd === undefined ? await readLine('Monthly budget in USD', '40') : String(options.budgetUsd));
   const issueLabel = options.issueLabel ?? await readLine('GitHub issue label for Tally tasks', 'tally');
   const neatlogs = options.integrations?.neatlogs ?? parseYes(await readLine('Enable neatlogs traces? y/N', 'N'));
   const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
@@ -389,7 +391,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     },
     budget: {
       source: cfoai ? 'cfoai' : 'config',
-      usd: budgetUsd,
+      usd: options.budgetUsd ?? 40,
     },
     concurrency: 3,
     integrations: { neatlogs, entire, cfoai, slack: false },
@@ -405,6 +407,14 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
       return /^\d+$/.test(value) && index >= 0 && index < choices.length ? index : null;
     },
   } });
+  const liveBudget = config.budget.source === 'cfoai' && !options.dryRun
+    ? await (options.readBudget ?? readPlanBudget)(config, {}) : null;
+  const budgetQuestion = config.budget.source === 'cfoai'
+    ? liveBudget?.source === 'cfoai'
+      ? `cfo.ai will supply the budget, currently ${formatUsd(liveBudget.monthlyLimitNanos)} for this month; fallback if cfo.ai is unreachable (USD)`
+      : 'cfo.ai will supply the monthly budget; currently unreachable or unchecked. Fallback budget in USD'
+    : 'Monthly budget in USD (also the default run cap)';
+  config.budget.usd = parseBudget(options.budgetUsd === undefined ? await readLine(budgetQuestion, String(config.budget.usd)) : String(options.budgetUsd));
   const validation = validateConfig(config);
   if (!validation.ok) throw new InitError(`Proposed configuration is invalid: ${validation.errors.join('; ')}; nothing was changed.`);
   await initPrerequisites(config, command, repoRoot, options);

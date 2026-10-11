@@ -28,15 +28,18 @@ export async function recoverRunTraces(options: {
   if (run.runId !== options.runId || ledger.some(r => r.runId !== run.runId)) throw new Error('Run id does not match saved evidence');
   if (run.status !== 'finished' || run.dryRun || run.integrations.neatlogs.status === 'off') throw new Error('Only finished real runs with neatlogs enabled can be recovered');
   const workers = ledger.filter(r => r.sessionId && r.costSource !== 'simulated' && r.harness !== 'entire');
-  if (!workers.length || workers.some(r => !r.entireSessionId)) throw new Error('Native session evidence is required for every worker attempt');
+  if (!workers.length) throw new Error('Worker attempt evidence is required');
   const drain = options.drain ?? new NeatlogsWorkerSpoolAdapter();
   const reader = options.reader ?? new NeatlogsWorkerTraceReader();
   const before = { ...run.integrations.neatlogs };
   const traceIds: string[] = [];
   for (const row of workers) {
-    await drain.drainWorker({ checkoutPath: null, entireSessionId: row.entireSessionId });
-    if (drain.status && drain.status().status !== 'ok') throw new Error('Worker batches remain pending; saved status was not changed');
-    const id = await reader.verifyFor({ runId: row.runId, taskId: row.taskId, attempt: row.attempt, nativeSessionId: row.entireSessionId!, traceId: row.workerTraceId });
+    if (row.entireSessionId) {
+      await drain.drainWorker({ checkoutPath: null, entireSessionId: row.entireSessionId });
+      const status = drain.status?.();
+      if (status && status.status !== 'ok' && !status.detail?.startsWith('No queued worker trace found')) throw new Error('Worker batches remain pending; saved status was not changed');
+    }
+    const id = await reader.verifyFor({ runId: row.runId, taskId: row.taskId, attempt: row.attempt, nativeSessionId: row.entireSessionId, traceId: row.workerTraceId });
     if (!id) throw new Error(`Worker trace read-back failed for ${row.taskId} attempt ${row.attempt}; saved status was not changed`);
     row.workerTraceId = id;
     traceIds.push(id);

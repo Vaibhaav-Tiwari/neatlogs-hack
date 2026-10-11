@@ -432,6 +432,7 @@ async function runSingleAttempt(input: {
   onStartupError?: (row: LedgerRow) => Promise<void>;
   onProgress?: (costNanos: number) => void;
   retrySuffix?: string;
+  onEvent?: RunOptions['onEvent'];
 }): Promise<LedgerRow> {
   const startedAt = input.now().toISOString();
   const repoPath = resolve(dirname(input.configPath), input.config.repo.path);
@@ -451,6 +452,7 @@ async function runSingleAttempt(input: {
     continueSessionId: input.continueSessionId,
   });
   let stopped = false;
+  input.onEvent?.({ type: 'worker', taskId: input.task.taskId, attempt: input.attempt, sessionId: started.sessionId, tier: input.tier.name });
   let ceilingStopStarted = false;
   input.onProgress?.(0);
   const reportUsage = (value: LiveUsage | null) => {
@@ -620,7 +622,7 @@ async function runSingleAttempt(input: {
     const checkoutPath = resolvedCheckoutPath ?? workerResult?.checkoutPath ?? started.checkoutPath ?? (branch
       ? await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch).catch(() => null) : null);
     await input.ports.workerTraceDrain?.drainWorker({ checkoutPath, entireSessionId }).catch(() => {});
-    if (entireSessionId) workerTraceId = await input.ports.workerTraceReader?.verifyFor({
+    workerTraceId = await input.ports.workerTraceReader?.verifyFor({
       runId: input.runId, taskId: input.task.taskId, attempt: input.attempt, nativeSessionId: entireSessionId,
     }).catch(() => null) ?? null;
   }
@@ -740,15 +742,19 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const ledger = loadLedger(ledgerPath);
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
   let budgetSource: BudgetSource = 'config';
+  let monthlyLimitNanos = usdToNanos(config.budget.usd);
+  let monthlySpentNanos = 0;
   let cfoaiWriteFailure: string | null = null;
   let committedBeforeRunNanos = 0;
   if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
     try {
       const [limit, currentSpend] = await Promise.all([ports.cfoai.budgetLimitNanos(), ports.cfoai.currentSpendNanos?.() ?? Promise.resolve(0)]);
+      monthlyLimitNanos = limit;
+      monthlySpentNanos = currentSpend;
+      budgetSource = 'cfoai';
       if (options.budgetUsd === undefined && config.budget.source === 'cfoai') {
         budgetLimitNanos = limit;
         committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
-        budgetSource = 'cfoai';
       }
     } catch {
       budgetSource = 'config';
@@ -805,6 +811,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     state.escalated = attempt > 1;
     state.spentNanos = ledger.filter((row) => row.taskId === state.taskId).reduce((sum, row) => sum + row.estimatedCostNanos, 0) + liveCosts.get(state.taskId)!;
     writeCurrent('running', null);
+    options.onEvent?.({ type: 'spend', taskId: state.taskId, attempt, costNanos: liveCosts.get(state.taskId)! });
   };
   const changedFor = (index: number) => (files: string[]) => {
     const state = taskStates[index]!;
@@ -828,7 +835,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       endedAt,
       budget: {
         source: budgetSource,
-        limitSource: options.budgetUsd === undefined ? budgetSource : 'cli',
+        monthly: { source: budgetSource, limitNanos: monthlyLimitNanos, spentBeforeRunNanos: monthlySpentNanos },
+        limitSource: options.budgetUsd === undefined ? config.budget.source === 'cfoai' ? budgetSource : 'config' : 'cli',
         systemOfRecord: config.integrations.cfoai && ports.cfoai ? 'cfoai' : 'ledger',
         ...((config.budget.source === 'cfoai' || config.integrations.cfoai) && config.budget.cfoai
           ? { cfoai: {
@@ -843,17 +851,26 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource }),
     };
     if (cfoaiWriteFailure) runState.integrations.cfoai = { status: 'error', detail: cfoaiWriteFailure };
+    if (!options.dryRun && config.integrations.neatlogs && ledger.some(row => row.harness === 'codex') && ledger.filter(row => row.harness === 'codex').every(row => row.workerTraceId)
+      && ports.workerTraceDrain?.status?.().detail?.startsWith('No queued worker trace found')) {
+      runState.integrations.neatlogs = traceStatus(ports.trace);
+    }
+    if (!options.dryRun && config.integrations.neatlogs && ledger.some(row => row.harness === 'codex' && !row.workerTraceId) && runState.integrations.neatlogs.status === 'ok') {
+      runState.integrations.neatlogs = { status: 'missing', detail: 'Decision traces sent; worker trace delivery is unverified or pending. Run tally traces drain --run ' + runId + ' to retry.' };
+    }
     assertValid(runState, ledger);
     writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
     return runState;
   };
-  writeCurrent('running', null);
+  const initialRun = writeCurrent('running', null);
+  options.onEvent?.({ type: 'budget', budget: initialRun.budget });
   const finishAttempt = (row: LedgerRow) => {
     ledger.push(row);
     liveCosts.delete(row.taskId);
     const index = taskStates.findIndex((state) => state.taskId === row.taskId);
     if (index >= 0) taskStates[index] = stateFromRows(taskStates[index]!, ledger.filter((item) => item.taskId === row.taskId));
     writeCurrent('running', null);
+    options.onEvent?.({ type: 'result', row });
   };
   const onStartupError = async (row: LedgerRow) => {
     finishAttempt(row);
@@ -930,6 +947,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             onChangedFiles: changedFor(index),
             onStartupError,
             onProgress: progressFor(index, 2, escalation.tier),
+            onEvent: options.onEvent,
           });
           finishAttempt(latest);
           await recordHistory({ ports, row: latest, dryRun: options.dryRun });
@@ -976,6 +994,12 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           traceAttributes: { sessionId: runId, taskId: task.taskId, attempt: 1 },
         });
     const routeTraceId = lastTraceId(ports.trace);
+    options.onEvent?.({ type: 'route', taskId: task.taskId, size: estimate.size, confidence: estimate.confidence,
+      tier: route.action === 'start' ? route.tier.name : null,
+      harness: route.action === 'start' ? route.tier.harness : null,
+      model: route.action === 'start' ? route.tier.model : null,
+      ceilingNanos: route.action === 'start' ? task.firstAttemptCeilingUsd === undefined || options.baseline ? route.ceilingNanos : Math.min(route.ceilingNanos ?? Infinity, usdToNanos(task.firstAttemptCeilingUsd)) : null,
+      decision: route.reason });
     if (route.action === 'skip') {
       state.status = 'skipped';
       state.statusReason = route.statusReason;
@@ -1003,6 +1027,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       onChangedFiles: changedFor(index),
       onStartupError,
       onProgress: progressFor(index, 1, route.tier),
+      onEvent: options.onEvent,
     });
     finishAttempt(first);
     if (first.result === 'stopped' && options.stopRequested?.()) first.resultReason = options.stopRequested()!;
@@ -1058,6 +1083,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           onChangedFiles: changedFor(index),
           onStartupError,
           onProgress: progressFor(index, 2, escalation.tier),
+          onEvent: options.onEvent,
         });
         finishAttempt(latest);
         await recordHistory({ ports, row: latest, dryRun: options.dryRun });

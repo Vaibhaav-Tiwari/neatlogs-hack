@@ -17,6 +17,13 @@ function fixture() {
 }
 
 describe('NeatlogsWorkerSpoolAdapter', () => {
+  it('does not report delivery success when no queued worker trace exists', async () => {
+    const { root } = fixture();
+    const adapter = new NeatlogsWorkerSpoolAdapter({ root, exporter: { exportSpans: async () => 'success' } });
+    await adapter.drainWorker({ checkoutPath: '/worker' });
+    expect(adapter.status()).toMatchObject({ status: 'missing' });
+    expect(adapter.status().detail).toContain('delivery is not verified');
+  });
   it('drains only the selected worker through the SDK, including its earlier child spans', async () => {
     const { root, spool, enqueue } = fixture();
     const child = enqueue('native');

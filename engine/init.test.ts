@@ -47,11 +47,17 @@ describe('runInit', () => {
       config.budget = { source: 'cfoai', usd: 40, cfoai: { orgId: '42', scenario: 'Main Scenario',
         table: 'Tally agent budget', pageUrl: 'https://app.cfo.ai/s/discovered-page' } };
     });
+    const questions: string[] = [];
     const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, doctor: async () => [], onboarding,
+      readBudget: async () => ({ source: 'cfoai', monthlyLimitNanos: 40_000_000_000, limitNanos: 40_000_000_000, limitSource: 'cfoai' }),
       cfoaiCheck: async () => ({ status: 'ok', detail: 'fake connected' }),
-      readLine: async (question, fallback) => question === 'Enable cfo.ai budget integration? y/N' || question === 'Connect y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
+      readLine: async (question, fallback) => { questions.push(question); return question.includes('fallback if') ? '5' : question === 'Enable cfo.ai budget integration? y/N' || question === 'Connect y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? ''; } });
     expect(onboarding).toHaveBeenCalledOnce();
     expect(parseYaml(readFileSync(result.configPath, 'utf8')).budget.cfoai.orgId).toBe('42');
+    expect(parseYaml(readFileSync(result.configPath, 'utf8')).budget.usd).toBe(5);
+    const budgetQuestion = questions.findIndex(question => question.includes('fallback if'));
+    expect(questions[budgetQuestion]).toContain('$40.00 for this month');
+    expect(budgetQuestion).toBeGreaterThan(questions.indexOf('Connect y/N'));
   });
 
   it('never connects or creates integration objects in dry-run init', async () => {
@@ -60,7 +66,7 @@ describe('runInit', () => {
     const onboarding = vi.fn(async () => undefined);
     await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, dryRun: true, onboarding,
       cfoaiCheck: async () => ({ status: 'ok', detail: 'fake connected' }),
-      readLine: async (question, fallback) => question.includes('cfo.ai') ? 'y' : fallback ?? '' });
+      readLine: async (question, fallback) => question.startsWith('Enable cfo.ai') ? 'y' : fallback ?? '' });
     expect(onboarding).not.toHaveBeenCalled();
   });
 
@@ -212,7 +218,7 @@ describe('runInit', () => {
       throw new Error(`unexpected command: ${joined}`);
     };
     let prompt = 0;
-    const answers = ['12.5', 'bug', 'y', 'y', 'n', 'y'];
+    const answers = ['bug', 'y', 'y', 'n', '12.5', 'y'];
 
     const result = await runInit({
       cwd: repo,

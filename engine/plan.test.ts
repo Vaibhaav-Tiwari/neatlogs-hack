@@ -47,6 +47,16 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 }
 
 describe('planTally', () => {
+  it('reads monthly cfo.ai budget even with a CLI cap and closes the client', async () => {
+    const config = loadConfig(fixture());
+    config.integrations.cfoai = true;
+    const read = vi.spyOn(CfoaiBudgetAdapter.prototype, 'budgetLimitNanos').mockResolvedValue(40_000_000_000);
+    const close = vi.spyOn(CfoaiBudgetAdapter.prototype, 'close').mockResolvedValue();
+    try {
+      expect(await readPlanBudget(config, { budgetUsd: 1 })).toEqual({ source: 'cfoai', limitSource: 'cli', limitNanos: 1_000_000_000, monthlyLimitNanos: 40_000_000_000 });
+      expect(close).toHaveBeenCalledOnce();
+    } finally { read.mockRestore(); close.mockRestore(); }
+  });
   it.each([false, true])('closes the read-only budget client even after an error: %s', async failure => {
     const config = loadConfig(fixture());
     config.budget.source = 'cfoai';

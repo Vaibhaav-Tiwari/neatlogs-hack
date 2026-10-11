@@ -8,6 +8,13 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify({ data
 const env = { NEATLOGS_TOKEN: 'fake-read-token', NEATLOGS_PROJECT_ID: 'fake-project' };
 
 describe('NeatlogsWorkerTraceReader', () => {
+  it('verifies a correlated worker without Entire and rejects a CFO decision trace', async () => {
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async input => {
+      if (String(input).includes('?')) return json({ traces: [{ ...trace, sessionId: 'run-1' }, trace] });
+      return json(String(input).endsWith('/spans') ? { spans: [{}] } : trace);
+    } });
+    expect(await reader.verifyFor({ runId: 'run-1', taskId: 'T1', attempt: 1 })).toBe(traceId);
+  });
   it('verifies correlation and readable stopped-worker spans even when aggregate tokens are zero', async () => {
     const calls: string[] = [];
     const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async input => {

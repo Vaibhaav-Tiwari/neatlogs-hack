@@ -158,6 +158,7 @@ export interface RunState {
   endedAt: string | null;
   budget: {
     source: BudgetSource;
+    monthly?: { source: BudgetSource; limitNanos: number; spentBeforeRunNanos: number };
     /** Origin of this run's effective limit, distinct from spend accounting. */
     limitSource?: BudgetSource | 'cli';
     systemOfRecord?: 'ledger' | 'cfoai';

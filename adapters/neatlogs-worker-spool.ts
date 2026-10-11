@@ -111,7 +111,10 @@ export class NeatlogsWorkerSpoolAdapter implements WorkerTraceDrainPort {
       const id = attribute(span, 'neatlogs.session.id');
       return id !== undefined && sessions.has(id);
     })).map((batch) => batch.path));
-    if (!selected.size) return;
+    if (!selected.size) {
+      this.state = { status: 'missing', detail: 'No queued worker trace found; delivery is not verified (hooks may be absent or another exporter already drained it).' };
+      return;
+    }
     // Keep the SDK's shared lock and acknowledgement logic, but drain only this worker.
     const pendingFiles = spool.pendingFiles.bind(spool);
     spool.pendingFiles = () => pendingFiles().filter((path) => selected.has(path));

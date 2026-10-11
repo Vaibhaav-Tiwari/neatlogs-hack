@@ -415,20 +415,34 @@ describe('runRealTally', () => {
     expect(result.runState.budget.cfoai).toEqual(saved.budget.cfoai);
   });
   it.each([
-    { dryRun: false, enabled: true }, { dryRun: true, enabled: true }, { dryRun: false, enabled: false },
-  ])('drains Codex traces after closing real workers only: %j', async ({ dryRun, enabled }) => {
+    { dryRun: false, enabled: true, delivered: false }, { dryRun: false, enabled: true, delivered: true }, { dryRun: true, enabled: true, delivered: false }, { dryRun: false, enabled: false, delivered: false },
+  ])('drains Codex traces after closing real workers only: %j', async ({ dryRun, enabled, delivered }) => {
     const { dir, configPath } = fixture(`neatlogs: ${enabled}, entire: false, cfoai: false, slack: false`);
     writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('harness: claude-code', 'harness: codex'));
     const worker = new FakeWorker();
     const contexts: unknown[] = [];
-    const result = await runRealTally({ configPath, dryRun, baseline: false, outputDir: join(dir, 'drain'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+    const events: string[] = [];
+    const result = await runRealTally({ configPath, dryRun, baseline: false, outputDir: join(dir, 'drain'), latestRunDir: join(dir, 'latest'), now: fixedNow, onEvent: event => events.push(event.type),
       ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, trace: new FakeTrace(),
         history: { lookup: async () => null, record: async () => {} },
         worktrees: { checkoutPathFor: async () => '/worker' },
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
-        workerTraceDrain: { drainWorker: async (context) => { expect(worker.stopped).toContain('session-1'); contexts.push(context); } },
+        workerTraceDrain: { drainWorker: async (context) => { expect(worker.stopped).toContain('session-1'); contexts.push(context); },
+          status: () => ({ status: 'missing', detail: 'No queued worker trace found; delivery is not verified' }) },
+        workerTraceReader: { verifyFor: async context => {
+          expect(context).toMatchObject({ runId: 'run-20261011-030000Z', taskId: 'T1', attempt: 1, nativeSessionId: null });
+          return delivered ? 'a'.repeat(32) : null;
+        } },
       } });
     expect(contexts.length).toBe(!dryRun && enabled ? 1 : 0);
+    expect(events[0]).toBe('budget');
+    expect(events.indexOf('route')).toBeLessThan(events.indexOf('worker'));
+    expect(events.indexOf('worker')).toBeLessThan(events.indexOf('spend'));
+    expect(events.at(-1)).toBe('result');
+    if (!dryRun && enabled) {
+      expect(result.ledger[0]?.workerTraceId).toBe(delivered ? 'a'.repeat(32) : null);
+      expect(result.runState.integrations.neatlogs.status).toBe(delivered ? 'ok' : 'missing');
+    }
     expect(result.runState.status).toBe('finished');
   });
   it('continues the watcher-stopped branch on escalation and publishes only the verified attempt', async () => {
@@ -503,7 +517,7 @@ describe('runRealTally', () => {
     cfoai.budgetLimitNanos = async () => { reads += 1; return usdToNanos(40); };
     const result = await runRealTally({ configPath, budgetUsd: 1, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
       ports: { intake, signals, worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker, cfoai } });
-    expect(result.runState.budget).toMatchObject({ limitSource: 'cli', systemOfRecord: 'cfoai', limitNanos: usdToNanos(1) });
+    expect(result.runState.budget).toMatchObject({ source: 'cfoai', limitSource: 'cli', systemOfRecord: 'cfoai', limitNanos: usdToNanos(1), monthly: { source: 'cfoai', limitNanos: usdToNanos(40), spentBeforeRunNanos: usdToNanos(10) } });
     expect(reads).toBe(1);
     expect(worker.starts).toHaveLength(1);
     expect(cfoai.writes).toEqual([result.runState.budget.spentNanos]);

@@ -9,12 +9,13 @@ import { CommandError } from '../adapters/command.js';
 import { runUninstall } from '../engine/uninstall.js';
 import { runExperiment } from '../engine/experiment.js';
 import { planTally, readPlanBudget } from '../engine/plan.js';
-import { RunError, runDemo, runTally } from '../engine/run.js';
+import { RunError, runDemo, runTally, type RunProgress, type RunResult } from '../engine/run.js';
 import { recoverRunTraces } from '../engine/trace-recovery.js';
 import { loginCfoai } from '../adapters/cfoai.js';
 import { CrustDataError, runCrustDataMarketSearch } from '../adapters/crustdata.js';
 import { formatUsd } from '../schema/index.js';
-import { startDashboardServer } from './dashboard-server.js';
+import { startDashboardServer, type DashboardServer } from './dashboard-server.js';
+import { openDashboardBrowser, waitForDashboard } from './dashboard-lifecycle.js';
 import { publishSite } from './publish.js';
 
 export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces'] as const;
@@ -33,8 +34,9 @@ export interface CliOptions {
   budgetUsd: number | undefined;
   /** Run a single task by id or issue number. */
   only: string | undefined;
-  /** Start the local dashboard server after the command finishes. */
+  /** Start the local dashboard server before execution. */
   dashboard: boolean;
+  open?: boolean;
   /** Port for the dashboard server. */
   port: number | undefined;
   /** Print route decisions without spawning workers. */
@@ -96,8 +98,8 @@ Options:
   --budget <usd>    Override the budget for this run
   --only <task>     Run a single task
   --baseline        Send every task to the strongest tier
-  --dashboard       Start the dashboard server after run/demo
-  --open            Alias for --dashboard
+  --dashboard       Serve the dashboard before run/demo; keep serving until Ctrl+C
+  --open            Also open the dashboard in the browser
   --port <number>   Dashboard port (default: 5177; use 0 for any free port)
   --plan            Size and route tasks, but do not spawn workers
   --live            For demo: use live read-only integrations with fake workers
@@ -218,6 +220,7 @@ export function parseCli(argv: string[]): ParsedCli {
       budgetUsd,
       only: values.only,
       dashboard: values.dashboard || values.open,
+      ...(values.open ? { open: true } : {}),
       port,
       plan: values.plan,
       live: values.live,
@@ -242,16 +245,19 @@ export function parseCli(argv: string[]): ParsedCli {
 type Handler = (options: CliOptions, io: CliIO) => Promise<number>;
 
 async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
+  let dashboard: DashboardServer | undefined;
   try {
     if (options.plan) {
       const budget = await readPlanBudget(loadConfig(options.config), { budgetUsd: options.budgetUsd });
-      io.stdout(`budget: ${formatUsd(budget.limitNanos)} from ${budget.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'}`);
+      printBudget({ source: budget.source, limitSource: budget.limitSource, limitNanos: budget.limitNanos, spentNanos: 0,
+        monthly: { source: budget.source, limitNanos: budget.monthlyLimitNanos, spentBeforeRunNanos: 0 } }, io);
       const plan = await planTally({
         configPath: options.config,
         dryRun: options.dryRun,
         baseline: options.baseline,
         budgetUsd: options.budgetUsd,
         only: options.only,
+        budgetInfo: budget,
       });
       for (const task of plan) {
         const route = task.skipped
@@ -262,12 +268,14 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
       }
       return 0;
     }
+    if (options.dashboard) dashboard = await launchDashboard(options, io);
     const result = await runTally({
       configPath: options.config,
       dryRun: options.dryRun,
       baseline: options.baseline,
       budgetUsd: options.budgetUsd,
       only: options.only,
+      onEvent: progressPrinter(io),
     });
     io.stdout(`wrote ${result.runStatePath}`);
     io.stdout(`wrote ${result.ledgerPath}`);
@@ -279,9 +287,11 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
       io.stdout(`No matching open issues with label ${JSON.stringify(label)} in ${result.runState.repo}; nothing started. Label an issue with: gh issue edit <issue-number> --repo ${quote(result.runState.repo)} --add-label ${quote(label)}`);
     }
     printIntegrations(result, io);
-    if (options.dashboard) await dashboardCommand(options, io);
+    printRunSummary(result, io, dashboard?.url);
+    if (dashboard) await waitForDashboard(dashboard);
     return 0;
   } catch (e) {
+    await dashboard?.close();
     return reportError('tally run', e, io);
   }
 }
@@ -322,18 +332,57 @@ async function uninstallCommand(options: CliOptions, io: CliIO): Promise<number>
 }
 
 async function demoCommand(_options: CliOptions, io: CliIO): Promise<number> {
+  let dashboard: DashboardServer | undefined;
   try {
-    const result = await runDemo({ live: _options.live });
+    if (_options.dashboard) dashboard = await launchDashboard(_options, io);
+    const result = await runDemo({ live: _options.live, onEvent: progressPrinter(io) });
     io.stdout(`wrote ${result.runStatePath}`);
     io.stdout(`wrote ${result.ledgerPath}`);
     io.stdout(`updated ${result.latestRunDir}`);
     io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
     printIntegrations(result, io);
-    if (_options.dashboard) await dashboardCommand(_options, io);
+    printRunSummary(result, io, dashboard?.url);
+    if (dashboard) await waitForDashboard(dashboard);
     return 0;
   } catch (e) {
+    await dashboard?.close();
     return reportError('tally demo', e, io);
   }
+}
+
+function printBudget(budget: RunResult['runState']['budget'], io: CliIO): void {
+  const monthly = budget.monthly ?? { source: budget.source, limitNanos: budget.limitNanos };
+  io.stdout(`monthly budget: ${formatUsd(monthly.limitNanos)} from ${monthly.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'}; run cap: ${formatUsd(budget.limitNanos)} (${budget.limitSource === 'cli' ? 'CLI --budget' : budget.limitSource === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`);
+}
+
+function progressPrinter(io: CliIO): (event: RunProgress) => void {
+  const lastSpend = new Map<string, number>();
+  return event => {
+    if (event.type === 'budget') printBudget(event.budget, io);
+    else if (event.type === 'route') {
+      io.stdout(`${event.taskId}: ${event.size} (confidence ${event.confidence.toFixed(2)}) -> ${event.tier ? `${event.tier} ${event.harness}/${event.model} ceiling ${event.ceilingNanos === null ? 'none' : formatUsd(event.ceilingNanos)}` : 'skip'}`);
+      io.stdout(`  ${event.decision}`);
+    } else if (event.type === 'worker') io.stdout(`${event.taskId} attempt ${event.attempt}: worker ${event.sessionId} started on ${event.tier}`);
+    else if (event.type === 'spend') {
+      const key = `${event.taskId}:${event.attempt}`;
+      const now = Date.now();
+      if (!lastSpend.has(key) || now - lastSpend.get(key)! >= 10000) {
+        io.stdout(`${event.taskId} attempt ${event.attempt}: spend ${formatUsd(event.costNanos)}`);
+        lastSpend.set(key, now);
+      }
+    } else io.stdout(`${event.row.taskId} attempt ${event.row.attempt}: ${event.row.result} ${formatUsd(event.row.estimatedCostNanos)}${event.row.resultReason ? ` (${event.row.resultReason})` : ''}${event.row.prUrl ? ` ${event.row.prUrl}` : ''}`);
+  };
+}
+
+function printRunSummary(result: RunResult, io: CliIO, dashboardUrl?: string): void {
+  const passed = result.runState.tasks.filter(task => task.status === 'passed').length;
+  const failed = result.runState.tasks.filter(task => task.status === 'failed').length;
+  const skipped = result.runState.tasks.filter(task => task.status === 'skipped').length;
+  io.stdout(`summary: ${passed} passed, ${failed} failed, ${skipped} skipped; total ${formatUsd(result.runState.budget.spentNanos)} against run cap ${formatUsd(result.runState.budget.limitNanos)}`);
+  printBudget(result.runState.budget, io);
+  for (const url of new Set(result.runState.tasks.flatMap(task => task.prUrl ? [task.prUrl] : []))) io.stdout(`PR ${url}`);
+  io.stdout(`run folder ${result.outputDir}`);
+  if (dashboardUrl) io.stdout(`dashboard ${dashboardUrl} (serving until Ctrl+C)`);
 }
 
 function printIntegrations(result: Awaited<ReturnType<typeof runTally>>, io: CliIO): void {
@@ -356,11 +405,20 @@ async function loginCommand(options: CliOptions, io: CliIO): Promise<number> {
 }
 
 async function dashboardCommand(options: CliOptions, io: CliIO): Promise<number> {
+  const dashboard = await launchDashboard(options, io);
+  await waitForDashboard(dashboard);
+  return 0;
+}
+
+async function launchDashboard(options: CliOptions, io: CliIO): Promise<DashboardServer> {
   const dashboard = await startDashboardServer({ port: options.port });
   io.stdout(`dashboard ${dashboard.url}`);
   io.stdout(`data ${dashboard.dataUrl}`);
-  await new Promise<void>(() => {});
-  return 0;
+  if (options.open) {
+    try { await openDashboardBrowser(dashboard.url); }
+    catch { io.stderr(`Could not open a browser; open ${dashboard.url} manually.`); }
+  }
+  return dashboard;
 }
 
 async function doctorCommand(options: CliOptions, io: CliIO): Promise<number> {
