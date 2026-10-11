@@ -29,12 +29,15 @@ export type CostSource =
 export type Handoff = 'none' | 'restart' | 'entire-handoff';
 
 export interface TokenUsage {
-  /** Input tokens billed at the full input price. Includes cache writes. */
+  /** Input tokens billed at the full input price. Legacy AO totals may include cache writes. */
   uncachedInput: number;
   /** Input tokens read from cache. */
   cachedInput: number;
   output: number;
-  /** uncachedInput + cachedInput + output */
+  /** Claude cache creation, excluded from uncachedInput when these are present. */
+  cacheWrite5m?: number;
+  cacheWrite1h?: number;
+  /** Sum of input, cache reads/writes and output. */
   total: number;
 }
 
@@ -53,8 +56,10 @@ export interface LedgerRow {
   tier: string;
   model: string;
   harness: string;
-  /** Agent Orchestrator session id; null for simulated attempts. */
+  /** AO session id or direct runner's native harness session UUID; null for simulated attempts. */
   sessionId: string | null;
+  /** Direct-runner environment setup, before the agent and its spend ceiling start. */
+  setupDurationMs?: number;
   /** Native Entire/Codex session id, separate from the AO worker session. */
   entireSessionId?: string | null;
   branch: string | null;
@@ -197,6 +202,8 @@ export interface Tier {
 }
 
 export interface TallyConfig {
+  /** Missing means AO, for backwards compatibility. */
+  runner?: 'ao' | 'direct';
   version: 1;
   /** Absent means AO for compatibility with existing configurations. */
   runner?: 'ao' | 'direct';

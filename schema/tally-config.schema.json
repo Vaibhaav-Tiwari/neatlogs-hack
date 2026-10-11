@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "required": ["version", "repo", "test", "backlog", "tiers", "ceilings", "budget", "integrations"],
   "properties": {
+    "runner": { "enum": ["ao", "direct"], "default": "ao" },
     "version": { "const": 1 },
     "runner": { "enum": ["ao", "direct"], "default": "ao" },
     "claudeCode": {

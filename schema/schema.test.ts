@@ -24,6 +24,13 @@ const ledger = JSON.parse(fixture('finished-run/ledger.json')) as LedgerRow[];
 const run = JSON.parse(fixture('finished-run/run.json')) as RunState;
 const config = parseYaml(fixture('finished-run/tally.yaml')) as TallyConfig;
 
+it('accepts the one runner switch and preserves configs without it', () => {
+  expect(validateConfig(config).ok).toBe(true);
+  expect(validateConfig({ ...config, runner: 'ao' }).ok).toBe(true);
+  expect(validateConfig({ ...config, runner: 'direct' }).ok).toBe(true);
+  expect(validateConfig({ ...config, runner: 'unknown' }).ok).toBe(false);
+});
+
 it('accepts generated Entire summaries only as an explicit boolean setting', () => {
   expect(validateConfig({ ...config, entire: { generatedSummaries: false } }).ok).toBe(true);
   expect(validateConfig({ ...config, entire: { generatedSummaries: true } }).ok).toBe(true);
@@ -64,6 +71,10 @@ const typedRow: LedgerRow = {
 };
 
 describe('money helpers', () => {
+  it('prices Claude cache writes separately without repricing legacy AO rows', () => {
+    const tokens = { uncachedInput: 10, cachedInput: 20, output: 1, cacheWrite5m: 10, cacheWrite1h: 5, total: 46 };
+    expect(costNanos(tokens, { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0.1, outputUsdPerMTok: 5 })).toBe(39500);
+  });
   it('shows fractional-cent costs without misleading cent rounding', () => {
     expect(formatUsd(15_307_560)).toBe('$0.0153');
     expect(formatUsd(15_000_000)).toBe('$0.0150');

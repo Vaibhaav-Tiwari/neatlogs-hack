@@ -20,6 +20,7 @@ import { routeTask } from '../agent/router.js';
 import { applyCheckpointRecall, sizeTask } from '../agent/sizer.js';
 import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
+import { DirectRunner } from '../adapters/direct.js';
 import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { RepositorySizingAdapter } from '../adapters/repository-sizing.js';
@@ -60,7 +61,7 @@ export interface WorkerStartInput {
 }
 
 export interface WorkerResult {
-  status: 'idle' | 'terminated' | 'needs_input' | 'timeout' | 'experiment_stop' | 'never_started';
+  status: 'idle' | 'terminated' | 'needs_input' | 'timeout' | 'experiment_stop' | 'never_started' | 'error';
   branch: string | null;
   checkoutPath: string | null;
   prUrl: string | null;
@@ -68,10 +69,11 @@ export interface WorkerResult {
 }
 
 export interface WorkerPort {
-  start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string | null; checkoutPath: string | null }>;
+  start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string | null; checkoutPath: string | null; setupDurationMs?: number }>;
   wait(sessionId: string, options?: { timeoutMs?: number }): Promise<WorkerResult>;
   /** Optional scripted evidence, read only once this attempt has settled. */
   changedFilesFor?(sessionId: string): Promise<string[] | null>;
+  release?(sessionId: string): Promise<void>;
 }
 
 export interface FinalUsagePort extends LiveUsagePort {
@@ -163,10 +165,12 @@ function hasPort<K extends keyof RealRunPorts>(ports: Partial<RealRunPorts>, key
   return Object.prototype.hasOwnProperty.call(ports, key);
 }
 
-function resolvePorts(config: TallyConfig, configPath: string, overrides: Partial<RealRunPorts> = {}): RealRunPorts {
+function resolvePorts(config: TallyConfig, configPath: string, overrides: Partial<RealRunPorts> = {}, requiredBaseCommit?: string): RealRunPorts {
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
-  const ao = new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, aoBin: config.repo.aoBin ? resolve(configDir, config.repo.aoBin) : undefined });
+  const runner = config.runner === 'direct'
+    ? new DirectRunner({ repoPath, baseBranch: config.repo.baseBranch, test: config.test, requiredBaseCommit })
+    : new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, aoBin: config.repo.aoBin ? resolve(configDir, config.repo.aoBin) : undefined });
   const localHistory = hasPort(overrides, 'history') ? null : new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
   const trace = hasPort(overrides, 'trace') ? overrides.trace : config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
   const cfoai = hasPort(overrides, 'cfoai')
@@ -186,10 +190,10 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     ...(hasPort(overrides, 'workerTraceReader') ? { workerTraceReader: overrides.workerTraceReader } : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? { workerTraceReader: new NeatlogsWorkerTraceReader() } : {}),
     intake: overrides.intake ?? new ConfigBacklogIntake(),
     signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : new RepositorySizingAdapter({ repoPath })),
-    worker: overrides.worker ?? ao,
+    worker: overrides.worker ?? runner,
     verifier: overrides.verifier ?? (config.integrations.entire ? new EntireGraphVerifier() : new CommandVerifier()),
-    usage: overrides.usage ?? ao,
-    sessions: overrides.sessions ?? ao,
+    usage: overrides.usage ?? runner,
+    sessions: overrides.sessions ?? runner,
     history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
     ...(recall ? { recall } : {}),
     publisher: overrides.publisher ?? new GitHubPublisher(),
@@ -287,7 +291,7 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
     `You are implementing Tally run ${runId}, task ${task.taskId}, attempt ${attempt}: ${task.title}`,
     `Neatlogs correlation: runId=${runId} taskId=${task.taskId} attempt=${attempt}.`,
     '',
-    'You are already inside your own AO git worktree for the target repo. Work only in the current working directory.',
+    config.runner === 'direct' ? 'You are already inside your own git worktree for the target repo. Work only in the current working directory.' : 'You are already inside your own AO git worktree for the target repo. Work only in the current working directory.',
     'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
     publishInstruction,
     'Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.',
@@ -434,7 +438,7 @@ async function runSingleAttempt(input: {
   retrySuffix?: string;
   onEvent?: RunOptions['onEvent'];
 }): Promise<LedgerRow> {
-  const startedAt = input.now().toISOString();
+  let startedAt = input.now().toISOString();
   const repoPath = resolve(dirname(input.configPath), input.config.repo.path);
   const attemptBase = input.requiredBaseCommit ?? (input.dryRun ? null : await input.ports.worktrees.commitFor?.(repoPath, input.continueBranch ?? input.config.repo.baseBranch).catch(() => null) ?? input.baseCommit ?? null);
   const started = await input.ports.worker.start({
@@ -451,6 +455,7 @@ async function runSingleAttempt(input: {
     continueBranch: input.continueBranch,
     continueSessionId: input.continueSessionId,
   });
+  if (started.setupDurationMs !== undefined) startedAt = input.now().toISOString();
   let stopped = false;
   input.onEvent?.({ type: 'worker', taskId: input.task.taskId, attempt: input.attempt, sessionId: started.sessionId, tier: input.tier.name });
   let ceilingStopStarted = false;
@@ -520,7 +525,7 @@ async function runSingleAttempt(input: {
     } else if (workerResult.status === 'experiment_stop') {
       result = 'stopped';
       resultReason = workerResult.resultReason ?? 'stopped: experiment cap reached';
-    } else if (workerResult.status === 'needs_input' || workerResult.status === 'timeout') {
+    } else if (workerResult.status === 'needs_input' || workerResult.status === 'timeout' || workerResult.status === 'error') {
       result = 'error';
       resultReason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
     } else {
@@ -626,6 +631,9 @@ async function runSingleAttempt(input: {
       runId: input.runId, taskId: input.task.taskId, attempt: input.attempt, nativeSessionId: entireSessionId,
     }).catch(() => null) ?? null;
   }
+  if (!input.dryRun && input.config.runner === 'direct' && input.config.integrations.neatlogs && input.tier.harness === 'claude-code') {
+    workerTraceId = await input.ports.workerTraceReader?.verifyFor({ runId: input.runId, taskId: input.task.taskId, attempt: input.attempt, nativeSessionId: started.sessionId }).catch(() => null) ?? null;
+  }
 
   if (!input.dryRun && input.onChangedFiles) {
     const branch = workerResult?.branch ?? started.branch;
@@ -638,6 +646,10 @@ async function runSingleAttempt(input: {
   if (input.dryRun && input.onChangedFiles && input.ports.worker.changedFilesFor) {
     const files = await input.ports.worker.changedFilesFor(started.sessionId);
     if (files !== null) input.onChangedFiles(files);
+  }
+  if (!input.dryRun && result === 'passed') {
+    try { await input.ports.worker.release?.(started.sessionId); }
+    catch (error) { resultReason = `${resultReason ?? 'verified and published'}; checkout cleanup failed: ${error instanceof Error ? error.message : String(error)}`; }
   }
 
   return {
@@ -652,6 +664,7 @@ async function runSingleAttempt(input: {
     model: input.tier.model,
     harness: input.tier.harness,
     sessionId: started.sessionId,
+    ...(started.setupDurationMs !== undefined ? { setupDurationMs: started.setupDurationMs } : {}),
     entireSessionId,
     branch: input.dryRun ? null : (workerResult?.branch ?? started.branch),
     baseCommit: attemptBase,
@@ -659,7 +672,7 @@ async function runSingleAttempt(input: {
     estimatedCostNanos,
     costSource,
     price: { ...input.tier.price },
-    priceNote: `${input.dryRun ? 'Simulated usage; no spend. ' : ''}${tierPriceNote(input.tier)}`,
+    priceNote: `${input.dryRun ? 'Simulated usage; no spend. ' : ''}${tierPriceNote(input.tier)}${input.config.runner === 'direct' && input.tier.harness === 'claude-code' ? ' Cache writes: 1.25x (5m) / 2x (1h) input rate, https://platform.claude.com/docs/en/build-with-claude/prompt-caching . Live meter updates at API message boundaries, not every generated token.' : ''}`,
     ceilingNanos: input.ceilingNanos ?? 0,
     result,
     resultReason,
@@ -732,7 +745,7 @@ function handoffSummaryLedgerRow(input: {
 
 export async function runRealTally(options: RealRunOptions): Promise<RunResult> {
   const config = loadConfig(options.configPath);
-  const ports = resolvePorts(config, options.configPath, options.ports);
+  const ports = resolvePorts(config, options.configPath, options.ports, options.requiredBaseCommit);
   const now = options.now ?? (() => new Date());
   const started = now();
   const runId = options.runId ?? runIdFrom(started);
@@ -851,11 +864,11 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource }),
     };
     if (cfoaiWriteFailure) runState.integrations.cfoai = { status: 'error', detail: cfoaiWriteFailure };
-    if (!options.dryRun && config.integrations.neatlogs && ledger.some(row => row.harness === 'codex') && ledger.filter(row => row.harness === 'codex').every(row => row.workerTraceId)
+    if (!options.dryRun && config.integrations.neatlogs && ledger.some(row => row.harness === 'codex' || (config.runner === 'direct' && row.harness === 'claude-code')) && ledger.filter(row => row.harness === 'codex' || (config.runner === 'direct' && row.harness === 'claude-code')).every(row => row.workerTraceId)
       && ports.workerTraceDrain?.status?.().detail?.startsWith('No queued worker trace found')) {
       runState.integrations.neatlogs = traceStatus(ports.trace);
     }
-    if (!options.dryRun && config.integrations.neatlogs && ledger.some(row => row.harness === 'codex' && !row.workerTraceId) && runState.integrations.neatlogs.status === 'ok') {
+    if (!options.dryRun && config.integrations.neatlogs && ledger.some(row => (row.harness === 'codex' || (config.runner === 'direct' && row.harness === 'claude-code')) && !row.workerTraceId) && runState.integrations.neatlogs.status === 'ok') {
       runState.integrations.neatlogs = { status: 'missing', detail: 'Decision traces sent; worker trace delivery is unverified or pending. Run tally traces drain --run ' + runId + ' to retry.' };
     }
     assertValid(runState, ledger);

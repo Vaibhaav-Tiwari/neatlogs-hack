@@ -21,6 +21,8 @@ export function formatUsd(nanos: number): string {
 export function costNanos(tokens: TokenUsage, price: TierPrice): number {
   return Math.round(
     tokens.uncachedInput * price.inputUsdPerMTok * 1000 +
+      (tokens.cacheWrite5m ?? 0) * price.inputUsdPerMTok * 1250 +
+      (tokens.cacheWrite1h ?? 0) * price.inputUsdPerMTok * 2000 +
       tokens.cachedInput * price.cachedInputUsdPerMTok * 1000 +
       tokens.output * price.outputUsdPerMTok * 1000,
   );
