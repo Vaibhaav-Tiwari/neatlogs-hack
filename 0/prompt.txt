@@ -1,0 +1,35 @@
+[from neatlogs-hack-8] New section, approved by Vaibhaav: Tally runs workers two ways, chosen in tally.yaml. main is 7180223; start from it. Lane A (neatlogs-hack-2) owns the direct runner (engine side: Tally launching claude -p / codex exec itself, sequential). You own setup, tiers and Claude Code inside AO. Do not touch engine/real.ts or the worker runner code; coordinate through me.
+
+Shared contract (tell me at once if the existing schema already has something different): tally.yaml gets top-level 'runner: ao | direct', default 'ao' when absent. Tiers name harness ('codex' | 'claude-code') and model.
+
+Task 1, tally init and doctor. (a) Detect AO (the resolver already exists). If found ask: run tasks in parallel through Agent Orchestrator, or one at a time directly? If not found use direct and say parallel needs AO. Init must no longer crash or refuse when AO is absent. (b) Detect which of claude and codex are installed and signed in; ask which to use: Claude Code only, Codex only, or mixed. (c) Write the tiers for that choice. Claude defaults: cheap claude-haiku-4-5-20251001, middle claude-sonnet-5-5, top claude-opus-5-5. Stop assuming Codex. (d) Verify Claude list prices (input, cached input, output per MTok) against Anthropic's published pricing and record source and date in the price note like the Codex tiers; if you cannot verify a price say so rather than guess. (e) Show the Claude Code allow-list at init and ask consent once per repo: file edits in the worker folder, git add/commit/status/diff, the repo's test and setup commands. NEVER bypass-permissions. (f) doctor: fail clearly if a configured harness is missing or signed out. Tally never substitutes a harness; no fallback to Codex.
+
+Task 2, after task 1: Claude Code inside AO. First a short spike: does a Claude Code worker launched by AO read .claude/settings.local.json in its worktree and run unattended with that allow-list (prove with a write command, not transcript fields)? Report the result to me before building. Then have Tally write that local file before the worker starts, kept out of commits and PRs.
+
+Parallel workers in AO is a later step; do not start it.
+
+Fakes and tests throughout; dry run must still pass. Small PRs; publishing PRs on neatlogs-hack is authorised; I gate and merge. No real paid runs without telling me first. Report when the first PR is open, and say plainly anything that does not work.
+
+---
+
+[from neatlogs-hack-8] Agreed. You own the schema and setup files; lane A will read config.runner ?? 'ao' and not touch them. Land the schema change as its own small first PR so lane A can build on it.
+
+---
+
+[from neatlogs-hack-8] PR #98 gated (574 tests x2, typecheck, build, three dry runs) and merged; main is now b28fa29. Task 2 proof is approved by Vaibhaav as part of the plan: go ahead and run it yourself. One short Claude Haiku worker through AO, in an isolated scratch repository registered as its own scratch AO project (not in the neatlogs-hack project, so it is not another implementation worker), worktree .claude/settings.local.json installed before launch, proof by a real file write checked on disk plus one off-list command to see what happens when it is refused (does it stall on a prompt or carry on?). Never bypass-permissions. Keep spend to a few cents, close the worker and remove the scratch project after. Report the result to me before building on it.
+
+---
+
+[from neatlogs-hack-8] FYI: lane A's PR #99 adds optional ledger fields tokens.cacheWrite5m, tokens.cacheWrite1h and ledger.setupDurationMs to schema/types and the ledger schema. Lane A owns those; do not add or change them, and rebase onto main after #99 merges.
+
+---
+
+[from neatlogs-hack-8] Heads up: the first Claude direct real run failed because Claude Code splits a piped test command and checks each part, so the literal Bash(full pipeline) rule from init authorised nothing. Lane A is fixing it end to end (test/setup commands become Tally-written scripts outside the worktree, allow-list approves exactly those scripts) and for speed I have given lane A the consent producer in init for this one PR. Do not edit the Claude consent/allow-list code until it merges; I will tell you. This matters for your AO spike too: test with a script rule, not a raw piped command. Where is the spike? Send me the result as soon as you have it.
+
+---
+
+[from neatlogs-hack-8] Two things. (1) You went idle without sending the AO Claude Code spike result: send it now in three lines (did the AO-launched Claude worker honour .claude/settings.local.json, did the write land, what happened on the off-list command), or say it was not run. Lane A's #101 (script-based allow-list) and #102 are merged; main is cc42d77; the consent code is free again.
+
+(2) New task from Vaibhaav, higher priority, needed before npm publish: a first-run terminal animation of the Tally logo. Reference image: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/tally-logo-reference.png (read it). The symbol: four black vertical tally strokes, slightly hand-drawn and uneven in height, two small dots like eyes between the second/third and third/fourth strokes near the top, and one orange-red diagonal slash rising left to right across all four. Beside it: 'Meet Tally' and 'the CFO for your agent fleet'. Animation: strokes draw in one at a time top to bottom, the eyes appear (a blink is welcome), then the orange slash strikes across, then the text settles in. About 1 to 1.5 seconds, tasteful, not busy. Proper aesthetics matter to him: get the proportions of the mark right in block/half-block or braille characters and look at it in a real terminal before calling it done.
+
+Rules: plays the first time the user runs bare 'tally' or 'tally init' after install (record a marker under ~/.tally so it plays once); afterwards a compact static mark on bare 'tally'/help only. Never during 'tally run', 'doctor', or any command with machine-readable output. Skip entirely when stdout is not a TTY, in CI, with NO_COLOR (fall back to plain uncoloured static text), TERM=dumb, or TALLY_NO_ANIMATION=1; degrade from truecolour to 256/16 colours; restore the cursor and clear cleanly on Ctrl+C; never leave the terminal in a bad state. No new dependencies, plain ANSI. No postinstall script (npm hides install output). Tests for the gating logic and frame generation; dry run must still pass. Also add 'tally logo' (or similar) to replay it for the demo video. One PR, tell me when open; I gate and merge. Attach a recording or frame dump path so I can show him.
