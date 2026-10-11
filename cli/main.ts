@@ -62,6 +62,11 @@ export interface CliOptions {
   limit: number | undefined;
   /** Keyword for `tally market`. */
   keyword: string | undefined;
+  replay?: string;
+  review?: string;
+  maxCredits?: number;
+  jobs?: boolean;
+  secondary?: string;
   out?: string;
   runs?: string[];
   runId?: string;
@@ -91,7 +96,7 @@ Commands:
   uninstall List and remove the recorded Tally installation
   doctor   Check that each integration is connected
   login    Connect an integration, e.g. tally login cfoai
-  market   Search CrustData for companies adopting coding agents
+  market   Find and qualify likely pilot companies with CrustData
   publish  Write a static dashboard bundle (does not deploy)
   traces drain --run <id> Drain and read-back verify a finished run's worker traces
   logo     Replay the Tally logo animation
@@ -119,7 +124,13 @@ Options:
   --allow-claude     For init: explicitly consent to the printed repository allow-list
   --output <dir>    Output directory for tally market (default: .tally/market/latest)
   --limit <number>  Result limit for tally market (default: 10)
-  --keyword <text>  CrustData keyword for tally market (default: AI coding)
+  --keyword <text>  Optional exact description phrase for tally market
+  --max-credits <N> Market estimated credit cap (default: 10); refuses above cap
+  --replay <query.json> Replay cached market snapshot; no API calls
+  --review <json>   Apply human review labels to a cached market snapshot
+  --jobs            Search engineering job posts for explicit coding-tool evidence
+  --secondary <query.json> Include a cached firmographic table in the job report
+                    market --plan checks free account pricing, without a search
   --out <dir>       New directory for tally publish (required)
   --runs <ids>      Comma-separated run folder ids (default: all real runs)
   --run <id>        Run id for traces drain; --output overrides its run directory
@@ -157,6 +168,11 @@ export function parseCli(argv: string[]): ParsedCli {
         output: { type: 'string' },
         limit: { type: 'string' },
         keyword: { type: 'string' },
+        replay: { type: 'string' },
+        review: { type: 'string' },
+        'max-credits': { type: 'string' },
+        jobs: { type: 'boolean', default: false },
+        secondary: { type: 'string' },
         repeats: { type: 'string' },
         out: { type: 'string' },
         runs: { type: 'string' },
@@ -212,6 +228,8 @@ export function parseCli(argv: string[]): ParsedCli {
     }
   }
   let limit: number | undefined;
+  const maxCredits = values['max-credits'] === undefined ? undefined : Number(values['max-credits']);
+  if (maxCredits !== undefined && (!Number.isFinite(maxCredits) || maxCredits <= 0)) return { kind: 'error', message: '--max-credits must be positive' };
   let repeats: number | undefined;
   if (values.repeats !== undefined) {
     repeats = Number(values.repeats);
@@ -251,6 +269,11 @@ export function parseCli(argv: string[]): ParsedCli {
       output: values.output,
       limit,
       keyword: values.keyword,
+      ...(values.replay === undefined ? {} : { replay: values.replay }),
+      ...(values.review === undefined ? {} : { review: values.review }),
+      ...(maxCredits === undefined ? {} : { maxCredits }),
+      ...(values.jobs ? { jobs: true } : {}),
+      ...(values.secondary === undefined ? {} : { secondary: values.secondary }),
       ...(values.out !== undefined ? { out: values.out } : {}),
       ...(values.runs !== undefined ? { runs: values.runs.split(',') } : {}),
       ...(values.run !== undefined ? { runId: values.run } : {}),
@@ -448,15 +471,26 @@ async function doctorCommand(options: CliOptions, io: CliIO): Promise<number> {
 
 async function marketCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
+    if (options.dryRun && !options.replay) throw new CrustDataError('Market --dry-run requires --replay; use --plan for a free pricing check');
     const result = await runCrustDataMarketSearch({
       outputDir: options.output,
       limit: options.limit,
       keyword: options.keyword,
+      replay: options.replay,
+      review: options.review,
+      maxCredits: options.maxCredits,
+      jobs: options.jobs,
+      secondary: options.secondary,
+      plan: options.plan,
+      onEstimate: credits => io.stdout(`estimated maximum: ${credits} credits; cap: ${options.maxCredits ?? 10}`),
     });
+    if (options.plan) { io.stdout('market plan: no company search or output files written'); return 0; }
     io.stdout(`wrote ${result.queryPath}`);
     io.stdout(`wrote ${result.companiesPath}`);
-    io.stdout(`market: ${result.companies.length} companies from ${result.totalCount ?? 'unknown'} matches`);
-    io.stdout(`credits: ${result.creditCost ?? 'not reported'}`);
+    io.stdout(`wrote ${result.csvPath}`);
+    io.stdout(`wrote ${result.reportPath}`);
+    io.stdout(`market: ${result.companies.length} returned prospects; ${result.totalCount ?? 'unknown'} API query matches (not adoption or market size)`);
+    io.stdout(`credits: ${result.creditCost ?? 'not reported'}${result.replayed ? ' originally; cached replay made no API calls' : ''}`);
     return 0;
   } catch (e) {
     return reportError('tally market', e, io);
