@@ -26,6 +26,7 @@ function fixture(owned = true) {
   const command: InitCommandRunner = async (file, args) => {
     commands.push(`${file} ${args.join(' ')}`);
     if (file === 'claude') return { stdout: '{"loggedIn":true}', stderr: '' };
+    if (file === 'ao' && args[0] === 'status') return { stdout: '{"state":"running"}', stderr: '' };
     if (file === 'ao' && args[0] === 'project') throw new Error('Re-init must not mutate or replace AO configuration');
     return { stdout: file === 'git' && args[0] === 'rev-parse' ? cwd : 'ok', stderr: '' };
   };

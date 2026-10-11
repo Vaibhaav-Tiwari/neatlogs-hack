@@ -18,6 +18,7 @@ import { readPlanBudget } from './plan.js';
 import { formatUsd } from '../schema/money.js';
 import { applyReinit, finishReinit, prepareReinit, readReinit, reinitPath } from './reinit.js';
 import { AO_HARNESS_PERMISSIONS, checkHarness, claudeAllowList, claudeScripts, type Harness } from './harness.js';
+import { readAoDaemonStatus, type AoDaemonStatus } from './ao-status.js';
 
 export interface InitCommandResult {
   stdout: string;
@@ -217,14 +218,25 @@ async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd
   let aoFound = false;
   try { await command('ao', ['--version'], { cwd }); aoFound = true; } catch { /* Optional CLI: direct mode needs no AO. */ }
   let runner = options.runner;
+  let aoStatus: AoDaemonStatus = { state: 'unknown', detail: 'AO daemon status could not be checked' };
   if (!aoFound) {
     if (runner === 'ao') throw new InitError('AO runner was requested but AO is unavailable; install AO or select direct.');
     runner = 'direct';
     print('AO was not found. Using direct, one task at a time; parallel workers need Agent Orchestrator.');
-  } else if (!runner) {
-    const value = options.yes || options.dryRun ? 'ao' : (await readLine('Runner: parallel through Agent Orchestrator (ao), or one at a time directly (direct)?', 'ao')).trim();
-    if (value !== 'ao' && value !== 'direct') throw new InitError('Runner must be ao or direct; nothing was changed.');
-    runner = value;
+  } else {
+    try { aoStatus = await readAoDaemonStatus(command, cwd); }
+    catch (error) { aoStatus = { state: 'unknown', detail: error instanceof Error ? error.message : 'AO status could not be checked' }; }
+    if (aoStatus.state !== 'running') print(`${aoStatus.detail}. AO is unavailable; direct is the default. ${aoStatus.state === 'stopped' ? 'Run ao start to use AO.' : 'Check ao status --json before choosing AO.'}`);
+    if (!runner) {
+      const defaultRunner = aoStatus.state === 'running' ? 'ao' : 'direct';
+      const value = options.yes || options.dryRun ? defaultRunner : (await readLine('Runner: parallel through Agent Orchestrator (ao), or one at a time directly (direct)?', defaultRunner)).trim();
+      if (value !== 'ao' && value !== 'direct') throw new InitError('Runner must be ao or direct; nothing was changed.');
+      runner = value;
+    }
+    if (runner === 'ao' && aoStatus.state !== 'running') {
+      const guidance = aoStatus.state === 'stopped' ? 'run ao start and retry' : 'check ao status --json, then retry';
+      throw new InitError(`${aoStatus.detail}; ${guidance}, or select direct. Nothing was changed.`);
+    }
   }
   let concurrency = 1;
   if (runner === 'ao' && !options.yes && !options.dryRun && parseYes(await readLine('Run tasks in parallel through AO? y/N', 'N'))) {
@@ -272,7 +284,15 @@ function withPostCreate(config: unknown, setupCommand: string | null): Record<st
 }
 
 async function initPrerequisites(config: TallyConfig, command: InitCommandRunner, cwd: string, options: InitOptions): Promise<void> {
-  if ((config.runner ?? 'ao') === 'ao') await command('ao', ['status'], { cwd });
+  if ((config.runner ?? 'ao') === 'ao') {
+    let status: AoDaemonStatus;
+    try { status = await readAoDaemonStatus(command, cwd); }
+    catch (error) { throw new InitError(`AO daemon status could not be checked (${error instanceof Error ? error.message : 'unknown error'}); check ao status --json and retry, or select direct. Nothing was changed.`); }
+    if (status.state !== 'running') {
+      const guidance = status.state === 'stopped' ? 'run ao start and retry' : 'check ao status --json and retry';
+      throw new InitError(`${status.detail}; ${guidance}, or select direct. Nothing was changed.`);
+    }
+  }
   await command('git', ['--version'], { cwd });
   await command('gh', ['auth', 'status'], { cwd });
   for (const harness of new Set(config.tiers.map(tier => tier.harness))) {
