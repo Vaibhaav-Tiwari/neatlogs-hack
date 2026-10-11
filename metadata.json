@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4NBN36P0SF68EPP69DT9B6N",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/ao-claude-permissions",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "adapters/ao.test.ts",
+    "bin/tally-worker-settings.js",
+    "engine/ao-claude-settings.test.ts",
+    "engine/ao-claude-settings.ts",
+    "engine/doctor.test.ts",
+    "engine/doctor.ts",
+    "engine/init-transaction.ts",
+    "engine/init.test.ts",
+    "engine/init.ts",
+    "engine/install-record.ts",
+    "engine/preflight.test.ts",
+    "engine/preflight.ts",
+    "engine/uninstall.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 63534,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2371328,
+    "output_tokens": 12192,
+    "api_call_count": 22
+  }
+}
