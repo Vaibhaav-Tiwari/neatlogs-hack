@@ -62,9 +62,9 @@ export class ClaudeUsageMeter {
 }
 
 export async function checkDirectHarness(harness: string, command: CommandRunner = runCommand): Promise<void> {
-  if (harness !== 'claude-code') throw new Error(`Direct runner does not support harness "${harness}" yet; no harness will be substituted.`);
+  if (harness !== 'claude-code' && harness !== 'codex') throw new Error(`Direct runner does not support harness "${harness}"; no harness will be substituted.`);
   const status = await checkHarness(harness, command);
-  if (!status.installed) throw new Error(`Claude Code is required for runner: direct; ${status.detail}. ${status.fix}. No harness will be substituted.`);
+  if (!status.installed) throw new Error(`${harness === 'codex' ? 'Codex' : 'Claude Code'} is required for runner: direct; ${status.detail}. ${status.fix}. No harness will be substituted.`);
   if (!status.signedIn) throw new Error(`${status.detail}; run ${status.fix} before starting Tally. No harness will be substituted.`);
 }
 
@@ -91,6 +91,8 @@ export interface DirectRunnerOptions {
   launch?: (file: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; stdio: 'pipe' }) => ChildProcessWithoutNullStreams;
   signal?: (pid: number, signal: NodeJS.Signals) => void;
   stopGraceMs?: number;
+  /** A stopped session started by another harness's runner, so this one can continue its branch. */
+  adopt?: (sessionId: string) => Pick<Session, 'branch' | 'checkoutPath' | 'directory' | 'closed'> | undefined;
 }
 
 interface Session {
@@ -117,7 +119,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
   async start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string; checkoutPath: string; setupDurationMs: number }> {
     requireClaudeConsent(this.options.approvedRules, this.options.test);
     await checkDirectHarness(input.harness, this.command);
-    const previous = input.continueSessionId ? this.sessions.get(input.continueSessionId) : undefined;
+    const previous = input.continueSessionId ? this.sessions.get(input.continueSessionId) ?? this.options.adopt?.(input.continueSessionId) : undefined;
     if (input.continueBranch && (!previous?.closed || previous.branch !== input.continueBranch)) throw new Error('Direct continuation requires a stopped worker on the same branch.');
     const sessionId = randomUUID();
     const branch = input.continueBranch ?? `tally/${input.name.replace(/[^a-zA-Z0-9_-]/g, '-')}-${sessionId.slice(0, 8)}`;
@@ -209,6 +211,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
     }
   }
 
+  continuation(id: string): Pick<Session, 'branch' | 'checkoutPath' | 'directory' | 'closed'> | undefined { return this.sessions.get(id); }
   private session(id: string): Session {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`Unknown direct worker session ${id}; its process cannot be resumed by this Tally process.`);
