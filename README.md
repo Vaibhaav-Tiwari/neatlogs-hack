@@ -5,8 +5,10 @@ each task, sends it to the cheapest model likely to finish it, stops any task
 that overruns its spend ceiling, hands failed work to a stronger model, and
 ends with a ledger tying spend to each attempt, its test result and any opened PR.
 
-Status: early build, being prepared for npm publication as `tally-agents`.
-Until it is published, use the GitHub release alternative below. The seven-task demo uses simulated workers; real
+**Start here: [Getting Started](docs/GETTING_STARTED.md)** covers the no-account demo, every init question, your first real run, troubleshooting and uninstall.
+
+Status: early build, published on npm as `tally-agents` version `0.1.0`.
+The GitHub release alternative is also available below. The seven-task demo uses simulated workers; real
 runs use Agent Orchestrator by default, or the direct runner (Claude Code or Codex),
 and record their attempts and evidence separately.
 
@@ -42,7 +44,8 @@ With Entire off or unavailable, sizing uses named paths and bounded identifier
 searches in tracked repository files. It counts explicit new files and nearby
 tests without claiming graph dependencies. Specific target evidence increases
 confidence; ambiguous or truncated searches remain cautious. `run --plan`
-prints the size, confidence, route and ceiling without starting a worker.
+prints the size, confidence, route, ceiling and price-history source without
+starting a worker or writing history.
 
 ### Direct Codex Runner
 
@@ -102,8 +105,8 @@ instructions are excluded from commits. No bypass-permissions mode is used.
 Mixed AO tiers select the harness mode immediately before spawning under an
 in-process project lock; separate Tally processes and manual AO changes are not
 coordinated by that lock. Both Codex AO and Claude Code AO have real-run evidence.
-For Claude AO, worker traces reach neatlogs, but the worker trace id is not yet
-recorded on the ledger row; routing trace ids are recorded.
+Correlated worker-trace read-back covers all four runner/harness paths; delivery
+still needs capture hooks and read access, and unverified traces remain missing.
 
 ### Real-Run Evidence
 
@@ -128,7 +131,7 @@ The simulated demo is not evidence of any real worker path.
 
 Three ways in:
 
-1. **npm (primary):** `npm install -g tally-agents` once version `0.1.0` is published.
+1. **npm (primary):** `npm install -g tally-agents`.
 2. **GitHub (alternative, available now):** `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack#release`.
    The `release` branch includes the compiled CLI and records its source commit
    in `release-source.json`; no TypeScript or manual build is needed. The main
@@ -319,7 +322,10 @@ npm test
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 | `tally login cfoai` | Sign in to cfo.ai; tokens are cached outside the repository. |
 | `tally traces drain --run <id>` | Recover only that finished run's worker traces, verify readable spans, then update saved status and worker trace ids. Use `--output <run-dir>` for a run stored elsewhere. |
-| `tally market --limit 5` | Search CrustData for companies adopting coding agents; requires its credentials. |
+| `tally market --limit 5 --max-credits 4` | Find and qualify likely pilot companies with CrustData; checks account pricing before a bounded search. |
+| `tally market --plan --limit 10` | Free account-pricing check; prints a conservative maximum credit estimate without searching. |
+| `tally market --jobs --limit 25 --max-credits 1` | Find engineering posts with explicit coding-tool evidence; group by posting company and label hiring intent, never confirmed adoption. |
+| `tally market --replay .tally/market/latest/query.json --output /tmp/tally-market-replay` | Render the saved snapshot again with no API calls or credentials. |
 | `tally publish --out site` | Static dashboard export with a sensitive-content scan. No deployment. |
 
 `run --dashboard` starts serving before the first task and prints the URL
@@ -331,6 +337,56 @@ replacement for the monthly budget: plan and summary show both, including the
 monthly source. When cfo.ai supplies the monthly budget, init asks only for a
 local fallback after connecting it. Worker trace IDs require correlated trace
 read-back; unverified delivery is shown as missing rather than success.
+
+### Pilot Discovery
+
+`tally market` finds and qualifies likely pilot companies, not adoption or market
+size. The default hypothesis is Software Development companies with 20-500
+employees. It does not infer coding-agent seats or use from headcount. An optional
+`--keyword` filters an exact phrase in the company description, which can also
+match vendors and does not prove adoption.
+
+Live searches require `CRUSTDATA_API_KEY` in `~/.tally/.env`. Before each single
+batch Tally checks free account pricing and prints a conservative maximum estimate
+including premium filters and returned fields. `--max-credits` (default 10)
+refuses an estimated over-cap search; it is a per-call estimate, not a server-side
+hard billing limit. No pagination, enrichment or retries occur. Use `--plan` to
+check pricing without a paid search. `--dry-run` requires cached `--replay`.
+
+The output directory contains the exact `query.json`, `companies.json`, CSV and
+`report.md`: API version, query hash, retrieval timestamp, returned versus API
+match count, reported credits, and record-update dates when available. These
+dates are not publication dates. Cached replay preserves provenance and calls
+no API, even without credentials; it does not rerun the search for fresh data.
+Legacy snapshots without matching provenance must be recaptured rather than
+silently treated as new evidence.
+
+Review a saved snapshot with `--replay <query.json> --review <reviews.json>`.
+Reviews are an array of `{ id, label, reason, sourceUrl, sourceDate, excerpt? }`;
+labels are `candidate`, `vendor`, `hiring intent`, `verified use`, or `rejected`.
+Use `null` for unknown source dates. Intent/use labels require a sourced excerpt;
+Tally checks the structure, not the truth of manual judgements. Without a review,
+every returned row remains an unverified candidate. JSON/CSV retain all rows;
+the short Markdown report shows at most ten. No deduplication or extrapolation
+is applied to company search.
+
+The stronger second stage is `--jobs`: a single batch (default 25) of engineering
+posts from the past 90 days whose descriptions mention Claude Code, Cursor,
+GitHub Copilot, Codex or AI coding agents. It uses Job Search, with no premium
+company filters. Ambiguous Cursor/Codex mentions need nearby AI/coding context;
+rows missing title, company identity, source URL or date are dropped. Accepted
+rows are grouped by normalized domain (or company id) and labelled hiring intent.
+That is evidence in a job advertisement, not a verified deployment, current open
+role, buyer or purchase commitment. Posting entities can be staffing companies;
+cross-posts under different domains are not assumed to be the same buyer.
+Dates are the API's `metadata.date_added`, not independently verified publication
+dates. JSON retains grouped job evidence and CSV includes title/excerpt.
+
+Use `--jobs --secondary <saved-company-query.json>` to include a previously
+reviewed firmographic snapshot as a secondary table without re-fetching it.
+The job snapshot embeds that secondary evidence, so `--replay <job-query.json>`
+later renders both tables with no API calls. Query match counts remain database
+counts, never adoption or market size.
 
 ## Layout
 

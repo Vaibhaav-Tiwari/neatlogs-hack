@@ -10,6 +10,22 @@ import { claudeAllowList } from './harness.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 describe('runDoctor', () => {
+  it('reports checkpoint recall unavailable even when Graph and capture are connected', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-recall-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'direct';
+    config.integrations = { entire: true, neatlogs: false, cfoai: false, slack: false };
+    config.budget.source = 'config';
+    writeFileSync(configPath, stringify(config));
+    const lines = await runDoctor({ configPath, env: {}, runner: async (file, args) => {
+      if (file === 'entire' && args.includes('search')) throw new CommandError('search failed', 1, '', 'no matching repositories found (is the repo mirrored to Entire?)');
+      return { stdout: '{"enabled":true,"loggedIn":true}', stderr: '' };
+    } });
+    expect(lines.find(line => line.product === 'Entire graph plugin')).toMatchObject({ status: 'connected' });
+    expect(lines.find(line => line.product === 'Entire repository')).toMatchObject({ status: 'connected' });
+    expect(lines.find(line => line.product === 'Entire checkpoint recall')).toMatchObject({ status: 'broken', detail: expect.stringContaining('not mirrored') });
+  });
   it('reports mixed AO per-harness permission selection without substituting a harness', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-mixed-'));
     const configPath = join(dir, 'tally.yaml');

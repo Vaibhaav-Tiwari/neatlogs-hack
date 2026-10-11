@@ -3,7 +3,8 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { capImpact } from '../agent/impact.js';
 import type { SizingSignals, SizingSignalsPort, TaskInput } from '../agent/ports.js';
 import type { IntegrationState, TaskImpact } from '../schema/types.js';
-import { RepositorySizingAdapter, looksLikeTest } from './repository-sizing.js';
+import { RepositorySizingAdapter, issueIdentifiers, looksLikeTest } from './repository-sizing.js';
+import { sizingPath, sizingPaths } from './sizing-paths.js';
 
 const execFileAsync = runCommand;
 
@@ -99,8 +100,8 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     const query = `${task.title}\n${task.body}`.trim();
     if (query === '') return null;
     try {
-      const signals = await this.entireGraphSignals(query);
-      this.graphStatus = { status: 'ok', detail: null };
+      const signals = await this.entireGraphSignals(query, task);
+      this.graphStatus = { status: 'ok', detail: signals.source === 'entire-graph' ? null : 'Graph search available; no matching target symbols, sizing from repository evidence.' };
       return signals;
     } catch (e) {
       this.graphStatus = {
@@ -115,7 +116,7 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     return this.graphStatus;
   }
 
-  private async entireGraphSignals(query: string): Promise<SizingSignals> {
+  private async entireGraphSignals(query: string, task: TaskInput): Promise<SizingSignals> {
     await this.runner.run('entire', ['graph', 'index', '--repo', this.repoPath]);
     const search = await this.runner.run('entire', [
       'graph',
@@ -129,8 +130,27 @@ export class EntireSizingAdapter implements SizingSignalsPort {
       '--query',
       query,
     ]);
-    const hits = objects(parseJson(search.stdout)).filter((hit) => hit.section !== 'related' &&
+    const rawHits = objects(parseJson(search.stdout)).filter((hit) => hit.section !== 'related' &&
       (typeof hit.score !== 'number' || hit.score > 0) && stringField(hit, ['qualified_name', 'symbol', 'symbol_name', 'name']));
+    const hitPath = (hit: Record<string, Json>) => this.repoRelative(stringField(hit, ['file_path', 'file', 'path']) ?? '');
+    const allowed = new Set(await sizingPaths(this.repoPath, rawHits.map(hitPath).filter((path): path is string => path !== null)));
+    const hits = rawHits.filter(hit => allowed.has(hitPath(hit) ?? ''));
+    const evidence = await this.fallback.signalsFor(task) ?? await new RepositorySizingAdapter({
+      repoPath: this.repoPath, listFiles: async () => [...allowed],
+    }).signalsFor(task);
+    const targets = new Set([...(evidence?.scope?.existingFiles ?? []), ...(evidence?.scope?.newFiles ?? [])]);
+    if (!targets.size) {
+      const terms = issueIdentifiers(query);
+      for (const hit of hits) {
+        const symbol = stringField(hit, ['qualified_name', 'symbol', 'symbol_name', 'name'])!;
+        if (terms.some(term => symbol === term || symbol.endsWith(`.${term}`))) targets.add(hitPath(hit)!);
+      }
+    }
+    const contextFiles = [...new Set([...allowed, ...(evidence?.contextFiles ?? [])])].filter(path => !targets.has(path));
+    const targetHits = hits.filter(hit => targets.has(hitPath(hit)!));
+    if (!targetHits.length && evidence) return { ...evidence, contextFiles };
+    const connectedPaths: string[] = [];
+    const excludedConnections: string[] = [];
     const files = new Set<string>();
     const nodes = new Map<string, TaskImpact['nodes'][number]>();
     const edges = new Map<string, TaskImpact['edges'][number]>();
@@ -150,13 +170,17 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     const addEdge = (from: string, to: string, kind: TaskImpact['edges'][number]['kind']) => {
       if (from !== to) edges.set(`${from}:${to}:${kind}`, { from, to, kind });
     };
-    for (const [index, hit] of hits.entries()) {
+    for (const path of targets) {
+      files.add(path);
+      addNode(path, looksLikeTest(path) ? 'test' : 'target', 100);
+    }
+    for (const [index, hit] of targetHits.entries()) {
       const hitFile = stringField(hit, ['file_path', 'file', 'path']);
       const symbol = stringField(hit, ['qualified_name', 'symbol', 'symbol_name', 'name'])!;
       const target = addNode(hitFile, hitFile && looksLikeTest(hitFile) ? 'test' : 'target', typeof hit.score === 'number' ? hit.score : 100, symbol);
       if (!target) { truncated = true; continue; }
       files.add(target);
-      // Size uses the full primary search spread; expensive impact probes stay bounded.
+      // Probe only issue targets; other hits are context, not scope evidence.
       if (index >= this.topSymbols) { truncated = true; continue; }
       const impact = parseJson((await this.runner.run('entire', ['graph', 'impact', '--repo', this.repoPath, '--symbol', symbol, '--format', 'json'])).stdout);
       callers += countField(impact, 'callers');
@@ -167,6 +191,11 @@ export class EntireSizingAdapter implements SizingSignalsPort {
         for (const entry of connected) {
           const endpoint = record(entry.endpoint ?? entry);
           const path = stringField(endpoint, ['file_path', 'file', 'path']);
+          if (path) {
+            const local = this.repoRelative(path);
+            if (local) connectedPaths.push(local);
+            else excludedConnections.push(path);
+          }
           const test = path !== null && looksLikeTest(path);
           if (group === 'callers' && entry.depth !== undefined && entry.depth !== 1 && !test) { truncated = true; continue; }
           const kind = test ? 'test' : group === 'callers' ? 'caller' : 'coChange';
@@ -179,18 +208,24 @@ export class EntireSizingAdapter implements SizingSignalsPort {
         }
       }
     }
+    const allowedConnections = new Set(await sizingPaths(this.repoPath, connectedPaths));
+    const excludedDependents = excludedConnections.length + connectedPaths.filter(path => !allowedConnections.has(path)).length;
+    for (const [id, node] of nodes) if (!targets.has(id) && !allowedConnections.has(id)) nodes.delete(id);
+    for (const [id, edge] of edges) if (!nodes.has(edge.from) || !nodes.has(edge.to)) edges.delete(id);
     if (!files.size) throw new Error('graph search returned no target symbols');
-    const totals = { filesTouched: files.size, dependents: callers + coChanges, testsPresent: [...nodes.keys()].some(looksLikeTest), nodes: nodes.size, edges: edges.size };
+    const totals = { filesTouched: files.size, dependents: Math.max(0, callers + coChanges - excludedDependents), testsPresent: evidence?.testsPresent === true || [...nodes.keys()].some(looksLikeTest), nodes: nodes.size, edges: edges.size };
     return {
       filesTouched: totals.filesTouched, dependents: totals.dependents, testsPresent: totals.testsPresent,
       source: 'entire-graph',
+      ...(evidence?.scope ? { scope: evidence.scope } : {}),
+      contextFiles,
       impact: capImpact({ source: 'entire-graph', query, nodes: [...nodes.values()], edges: [...edges.values()], totals, truncated }),
     };
   }
 
   private repoRelative(path: string): string | null {
     const normalized = (isAbsolute(path) ? relative(resolve(this.repoPath), path) : path).replaceAll('\\', '/').replace(/^\.\//, '');
-    return normalized && !normalized.startsWith('/') && !/^[A-Za-z]:/.test(normalized) && !normalized.split('/').includes('..') ? normalized : null;
+    return sizingPath(normalized);
   }
 
 }

@@ -30,8 +30,7 @@ import { NeatlogsWorkerSpoolAdapter, type WorkerTraceDrainPort } from '../adapte
 import { NeatlogsWorkerTraceReader, type WorkerTraceReaderPort } from '../adapters/neatlogs-worker-traces.js';
 import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
-import { FilePriceHistory } from '../adapters/history-file.js';
-import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
+import { historyAttributes, historyTraceName } from '../adapters/neatlogs-history.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { GitHubPublisher, type PublishPort } from '../adapters/publisher.js';
 import { outOfScopeFiles } from './scope.js';
@@ -40,6 +39,7 @@ import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState
 import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
 import { type BacklogTask } from './backlog.js';
 import { loadConfig } from './config.js';
+import { createPriceHistory } from './price-history.js';
 import { writeRunFiles } from './output.js';
 import { tierPriceNote } from './pricing.js';
 import type { RunOptions, RunResult } from './run.js';
@@ -175,7 +175,6 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
   const runner = config.runner === 'direct'
     ? createDirectRunner({ repoPath, baseBranch: config.repo.baseBranch, configPath: resolve(configPath), test: config.test, requiredBaseCommit, approvedRules: config.claudeCode?.allow })
     : new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, aoBin: config.repo.aoBin ? resolve(configDir, config.repo.aoBin) : undefined });
-  const localHistory = hasPort(overrides, 'history') ? null : new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
   const trace = hasPort(overrides, 'trace') ? overrides.trace : config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
   const cfoai = hasPort(overrides, 'cfoai')
     ? overrides.cfoai
@@ -198,7 +197,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     verifier: overrides.verifier ?? (config.integrations.entire ? new EntireGraphVerifier() : new CommandVerifier()),
     usage: overrides.usage ?? runner,
     sessions: overrides.sessions ?? runner,
-    history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
+    history: overrides.history ?? createPriceHistory(config, configPath),
     ...(recall ? { recall } : {}),
     publisher: overrides.publisher ?? new GitHubPublisher(),
     worktrees: overrides.worktrees ?? new GitWorktreeResolver(),
@@ -231,6 +230,17 @@ function traceStatus(trace: TracePort | undefined): RunState['integrations']['ne
   return withStatus?.status?.() ?? { status: 'missing', detail: 'Trace adapter is not configured.' };
 }
 
+function neatlogsStatus(ports: RealRunPorts, traceState?: RunState['integrations']['neatlogs']): RunState['integrations']['neatlogs'] {
+  const workerTraceStatus = ports.workerTraceDrain?.status?.();
+  const traces = traceState ?? (workerTraceStatus?.status === 'missing' ? workerTraceStatus : traceStatus(ports.trace));
+  const history = ports.history.status?.();
+  if (!history) return traces;
+  const priority: Record<IntegrationState['status'], number> = { off: 0, ok: 1, missing: 2, error: 3 };
+  const status = priority[history.status] > priority[traces.status] ? history.status : traces.status;
+  const detail = [traces.detail, history.detail].filter((value): value is string => Boolean(value));
+  return { status, detail: detail.length > 0 ? [...new Set(detail)].join('; ') : null };
+}
+
 function lastTraceId(trace: TracePort | undefined): string | null {
   const withTraceId = trace as (TracePort & { lastTraceId?: () => string | null }) | undefined;
   return withTraceId?.lastTraceId?.() ?? null;
@@ -243,13 +253,13 @@ function portStatus(port: unknown, fallback: RunState['integrations']['entire'])
 
 function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource }): RunState['integrations'] {
   const cfoaiStatus = ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
+  const graph = portStatus(ports.signals, { status: 'missing', detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.' });
+  const recall = ports.recall?.status?.();
   return {
-    neatlogs: config.integrations.neatlogs ? (ports.workerTraceDrain?.status?.().status === 'missing' ? ports.workerTraceDrain.status() : traceStatus(ports.trace)) : { status: 'off', detail: null },
+    neatlogs: config.integrations.neatlogs ? neatlogsStatus(ports) : { status: 'off', detail: null },
     entire: config.integrations.entire
-      ? portStatus(ports.signals, {
-          status: 'missing',
-          detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.',
-        })
+      ? recall ? { status: graph.status === 'ok' && recall.status === 'ok' ? 'ok' : 'missing',
+          detail: `Graph sizing: ${graph.status}${graph.detail ? ` (${graph.detail})` : ''}; ${recall.detail ?? `checkpoint recall: ${recall.status}`}` } : graph
       : { status: 'off', detail: null },
     cfoai: config.integrations.cfoai
       ? options.dryRun && options.budgetSource === 'cfoai' && cfoaiStatus.status === 'ok'
@@ -897,10 +907,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     const workerRows = ledger.filter(row => row.harness === 'codex' || row.harness === 'claude-code');
     if (!options.dryRun && config.integrations.neatlogs && workerRows.length > 0 && workerRows.every(row => row.workerTraceId)
       && ports.workerTraceDrain?.status?.().detail?.startsWith('No queued worker trace found')) {
-      runState.integrations.neatlogs = traceStatus(ports.trace);
+      runState.integrations.neatlogs = neatlogsStatus(ports, traceStatus(ports.trace));
     }
     if (!options.dryRun && config.integrations.neatlogs && workerRows.some(row => !row.workerTraceId) && runState.integrations.neatlogs.status === 'ok') {
-      runState.integrations.neatlogs = { status: 'missing', detail: 'Decision traces sent; worker trace delivery is unverified or pending. Run tally traces drain --run ' + runId + ' to retry.' };
+      const details = [
+        runState.integrations.neatlogs.detail,
+        'Decision traces sent; worker trace delivery is unverified or pending. Run tally traces drain --run ' + runId + ' to retry.',
+      ].filter((value): value is string => Boolean(value));
+      runState.integrations.neatlogs = { status: 'missing', detail: [...new Set(details)].join('; ') };
     }
     assertValid(runState, ledger);
     writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
@@ -1010,9 +1024,11 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (ports.recall) {
       try {
         estimate = applyCheckpointRecall(sized, await ports.recall.recallFor(taskInput));
-      } catch {
-        estimate = sized;
+      } catch (error) {
+        estimate = { ...sized, summary: `${sized.summary}; checkpoint recall unavailable: ${error instanceof Error ? error.message : 'search failed'}` };
       }
+      const recallStatus = ports.recall.status?.();
+      if (recallStatus?.status === 'missing') estimate = { ...estimate, summary: `${estimate.summary}; ${recallStatus.detail}` };
     }
     task.size = estimate.size;
     const state = taskStates[index]!;

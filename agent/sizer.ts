@@ -70,9 +70,10 @@ function summarise(signals: SizingSignals | null): string {
   if (!signals) return 'no sizing signals';
   const files = `${plural(signals.filesTouched, 'file')} touched`;
   const dependents = signals.scope && signals.source === 'code-search' ? 'dependents unmeasured' : signals.dependents === 0 ? 'no dependents' : plural(signals.dependents, 'dependent');
-  const source = signals.scope ? ' from the issue text and a search of the repository' : '';
+  const source = signals.scope ? ` from the issue text and a search of the repository${signals.source === 'entire-graph' ? ' (Graph impact)' : ''}` : '';
   const newFiles = signals.scope?.newFiles.length ? ` (create: ${signals.scope.newFiles.join(', ')})` : '';
-  return `${files}${source}${newFiles}, ${dependents} and ${signals.testsPresent ? 'tests present' : 'no tests'}${signals.scope?.createOnly ? '; no existing edits requested' : ''}${signals.scope?.truncated ? '; search bounded/truncated' : ''}`;
+  const context = signals.contextFiles?.length ? `; related context (not targets): ${signals.contextFiles.slice(0, 3).join(', ')}${signals.contextFiles.length > 3 ? ', ...' : ''}` : '';
+  return `${files}${source}${newFiles}, ${dependents} and ${signals.testsPresent ? 'tests present' : 'no tests'}${signals.scope?.createOnly ? '; no existing edits requested' : ''}${signals.scope?.truncated ? '; search bounded/truncated' : ''}${context}`;
 }
 
 /** The deterministic rules. */

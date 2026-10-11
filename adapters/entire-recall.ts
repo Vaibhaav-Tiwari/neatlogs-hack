@@ -1,5 +1,6 @@
 import { runCommand } from './command.js';
 import type { CheckpointRecall, CheckpointRecallPort, TaskInput } from '../agent/ports.js';
+import type { IntegrationState } from '../schema/types.js';
 
 const execFileAsync = runCommand;
 
@@ -83,6 +84,7 @@ export class EntireCheckpointRecallAdapter implements CheckpointRecallPort {
   private readonly command: CommandRunner;
   private readonly repoPath: string;
   private readonly limit: number;
+  private availability: IntegrationState = { status: 'missing', detail: 'checkpoint recall has not been checked' };
 
   constructor(options: EntireRecallOptions) {
     this.command = options.command ?? defaultCommand;
@@ -90,14 +92,38 @@ export class EntireCheckpointRecallAdapter implements CheckpointRecallPort {
     this.limit = options.limit ?? 5;
   }
 
+  status(): IntegrationState { return this.availability; }
+
+  async checkAvailability(): Promise<IntegrationState> {
+    await this.search('Tally checkpoint recall availability');
+    return this.status();
+  }
+
+  private async search(query: string): Promise<Json> {
+    try {
+      const result = await this.command('entire', ['checkpoint', 'search', query, '--json', '--compact', '--limit', String(this.limit)], { cwd: this.repoPath });
+      const parsed = parseJson(result.stdout);
+      if (parsed === null) throw new Error('checkpoint search returned invalid JSON');
+      this.availability = { status: 'ok', detail: 'checkpoint search available' };
+      return parsed;
+    } catch (error) {
+      const failure = error as { message?: string; stderr?: string };
+      const reason = failure.stderr?.trim() || failure.message || 'checkpoint search failed';
+      this.availability = { status: 'missing', detail: `checkpoint recall unavailable: ${reason}${/no matching repositories|mirrored/i.test(reason) ? '; repository is not mirrored to Entire or not accessible in the current account' : ''}` };
+      return null;
+    }
+  }
+
   async recallFor(task: TaskInput): Promise<CheckpointRecall | null> {
     const files = issueFiles(task);
-    if (files.length === 0) return null;
+    if (files.length === 0) {
+      if (this.availability.status !== 'missing' || this.availability.detail === 'checkpoint recall has not been checked') {
+        this.availability = { status: 'ok', detail: 'checkpoint recall not used: issue has no explicit file references' };
+      }
+      return null;
+    }
     const query = files.join(' ');
-    const result = await this.command('entire', ['checkpoint', 'search', query, '--json', '--compact', '--limit', String(this.limit)], {
-      cwd: this.repoPath,
-    }).catch(() => null);
-    const matches = objects(parseJson(result?.stdout ?? ''));
+    const matches = objects(await this.search(query));
     for (const match of matches) {
       const touched = collectFiles(match);
       if (!sameFile(touched, files)) continue;

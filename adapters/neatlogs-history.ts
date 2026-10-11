@@ -1,7 +1,7 @@
 import { loadEnv } from '../engine/env.js';
 import { NANOS_PER_USD } from '../schema/money.js';
-import type { TaskSize } from '../schema/types.js';
-import type { AttemptOutcome, PriceHistoryPort, PriceHistoryWriterPort, PriceStats } from '../agent/ports.js';
+import type { IntegrationState, TaskSize } from '../schema/types.js';
+import type { AttemptOutcome, PriceHistoryPort, PriceHistorySource, PriceHistoryWriterPort, PriceStats } from '../agent/ports.js';
 
 export interface NeatlogsHistoryOptions {
   fallback: PriceHistoryPort & PriceHistoryWriterPort;
@@ -10,6 +10,7 @@ export interface NeatlogsHistoryOptions {
   endpoint?: string;
   workflowName?: string;
   limit?: number;
+  maxPages?: number;
 }
 
 interface Observation {
@@ -21,6 +22,14 @@ interface Observation {
 
 const DEFAULT_ENDPOINT = 'https://app.neatlogs.com/api/v1/public';
 const DEFAULT_WORKFLOW = 'tally-cfo-agent';
+const MAX_PAGE_SIZE = 50;
+const MAX_PAGES = 10;
+
+function boundedInteger(value: number | undefined, fallback: number, maximum: number): number {
+  return value !== undefined && Number.isFinite(value)
+    ? Math.min(maximum, Math.max(1, Math.floor(value)))
+    : fallback;
+}
 
 function stringValue(value: unknown): string | null {
   if (typeof value === 'string') return value;
@@ -114,6 +123,21 @@ function tracesOf(body: unknown): unknown[] {
   return [];
 }
 
+function pageOf(body: unknown): { hasMore: boolean; nextCursor: string | null } {
+  if (typeof body !== 'object' || body === null) return { hasMore: false, nextCursor: null };
+  const record = body as Record<string, unknown>;
+  const data = typeof record.data === 'object' && record.data !== null
+    ? record.data as Record<string, unknown>
+    : record;
+  const rawPage = data.page ?? record.page;
+  if (typeof rawPage !== 'object' || rawPage === null) return { hasMore: false, nextCursor: null };
+  const page = rawPage as Record<string, unknown>;
+  return {
+    hasMore: page.hasMore === true,
+    nextCursor: typeof page.nextCursor === 'string' && page.nextCursor.length > 0 ? page.nextCursor : null,
+  };
+}
+
 function observationFromSpan(span: unknown): Observation | null {
   if (typeof span !== 'object' || span === null) return null;
   const name = stringValue((span as Record<string, unknown>).name);
@@ -146,6 +170,9 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
   private readonly endpoint: string;
   private readonly workflowName: string;
   private readonly limit: number;
+  private readonly maxPages: number;
+  private readStatus: IntegrationState | null;
+  private lastLookupSource: PriceHistorySource = 'none';
 
   constructor(options: NeatlogsHistoryOptions) {
     const env = options.env ?? loadEnv();
@@ -155,17 +182,44 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
     this.fetchImpl = options.fetch ?? fetch;
     this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     this.workflowName = options.workflowName ?? DEFAULT_WORKFLOW;
-    this.limit = options.limit ?? 100;
+    this.limit = boundedInteger(options.limit, MAX_PAGE_SIZE, MAX_PAGE_SIZE);
+    this.maxPages = boundedInteger(options.maxPages, MAX_PAGES, MAX_PAGES);
+    this.readStatus = this.token && this.projectId
+      ? null
+      : { status: 'missing', detail: 'NEATLOGS_TOKEN or NEATLOGS_PROJECT_ID is missing; using local price history.' };
+  }
+
+  status(): IntegrationState | null {
+    return this.readStatus;
+  }
+
+  sourceOfLastLookup(): PriceHistorySource {
+    return this.lastLookupSource;
   }
 
   async lookup(size: TaskSize, tier: string): Promise<PriceStats | null> {
-    if (!this.token || !this.projectId) return this.fallback.lookup(size, tier);
+    if (!this.token || !this.projectId) return this.fallbackLookup(size, tier);
+    let remote: PriceStats | null;
     try {
-      const remote = aggregate(await this.remoteObservations(), size, tier);
-      return remote ?? this.fallback.lookup(size, tier);
-    } catch {
-      return this.fallback.lookup(size, tier);
+      remote = aggregate(await this.remoteObservations(), size, tier);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.readStatus = { status: 'error', detail: `Neatlogs price-history read failed; using local history. ${message}` };
+      return this.fallbackLookup(size, tier);
     }
+    if (remote) {
+      this.readStatus = { status: 'ok', detail: null };
+      this.lastLookupSource = 'neatlogs';
+      return remote;
+    }
+    this.readStatus = { status: 'ok', detail: `No usable Neatlogs price-history observations matched ${size}/${tier}; using local history.` };
+    return this.fallbackLookup(size, tier);
+  }
+
+  private async fallbackLookup(size: TaskSize, tier: string): Promise<PriceStats | null> {
+    const stats = await this.fallback.lookup(size, tier);
+    this.lastLookupSource = stats ? 'local' : 'none';
+    return stats;
   }
 
   async record(outcome: AttemptOutcome): Promise<void> {
@@ -177,26 +231,38 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
   }
 
   private async remoteObservations(): Promise<Observation[]> {
-    const tracesUrl = new URL(`${this.endpoint}/traces`);
-    tracesUrl.searchParams.set('workflowName', this.workflowName);
-    tracesUrl.searchParams.set('limit', String(this.limit));
-    const tracesResponse = await this.fetchImpl(tracesUrl, { headers: this.headers() });
-    if (!tracesResponse.ok) throw new Error(`neatlogs traces read failed: ${tracesResponse.status}`);
-    const traces = tracesOf(await tracesResponse.json());
     const observations: Observation[] = [];
-    for (const trace of traces) {
-      const traceName = traceNameOf(trace);
-      const traceObservation = observationFromName(traceName);
-      if (traceObservation) observations.push(traceObservation);
-      if (traceName && traceName !== 'tally.history.record') continue;
-      const traceId = traceIdOf(trace);
-      if (!traceId) continue;
-      const spansResponse = await this.fetchImpl(`${this.endpoint}/traces/${encodeURIComponent(traceId)}/spans`, { headers: this.headers() });
-      if (!spansResponse.ok) continue;
-      for (const span of spansOf(await spansResponse.json())) {
-        const observation = observationFromSpan(span);
-        if (observation) observations.push(observation);
+    const seenCursors = new Set<string>();
+    let cursor: string | null = null;
+    for (let pageNumber = 0; pageNumber < this.maxPages; pageNumber += 1) {
+      if (cursor) {
+        if (seenCursors.has(cursor)) throw new Error('neatlogs trace pagination returned a repeated cursor');
+        seenCursors.add(cursor);
       }
+      const tracesUrl = new URL(`${this.endpoint}/traces`);
+      tracesUrl.searchParams.set('workflowName', this.workflowName);
+      tracesUrl.searchParams.set('limit', String(this.limit));
+      if (cursor) tracesUrl.searchParams.set('cursor', cursor);
+      const tracesResponse = await this.fetchImpl(tracesUrl, { headers: this.headers() });
+      if (!tracesResponse.ok) throw new Error(`neatlogs traces read failed: ${tracesResponse.status}`);
+      const body = await tracesResponse.json();
+      for (const trace of tracesOf(body)) {
+        const traceName = traceNameOf(trace);
+        const traceObservation = observationFromName(traceName);
+        if (traceObservation) observations.push(traceObservation);
+        if (traceName && traceName !== 'tally.history.record') continue;
+        const traceId = traceIdOf(trace);
+        if (!traceId) continue;
+        const spansResponse = await this.fetchImpl(`${this.endpoint}/traces/${encodeURIComponent(traceId)}/spans`, { headers: this.headers() });
+        if (!spansResponse.ok) throw new Error(`neatlogs spans read failed: ${spansResponse.status}`);
+        for (const span of spansOf(await spansResponse.json())) {
+          const observation = observationFromSpan(span);
+          if (observation) observations.push(observation);
+        }
+      }
+      const page = pageOf(body);
+      if (!page.hasMore || !page.nextCursor) break;
+      cursor = page.nextCursor;
     }
     return observations;
   }

@@ -7,7 +7,7 @@
  * fail; the agent treats a thrown error or a null as "not available" and
  * falls back to a safe default instead of failing the run.
  */
-import type { AttemptResult, CostSource, Handoff, TaskImpact, TaskSize, TokenUsage } from '../schema/types.js';
+import type { AttemptResult, CostSource, Handoff, IntegrationState, TaskImpact, TaskSize, TokenUsage } from '../schema/types.js';
 
 /** The part of a backlog item the agent reads. */
 export interface TaskInput {
@@ -29,6 +29,8 @@ export interface SizingSignals {
   testsPresent: boolean;
   source: SignalSource;
   impact?: TaskImpact;
+  /** Related search hits, never counted as files the task must edit. */
+  contextFiles?: string[];
   /** Repository-only evidence: new targets are not mistaken for missing measurements. */
   scope?: { existingFiles: string[]; newFiles: string[]; createOnly: boolean; namedTargets: number; truncated: boolean };
 }
@@ -49,6 +51,7 @@ export interface CheckpointRecall {
 export interface CheckpointRecallPort {
   /** Searches past agent checkpoints for work on the same area. */
   recallFor(task: TaskInput): Promise<CheckpointRecall | null>;
+  status?(): IntegrationState;
 }
 
 /** What has actually been observed for one (task size, tier) pair. No prior mixed in. */
@@ -60,9 +63,15 @@ export interface PriceStats {
   avgCostNanos: number;
 }
 
+export type PriceHistorySource = 'neatlogs' | 'local' | 'none';
+
 export interface PriceHistoryPort {
   /** Null, or attempts = 0, when there is no history for the pair. */
   lookup(size: TaskSize, tier: string): Promise<PriceStats | null>;
+  /** Optional status for remote history adapters; local adapters can omit it. */
+  status?(): IntegrationState | null;
+  /** Source that supplied the most recent result; `none` means no observations matched. */
+  sourceOfLastLookup?(): PriceHistorySource;
 }
 
 /** One finished attempt, as the history needs it. */

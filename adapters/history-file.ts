@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { PriceHistory, type PriceHistorySnapshot } from '../agent/history.js';
-import type { AttemptOutcome, PriceHistoryPort, PriceHistoryWriterPort, PriceStats } from '../agent/ports.js';
+import type { AttemptOutcome, PriceHistoryPort, PriceHistorySource, PriceHistoryWriterPort, PriceStats } from '../agent/ports.js';
 import type { TaskSize } from '../schema/types.js';
 
 export interface HistoryFileStore {
@@ -43,6 +43,7 @@ export class FilePriceHistory implements PriceHistoryPort, PriceHistoryWriterPor
   private readonly store: HistoryFileStore;
   private loaded: Promise<PriceHistory> | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
+  private lastLookupSource: PriceHistorySource = 'none';
 
   constructor(options: FilePriceHistoryOptions) {
     this.path = options.path;
@@ -50,7 +51,13 @@ export class FilePriceHistory implements PriceHistoryPort, PriceHistoryWriterPor
   }
 
   async lookup(size: TaskSize, tierOrModel: string): Promise<PriceStats | null> {
-    return (await this.history()).lookup(size, tierOrModel);
+    const stats = await (await this.history()).lookup(size, tierOrModel);
+    this.lastLookupSource = stats ? 'local' : 'none';
+    return stats;
+  }
+
+  sourceOfLastLookup(): PriceHistorySource {
+    return this.lastLookupSource;
   }
 
   async record(outcome: AttemptOutcome): Promise<void> {
