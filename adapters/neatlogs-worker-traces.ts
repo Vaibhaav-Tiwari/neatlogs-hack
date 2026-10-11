@@ -13,6 +13,7 @@ export interface WorkerTraceReaderPort {
 }
 
 interface TraceRecord {
+  id?: string;
   traceId?: string;
   sessionId?: string;
   workflowName?: string;
@@ -49,7 +50,8 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
         for (const id of candidates) {
           if (!/^[0-9a-f]{32}$/i.test(id)) continue;
           const detail = await this.read(`/traces/${id}`) as { data?: TraceRecord } | null;
-          if (!detail?.data || detail.data.traceId !== id || !matches(detail.data, context)) continue;
+          const detailId = detail?.data?.traceId ?? detail?.data?.id;
+          if (!detail?.data || detailId !== id || !matches(detail.data, context)) continue;
           const spans = await this.read(`/traces/${id}/spans`) as { data?: { spans?: unknown[] } } | null;
           // A trace-list stub/app shell is not delivery proof. Killed turns may have
           // zero aggregate tokens yet still have readable tool spans.
@@ -68,7 +70,10 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
       const query = new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) });
       const body = await this.read(`/traces?${query}`) as { data?: { traces?: TraceRecord[]; page?: { nextCursor?: string; hasMore?: boolean } } } | null;
       if (!Array.isArray(body?.data?.traces)) break;
-      for (const trace of body.data.traces) if (matches(trace, context) && trace.traceId) ids.push(trace.traceId);
+      for (const trace of body.data.traces) {
+        const id = trace.traceId ?? trace.id;
+        if (matches(trace, context) && id) ids.push(id);
+      }
       if (ids.length || !body.data.page?.hasMore || !body.data.page.nextCursor) break;
       cursor = body.data.page.nextCursor;
     }

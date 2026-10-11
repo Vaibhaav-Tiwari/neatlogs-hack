@@ -29,6 +29,12 @@ class FakeNeatlogs implements NeatlogsSdk {
   }
 }
 
+class FailingTraceNeatlogs extends FakeNeatlogs {
+  override async trace<T>(): Promise<T> {
+    throw new Error('export unavailable');
+  }
+}
+
 describe('NeatlogsTraceAdapter', () => {
   it('is off and acts as a no-op when the key is missing', async () => {
     const adapter = new NeatlogsTraceAdapter({ env: {}, sdk: new FakeNeatlogs() });
@@ -73,5 +79,21 @@ describe('NeatlogsTraceAdapter', () => {
     });
     await adapter.span('tally.route', {}, async () => {});
     expect(adapter.status()).toEqual({ status: 'missing', detail: 'neatlogs SDK is not available' });
+  });
+
+  it('keeps application work running when a trace export fails before the callback', async () => {
+    const adapter = new NeatlogsTraceAdapter({ env: { NEATLOGS_API_KEY: 'secret-key' }, sdk: new FailingTraceNeatlogs() });
+    let calls = 0;
+    await expect(adapter.span('tally.route', {}, async () => { calls += 1; return 'completed'; })).resolves.toBe('completed');
+    expect(calls).toBe(1);
+    expect(adapter.status()).toEqual({ status: 'error', detail: 'neatlogs trace export failed; the run continued without this span' });
+  });
+
+  it('keeps a flush failure out of the run result', async () => {
+    const sdk = new FakeNeatlogs();
+    sdk.flush = async () => { throw new Error('network unavailable'); };
+    const adapter = new NeatlogsTraceAdapter({ env: { NEATLOGS_API_KEY: 'secret-key' }, sdk });
+    await expect(adapter.flush()).resolves.toBeUndefined();
+    expect(adapter.status()).toEqual({ status: 'error', detail: 'neatlogs flush failed; queued trace data may be pending' });
   });
 });

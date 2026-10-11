@@ -214,7 +214,8 @@ type Handler = (options: CliOptions, io: CliIO) => Promise<number>;
 async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
     if (options.plan) {
-      const budget = await readPlanBudget(loadConfig(options.config), { budgetUsd: options.budgetUsd });
+      const config = loadConfig(options.config);
+      const budget = await readPlanBudget(config, { budgetUsd: options.budgetUsd });
       io.stdout(`budget: ${formatUsd(budget.limitNanos)} from ${budget.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'}`);
       const plan = await planTally({
         configPath: options.config,
@@ -229,6 +230,14 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
           : `${task.tier} ${task.harness}/${task.model} ceiling ${task.ceilingNanos === null ? 'none' : formatUsd(task.ceilingNanos)}`;
         io.stdout(`${task.taskId}: ${task.size} -> ${route}`);
         io.stdout(`  ${task.decision}`);
+      }
+      if (plan.length === 0) {
+        if (config.backlog.source === 'github-issues') {
+          const label = config.backlog.issueLabel ?? 'tally';
+          io.stdout(`No matching open issues with label ${JSON.stringify(label)} in ${config.repo.slug ?? config.repo.path}; nothing would start.`);
+        } else {
+          io.stdout('No tasks matched the configured backlog; nothing would start.');
+        }
       }
       return 0;
     }

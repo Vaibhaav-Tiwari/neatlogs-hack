@@ -188,6 +188,8 @@ class FakeWorktrees implements WorktreePort {
 class FakeCfoaiBudget implements CfoaiBudgetPort {
   writes: number[] = [];
   detailWrites: Array<{ attempts: Array<{ tier: string; costNanos: number }>; cumulativeRunSpendNanos: number }> = [];
+  baseSpendNanos: number | null = null;
+  detailBaseSpendNanos: number | null = null;
   constructor(
     private readonly budgetNanos = usdToNanos(40),
     private readonly failRead = false,
@@ -206,6 +208,11 @@ class FakeCfoaiBudget implements CfoaiBudgetPort {
   async currentSpendNanos() {
     if (this.failRead) throw new Error('not logged in');
     return this.currentSpend;
+  }
+
+  setRunBaseSpendNanos(nanos: number, detailBaseSpendNanos?: number) {
+    this.baseSpendNanos = nanos;
+    this.detailBaseSpendNanos = detailBaseSpendNanos ?? nanos;
   }
 
   async writeCumulativeActualSpend(runSpendNanos: number) {
@@ -493,6 +500,28 @@ describe('runRealTally', () => {
     expect(worker.starts).toHaveLength(1);
     expect(cfoai.writes).toEqual([result.runState.budget.spentNanos]);
   });
+
+  it('uses cfo.ai as the integration of record when the budget source enables it', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: false, slack: false');
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }', 'budget: { source: cfoai, usd: 40 }'));
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), false, usdToNanos(10));
+    const result = await runRealTally({
+      configPath,
+      dryRun: true,
+      baseline: false,
+      outputDir: join(dir, 'cfoai-source'),
+      latestRunDir: join(dir, 'latest-cfoai-source'),
+      now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]), cfoai },
+    });
+
+    expect(cfoai.baseSpendNanos).toBe(usdToNanos(10));
+    expect(cfoai.detailBaseSpendNanos).toBe(usdToNanos(10));
+    expect(result.runState.budget).toMatchObject({ source: 'cfoai', systemOfRecord: 'cfoai', limitNanos: usdToNanos(40) });
+    expect(result.runState.integrations.cfoai).toEqual({ status: 'ok', detail: 'budget read; spend not written in a dry run' });
+  });
+
   it('persists frozen impact before spawning and diffs against the recorded attempt base', async () => {
     const { dir, configPath } = fixture();
     const outputDir = join(dir, 'impact');

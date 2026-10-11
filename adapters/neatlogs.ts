@@ -47,6 +47,7 @@ export class NeatlogsTraceAdapter implements TracePort {
   private initStarted: Promise<void> | null = null;
   private offReason: string | null = null;
   private lastTraceIdValue: string | null = null;
+  private statusState: IntegrationState = { status: 'ok', detail: null };
 
   constructor(options: NeatlogsTraceOptions = {}) {
     const env = options.env ?? loadEnv();
@@ -55,11 +56,14 @@ export class NeatlogsTraceAdapter implements TracePort {
     this.tags = options.tags ?? ['tally', 'cfo-agent'];
     this.sdkOverride = options.sdk;
     this.loadSdk = options.loadSdk ?? importNeatlogs;
-    if (!this.apiKey) this.offReason = 'NEATLOGS_API_KEY is missing';
+    if (!this.apiKey) {
+      this.offReason = 'NEATLOGS_API_KEY is missing';
+      this.statusState = { status: 'missing', detail: this.offReason };
+    }
   }
 
   status(): IntegrationState {
-    return this.offReason ? { status: 'missing', detail: this.offReason } : { status: 'ok', detail: this.lastTraceIdValue };
+    return this.statusState.status === 'ok' ? { status: 'ok', detail: this.lastTraceIdValue } : this.statusState;
   }
 
   lastTraceId(): string | null {
@@ -76,23 +80,59 @@ export class NeatlogsTraceAdapter implements TracePort {
     };
     const sessionId = typeof attributes.sessionId === 'string' ? attributes.sessionId : undefined;
     const safeAttributes = serialisable(attributes);
-    return sdk.trace({ name, kind: 'CHAIN', ...(sessionId ? { sessionId } : {}), input: safeAttributes, attributes: safeAttributes }, async () => {
+    let callbackStarted = false;
+    let callbackCompleted = false;
+    let callbackFailed = false;
+    let callbackResult!: T;
+    const callback = async (): Promise<T> => {
+      callbackStarted = true;
       const carrier: Record<string, string> = {};
       sdk.injectTraceContext?.(carrier);
       this.lastTraceIdValue = traceIdFromCarrier(carrier);
-      return fn(span);
-    });
+      try {
+        callbackResult = await fn(span);
+        callbackCompleted = true;
+        return callbackResult;
+      } catch (error) {
+        callbackFailed = true;
+        throw error;
+      }
+    };
+    try {
+      const traced = await sdk.trace({ name, kind: 'CHAIN', ...(sessionId ? { sessionId } : {}), input: safeAttributes, attributes: safeAttributes }, callback);
+      // Some exporters finish delivery after the callback resolves. Keep the
+      // callback's result if delivery reports a late failure.
+      return callbackCompleted ? callbackResult : traced;
+    } catch (error) {
+      // Never run application work twice. Callback failures belong to Tally and
+      // must be rethrown; exporter failures before callback entry are optional.
+      if (callbackFailed || (callbackStarted && !callbackCompleted)) throw error;
+      if (callbackCompleted) return callbackResult;
+      this.offReason = 'neatlogs trace export failed; the run continued without this span';
+      this.statusState = { status: 'error', detail: this.offReason };
+      return fn({ set: () => {} });
+    }
   }
 
   async flush(): Promise<void> {
     const sdk = await this.ready();
-    await sdk?.flush?.();
+    try {
+      await sdk?.flush?.();
+    } catch {
+      this.offReason = 'neatlogs flush failed; queued trace data may be pending';
+      this.statusState = { status: 'error', detail: this.offReason };
+    }
   }
 
   async shutdown(): Promise<void> {
     const sdk = await this.ready();
-    await sdk?.flush?.();
-    await sdk?.shutdown?.();
+    await this.flush();
+    try {
+      await sdk?.shutdown?.();
+    } catch {
+      this.offReason = 'neatlogs shutdown failed; the run data remains local';
+      this.statusState = { status: 'error', detail: this.offReason };
+    }
   }
 
   private async ready(): Promise<NeatlogsSdk | null> {
@@ -108,13 +148,16 @@ export class NeatlogsTraceAdapter implements TracePort {
       const sdk = this.sdkOverride === undefined ? await this.loadSdk() : this.sdkOverride;
       if (!sdk) {
         this.offReason = 'neatlogs SDK is not installed';
+        this.statusState = { status: 'missing', detail: this.offReason };
         return;
       }
       await sdk.init({ apiKey: this.apiKey, workflowName: this.workflowName, tags: this.tags });
       this.sdk = sdk;
       this.offReason = null;
+      this.statusState = { status: 'ok', detail: null };
     } catch {
       this.offReason = 'neatlogs SDK is not available';
+      this.statusState = { status: 'missing', detail: this.offReason };
       this.sdk = null;
     }
   }
