@@ -20,6 +20,8 @@ describe('ordinary-terminal AO CLI consistency', () => {
     script(aoBin, `case "$1" in\nagent) printf '{"installed":[{"id":"claude-code"}]}' ;;\nproject) printf '{"project":{"config":{"worker":{"agentConfig":{"permissions":"auto"}}}}}' ;;\n*) printf 'ok' ;;\nesac`);
     script(join(bin, 'git'), `case "$1" in\nrev-parse) printf '%s' "$PWD" ;;\nbranch) printf 'main' ;;\n*) printf 'ok' ;;\nesac`);
     script(join(bin, 'gh'), "printf 'ok'");
+    script(join(bin, 'claude'), `printf '{"loggedIn":true}'`);
+    script(join(bin, 'codex'), `printf 'Logged in using ChatGPT'`);
     writeFileSync(join(dir, 'Makefile'), 'test:\n\ttrue\n');
     vi.stubEnv('PATH', bin);
     vi.stubEnv('TALLY_AO_BIN', aoBin);

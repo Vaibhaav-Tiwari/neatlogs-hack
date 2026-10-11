@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 
 export interface InstallRecord {
   version: 1;
+  runner?: 'ao' | 'direct';
   configPath: string;
   configHash: string;
   projectId: string;

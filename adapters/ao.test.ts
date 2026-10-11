@@ -133,7 +133,7 @@ describe('usageFromAoPayload', () => {
     };
     const adapter = new AoCliAdapter({ command, cwd: '/repo', requiredBaseCommit: base });
     const input = { task: { taskId: 'T1', title: 'Task', body: '', issueNumber: null, issueUrl: null, size: 'small' as const, outcomes: ['passed' as const] }, attempt: 1,
-      tier: { name: 'cheap', harness: 'codex', model: 'model', provider: 'openai', price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 }, ceilingFraction: 1 },
+      tier: { name: 'cheap', harness: 'codex' as const, model: 'model', provider: 'openai', price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 }, ceilingFraction: 1 },
       ceilingNanos: null, harness: 'codex', model: 'model', name: 'test', prompt: 'implement task' };
     if (matches) await expect(adapter.start(input)).resolves.toMatchObject({ checkoutPath: '/worker' });
     else await expect(adapter.start(input)).rejects.toThrow('experiment worker base mismatch');

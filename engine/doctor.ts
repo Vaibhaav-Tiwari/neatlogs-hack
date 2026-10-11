@@ -5,6 +5,8 @@ import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadConfig } from './config.js';
 import { loadEnv } from './env.js';
 import { checkSetupPostCreate, checkWorkerAutoMode } from './preflight.js';
+import { checkHarness, claudeAllowList } from './harness.js';
+import { configHash } from './install-record.js';
 
 export type DoctorStatus = 'connected' | 'missing' | 'broken' | 'off';
 
@@ -111,12 +113,24 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
   const env = options.env ?? { ...loadEnv(), ...process.env };
   const cfoaiCheck = options.cfoaiCheck ?? checkCfoaiConnection;
   const lines: DoctorLine[] = [];
-  lines.push(await commandLine('AO daemon', runner, 'ao', ['status'], 'ao start'));
-  if (options.configPath) {
+  const direct = config?.runner === 'direct';
+  lines.push(direct ? { product: 'AO daemon', status: 'off', detail: 'direct runner; Agent Orchestrator is not required', fix: null } : await commandLine('AO daemon', runner, 'ao', ['status'], 'ao start'));
+  if (options.configPath && !direct) {
     const workerMode = await aoWorkerModeLine(options.configPath, runner);
     if (workerMode) lines.push(workerMode);
     const setupPostCreate = await aoSetupPostCreateLine(options.configPath, runner);
     if (setupPostCreate) lines.push(setupPostCreate);
+  }
+  if (config) {
+    const cwd = resolve(dirname(options.configPath!), config.repo.path);
+    for (const harness of new Set(config.tiers.map(tier => tier.harness))) {
+      const status = await checkHarness(harness, runner, cwd);
+      lines.push({ product: harness === 'claude-code' ? 'Claude Code' : 'Codex', status: !status.installed ? 'missing' : status.signedIn ? 'connected' : 'broken', detail: status.detail, fix: status.installed && status.signedIn ? null : status.fix });
+    }
+    if (config.tiers.some(tier => tier.harness === 'claude-code')) {
+      const approved = config.claudeCode && configHash(config.claudeCode.allow) === configHash(claudeAllowList(config.test));
+      lines.push({ product: 'Claude Code allow-list consent', status: approved ? 'connected' : 'missing', detail: approved ? 'Repository consent matches current test/setup commands; worker-local enforcement is a separate check' : 'Claude Code worker allow-list has not been approved for these test/setup commands', fix: approved ? null : 'tally init' });
+    }
   }
   lines.push(await commandLine('GitHub CLI', runner, 'gh', ['auth', 'status'], 'gh auth login'));
   const off = (product: string): DoctorLine => ({ product, status: 'off', detail: 'disabled in tally.yaml; not required', fix: null });

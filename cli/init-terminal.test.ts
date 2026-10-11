@@ -20,9 +20,11 @@ describe('init process lifecycle', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'tally-init-pty-'));
     const driver = join(cwd, 'driver.mjs');
     writeFileSync(driver, `import { runInit } from ${JSON.stringify(new URL('../engine/init.ts', import.meta.url).href)};
-      const command = async (file, args) => ({stdout: file === 'git' && args[0] === 'rev-parse' ? process.cwd()
+      const command = async (file, args) => {
+        if (file === 'claude') throw new Error('missing CLI');
+        return {stdout: file === 'codex' ? 'Logged in using ChatGPT' : file === 'git' && args[0] === 'rev-parse' ? process.cwd()
         : args[0] === 'agent' ? JSON.stringify({installed:[{id:'codex'}]})
-        : args[1] === 'get' ? JSON.stringify({project:{config:{}}}) : '', stderr:''});
+        : args[1] === 'get' ? JSON.stringify({project:{config:{}}}) : '', stderr:''}; };
       try { const result = await runInit({command, onboarding: async () => {}, doctor: async () => {
         if (process.env.TALLY_TEST_MODE === 'error') throw new Error('fake doctor failure'); return [];
       }}); console.log('RESULT', result.applied ? 'applied' : 'cancelled'); }
@@ -45,6 +47,10 @@ describe('init process lifecycle', () => {
         send -- "n\\r"
         expect -exact "Enable cfo.ai"
         send -- "n\\r"
+        expect -exact "Runner:"
+        send -- "ao\\r"
+        expect -exact "Coding agents:"
+        send -- "codex\\r"
         expect -exact "Monthly budget"
         send -- "5\\r"
         expect -exact "Apply these changes?"

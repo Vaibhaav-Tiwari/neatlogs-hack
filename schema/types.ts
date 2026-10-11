@@ -180,8 +180,8 @@ export interface TierPrice {
 export interface Tier {
   /** Free-form label, e.g. cheap / middle / top. Referenced by ledger rows. */
   name: string;
-  /** Any harness the Agent Orchestrator supports. */
-  harness: string;
+  /** Installed coding CLI; Tally never substitutes another harness. */
+  harness: 'codex' | 'claude-code';
   /** AO session interface for real workers. TUI is required for unattended shell work. */
   sessionMode?: 'chat' | 'tui';
   /** Model id as the provider names it, e.g. a gateway alias such as nova-lite. */
@@ -198,6 +198,10 @@ export interface Tier {
 
 export interface TallyConfig {
   version: 1;
+  /** Absent means AO for compatibility with existing configurations. */
+  runner?: 'ao' | 'direct';
+  /** Repository consent only; worker-local enforcement is installed by the runner. */
+  claudeCode?: { allow: string[] };
   repo: {
     /** Local checkout, relative to tally.yaml. */
     path: string;

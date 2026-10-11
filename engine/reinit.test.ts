@@ -7,6 +7,7 @@ import { loadConfig } from './config.js';
 import { contentHash, installRecordPath } from './install-record.js';
 import { runInit, type InitCommandRunner } from './init.js';
 import { reinitPath } from './reinit.js';
+import { claudeAllowList } from './harness.js';
 
 function fixture(owned = true) {
   const cwd = mkdtempSync(join(tmpdir(), 'tally-reinit-'));
@@ -15,6 +16,7 @@ function fixture(owned = true) {
   config.repo.path = '.';
   config.repo.aoProject = 'preserved-project';
   config.test.command = 'sh custom-check.sh';
+  config.claudeCode = { allow: claudeAllowList(config.test) };
   config.budget.usd = 17;
   writeFileSync(path, stringify(config));
   const record = { version: 1, configPath: path, configHash: contentHash(readFileSync(path, 'utf8')), projectId: 'preserved-project', projectCreated: false,
@@ -23,6 +25,7 @@ function fixture(owned = true) {
   const commands: string[] = [];
   const command: InitCommandRunner = async (file, args) => {
     commands.push(`${file} ${args.join(' ')}`);
+    if (file === 'claude') return { stdout: '{"loggedIn":true}', stderr: '' };
     if (file === 'ao' && args[0] === 'project') throw new Error('Re-init must not mutate or replace AO configuration');
     return { stdout: file === 'git' && args[0] === 'rev-parse' ? cwd : 'ok', stderr: '' };
   };

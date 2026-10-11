@@ -49,6 +49,9 @@ export interface CliOptions {
   issueLabel?: string;
   verbose?: boolean;
   integrations?: Partial<Record<'neatlogs' | 'entire' | 'cfoai', boolean>>;
+  runner?: 'ao' | 'direct';
+  harnessChoice?: 'claude-code' | 'codex' | 'mixed';
+  allowClaude?: boolean;
   repeats?: number;
   /** Integration to authenticate for `tally login`. */
   loginTarget: 'cfoai' | undefined;
@@ -109,6 +112,9 @@ Options:
   --issue-label <label> For init: GitHub issue label (default: tally)
   --neatlogs <yes|no> --entire <yes|no> --cfoai <yes|no> Init product opt-ins
   --verbose         For init: include the full proposed YAML
+  --runner <ao|direct> For init: AO workers or sequential direct workers
+  --harness <claude-code|codex|mixed> For init: explicit coding agent choice
+  --allow-claude     For init: explicitly consent to the printed repository allow-list
   --output <dir>    Output directory for tally market (default: .tally/market/latest)
   --limit <number>  Result limit for tally market (default: 10)
   --keyword <text>  CrustData keyword for tally market (default: AI coding)
@@ -143,6 +149,9 @@ export function parseCli(argv: string[]): ParsedCli {
         entire: { type: 'string' },
         cfoai: { type: 'string' },
         verbose: { type: 'boolean', default: false },
+        runner: { type: 'string' },
+        harness: { type: 'string' },
+        'allow-claude': { type: 'boolean', default: false },
         output: { type: 'string' },
         limit: { type: 'string' },
         keyword: { type: 'string' },
@@ -177,6 +186,8 @@ export function parseCli(argv: string[]): ParsedCli {
   }
 
   let budgetUsd: number | undefined;
+  if (values.runner && !['ao', 'direct'].includes(values.runner)) return { kind: 'error', message: '--runner must be ao or direct' };
+  if (values.harness && !['claude-code', 'codex', 'mixed'].includes(values.harness)) return { kind: 'error', message: '--harness must be claude-code, codex or mixed' };
   const integrations: Partial<Record<'neatlogs' | 'entire' | 'cfoai', boolean>> = {};
   for (const name of ['neatlogs', 'entire', 'cfoai'] as const) {
     if (values[name] === undefined) continue;
@@ -229,6 +240,9 @@ export function parseCli(argv: string[]): ParsedCli {
       ...(values['setup-command'] === undefined ? {} : { setupCommand: values['setup-command'] }),
       ...(values['issue-label'] === undefined ? {} : { issueLabel: values['issue-label'] }),
       ...(values.verbose ? { verbose: true } : {}),
+      ...(values.runner ? { runner: values.runner as 'ao' | 'direct' } : {}),
+      ...(values.harness ? { harnessChoice: values.harness as 'claude-code' | 'codex' | 'mixed' } : {}),
+      ...(values['allow-claude'] ? { allowClaude: true } : {}),
       ...(Object.keys(integrations).length ? { integrations } : {}),
       ...(repeats === undefined ? {} : { repeats }),
       loginTarget: name === 'login' ? 'cfoai' : undefined,
@@ -301,7 +315,8 @@ async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
     if (!process.stdin.isTTY && !options.yes && !options.dryRun) throw new InitError('Interactive init needs a terminal; use --yes with --test-command, --setup-command, --budget, --issue-label and product flags for scripted input.');
     const result = await runInit({ configPath: options.config, yes: options.yes, dryRun: options.dryRun, print: io.stdout,
       testCommand: options.testCommand, setupCommand: options.setupCommand, budgetUsd: options.budgetUsd,
-      issueLabel: options.issueLabel, integrations: options.integrations, verbose: options.verbose });
+      issueLabel: options.issueLabel, integrations: options.integrations, verbose: options.verbose,
+      runner: options.runner, harnessChoice: options.harnessChoice, allowClaude: options.allowClaude });
     if (!result.applied) {
       io.stdout(options.dryRun ? 'Dry run: no changes made.' : 'Init cancelled: no changes made.');
       return 0;
