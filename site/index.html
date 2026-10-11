@@ -8,12 +8,12 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="Meet Tally, the CFO for your agent fleet">
 <meta property="og:description" content="Routes GitHub issues to a cost-effective model, caps spend per task, escalates if needed, verifies the change and opens a pull request.">
-<meta property="og:image" content="art/og.png">
+<meta property="og:image" content="art/og.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@battarchicken">
 <meta name="twitter:title" content="Meet Tally, the CFO for your agent fleet">
 <meta name="twitter:description" content="Routes GitHub issues to a cost-effective model, caps spend per task, escalates if needed, verifies the change and opens a pull request.">
-<meta name="twitter:image" content="art/og.png">
+<meta name="twitter:image" content="art/og.jpg">
 <meta name="theme-color" content="#0a0716">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -46,8 +46,8 @@
 
 <header class="hero" id="top">
   <div class="backdrop" aria-hidden="true"><i class="burst"></i><i class="stars"></i></div>
-  <!-- Artwork slot "hero": drop site/art/hero.webp to add the painted layer. See site/art/README.md. -->
-  <div class="art art-hero" aria-hidden="true"></div>
+  <!-- Painted hero object (site/art/hero.avif, hero.jpg). The drawn mark develops into it once it has loaded. -->
+  <div class="art art-hero" role="img" aria-label="The Tally mark painted as a glossy black and chrome object with an orange slash, wet with droplets" data-art="art/hero.jpg"><i></i><i></i><i></i><i></i></div>
 
   <nav class="top" aria-label="Sections">
     <a href="#install">Install</a><a href="#what">What it does</a><a href="#toggles">Toggles</a><a href="#proof">Proof</a><a href="#contact">Contact</a>
@@ -186,8 +186,9 @@ tally dashboard   <span class="c"># watch the ledger fill in</span></code></pre>
 </section>
 
 <section class="stub" id="proof" aria-labelledby="proof-title">
-  <!-- Artwork slot "desert": site/art/desert.webp -->
-  <div class="art art-desert" aria-hidden="true"></div>
+  <figure class="desert" data-parallax>
+    <div class="plate" role="img" aria-label="Giant Tally marks standing as monuments in a red desert under a crimson sky"></div>
+  </figure>
   <div class="wrap reveal">
     <h2 id="proof-title">Proof, with receipts</h2>
     <p>Each of the four ways Tally can run an agent has completed a real run on <code>Vaibhaav-Tiwari/chip-design-groundup</code>:</p>

@@ -16,6 +16,36 @@ if ('IntersectionObserver' in window && !still.matches) {
   reveals.forEach((node) => node.classList.add('in'));
 }
 
+// ---------- painted hero: switch it on only once the file has really loaded ----------
+
+const heroArt = document.querySelector('.art-hero[data-art]');
+if (heroArt) {
+  const probe = new Image();
+  probe.onload = () => heroArt.closest('.hero').classList.add('has-hero-art');
+  probe.src = heroArt.dataset.art;
+}
+
+// ---------- parallax: the painted plate drifts more slowly than the page ----------
+
+const plates = [...document.querySelectorAll('[data-parallax]')];
+if (plates.length && !still.matches) {
+  let queued = false;
+  const slide = () => {
+    queued = false;
+    for (const frame of plates) {
+      const box = frame.getBoundingClientRect();
+      if (box.bottom < 0 || box.top > innerHeight) continue;
+      // -1 when the frame is just below the screen, 1 when it has just left the top.
+      const progress = (innerHeight / 2 - (box.top + box.height / 2)) / ((innerHeight + box.height) / 2);
+      frame.querySelector('.plate').style.transform = `translate3d(0, ${(progress * -9).toFixed(2)}%, 0) scale(${(1.04 + Math.abs(progress) * 0.03).toFixed(3)})`;
+    }
+  };
+  const request = () => { if (!queued) { queued = true; requestAnimationFrame(slide); } };
+  addEventListener('scroll', request, { passive: true });
+  addEventListener('resize', request);
+  slide();
+}
+
 // ---------- copy the install command ----------
 
 for (const button of document.querySelectorAll('[data-copy]')) {

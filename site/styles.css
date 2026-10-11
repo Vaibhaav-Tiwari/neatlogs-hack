@@ -38,10 +38,43 @@ code { font-family: var(--mono); font-size: .92em; }
 
 /* painted artwork slots: empty until a file is dropped into site/art/ */
 .art { position: absolute; inset: 0; background-position: center; background-size: cover; background-repeat: no-repeat; pointer-events: none; }
-.art-hero { background-image: url('art/hero.webp'); mix-blend-mode: screen; opacity: .9; }
 .art-mascots { background-image: url('art/mascots.webp'); opacity: .35; }
-.art-desert { background-image: url('art/desert.webp'); opacity: .35; }
 .art-contact { background-image: url('art/contact.webp'); opacity: .35; }
+
+/* The painted hero object. Hidden until the script has confirmed the file loads, so a missing
+   file never leaves the hero empty: the SVG mark simply stays. */
+.art-hero { display: none; inset: auto; left: 30%; top: 50%; width: min(84vw, 1400px); aspect-ratio: 16 / 9; translate: -50% -53%; z-index: -1;
+  background-image: url('art/hero.jpg'); background-image: image-set(url('art/hero.avif') type('image/avif'), url('art/hero.jpg') type('image/jpeg'));
+  /* feather all four edges into the backdrop */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 13%, #000 80%, transparent), linear-gradient(180deg, transparent, #000 7%, #000 78%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 13%, #000 80%, transparent), linear-gradient(180deg, transparent, #000 7%, #000 78%, transparent);
+  -webkit-mask-composite: source-in; mask-composite: intersect; }
+.has-hero-art .art-hero { display: block; animation: develop 1.5s cubic-bezier(.3, .6, .2, 1) 3.15s backwards, breathe 9s ease-in-out 5s infinite alternate; }
+.has-hero-art .burst { opacity: .22; }
+/* The drawn mark gives way to the painted one. */
+.has-hero-art .mark { animation: give-way .9s ease-in 3.15s forwards; }
+.has-hero-art .hero-stage { grid-template-columns: minmax(0, 56fr) minmax(0, 44fr); }
+.has-hero-art .tally { font-size: clamp(92px, 13vw, 204px); }
+.has-hero-art .hero-copy { animation-delay: 3.7s; }
+.has-hero-art .tagline { font-size: clamp(22px, 2.45vw, 36px); }
+@keyframes develop { 0% { opacity: 0; filter: blur(22px) brightness(2.6) saturate(.2); scale: 1.06; } 45% { opacity: 1; filter: blur(4px) brightness(1.5) saturate(.8); } 100% { opacity: 1; filter: none; scale: 1; } }
+@keyframes give-way { to { opacity: 0; filter: blur(14px) brightness(2); scale: 1.08; visibility: hidden; } }
+@keyframes breathe { to { scale: 1.025; } }
+/* glints on the painted highlights, placed as a share of the painting */
+.art-hero i { position: absolute; width: 5.2%; aspect-ratio: 1; translate: -50% -50%; background: #fff; opacity: 0;
+  clip-path: polygon(50% 0, 56% 44%, 100% 50%, 56% 56%, 50% 100%, 44% 56%, 0 50%, 44% 44%); filter: drop-shadow(0 0 8px #cfe0ff); animation: paint-glint 5s ease-in-out infinite; }
+.art-hero i:nth-child(1) { left: 29.6%; top: 24.6%; animation-delay: 5.2s; }
+.art-hero i:nth-child(2) { left: 69.4%; top: 8.4%; animation-delay: 6.6s; }
+.art-hero i:nth-child(3) { left: 77.2%; top: 17%; width: 6.4%; animation-delay: 4.8s; }
+.art-hero i:nth-child(4) { left: 21.4%; top: 71.4%; animation-delay: 7.4s; }
+@keyframes paint-glint { 0%, 70%, 100% { opacity: 0; scale: .2; rotate: 0deg; } 80% { opacity: 1; scale: 1; rotate: 20deg; } 90% { opacity: .5; scale: .6; } }
+
+/* The desert of tally monuments, full-bleed above the proof. The script slides it for parallax. */
+.desert { position: relative; height: clamp(300px, 52vw, 720px); margin: calc(-1 * clamp(64px, 9vw, 130px)) 0 clamp(40px, 6vw, 80px); overflow: hidden; }
+.desert .plate { position: absolute; left: 0; right: 0; top: -14%; height: 128%; background: #2a0d12 center / cover no-repeat;
+  background-image: url('art/desert.jpg'); background-image: image-set(url('art/desert.avif') type('image/avif'), url('art/desert.jpg') type('image/jpeg')); will-change: transform; }
+.desert::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11, 8, 38, .0) 55%, #0b0826 100%); }
+.desert figcaption { position: absolute; left: 0; right: 0; bottom: clamp(14px, 3vw, 40px); z-index: 1; text-align: center; font: 400 clamp(22px, 4.4vw, 60px)/1 var(--display); color: #fff; text-shadow: 0 3px 0 rgba(60, 8, 10, .8), 0 0 30px rgba(20, 4, 20, .7); }
 
 /* ---------- hero ---------- */
 
@@ -191,6 +224,12 @@ h2 { font: 400 clamp(34px, 5.4vw, 76px)/1.02 var(--display); letter-spacing: -.0
 
 @media (max-width: 900px) {
   .hero { min-height: 0; }
+  .art-hero { left: 50%; top: 0; width: 150vw; translate: -50% 4%; background-image: url('art/hero-960.jpg'); background-image: image-set(url('art/hero-960.avif') type('image/avif'), url('art/hero-960.jpg') type('image/jpeg')); }
+  .has-hero-art .hero-stage { grid-template-columns: minmax(0, 1fr); }
+  .has-hero-art .mark { max-height: none; height: min(78vw, 300px); }
+  .has-hero-art .tally { font-size: clamp(92px, 15.5vw, 236px); }
+  .has-hero-art .tagline { font-size: clamp(22px, 2.9vw, 42px); }
+  .desert .plate { background-image: url('art/desert-960.jpg'); background-image: image-set(url('art/desert-960.avif') type('image/avif'), url('art/desert-960.jpg') type('image/jpeg')); }
   .hero-stage { grid-template-columns: minmax(0, 1fr); padding: 18px 0 56px; gap: 8px; }
   .mark { max-width: 300px; max-height: 44svh; }
   .burst { left: 50%; top: 30%; }
@@ -211,4 +250,7 @@ h2 { font: 400 clamp(34px, 5.4vw, 76px)/1.02 var(--display); letter-spacing: -.0
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .js .reveal { opacity: 1; translate: 0 0; }
+  /* with the painting present and motion off, show the painting and not the drawn mark */
+  .has-hero-art .mark { visibility: hidden; }
+  .art-hero i { opacity: .9; }
 }

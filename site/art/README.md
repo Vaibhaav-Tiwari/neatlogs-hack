@@ -1,18 +1,24 @@
-# Artwork slots
+# Artwork
 
-The page is complete without any file here. Dropping a file with one of these
-names adds the painted layer to its section; nothing else needs editing.
+Painted images, converted from the approved PNGs (which stay out of git) with
+ffmpeg: AVIF first, JPEG as the fallback, each at 1920 and 960 pixels wide.
 
-| File | Section | Used as | Suggested size |
-|---|---|---|---|
-| `hero.webp` | Hero | Layer over the backdrop, behind the mark and text, blended with `screen` so black stays transparent | 2400 x 1500 |
-| `mascots.webp` | Agent Orchestrator | Section background | 2000 x 1200 |
-| `desert.webp` | Proof | Section background | 2400 x 1400 |
-| `contact.webp` | Contact | Section background | 1600 x 1200 |
-| `og.png` | Link previews (Open Graph, X) | Share image; previews have none until it exists | 1200 x 630 |
+| Files | Section | How it is used |
+|---|---|---|
+| `hero.avif`, `hero.jpg`, `hero-960.*` | Hero | The drawn SVG mark develops into it. The script switches it on only after `hero.jpg` has loaded; if it is missing, the SVG mark stays. |
+| `desert.avif`, `desert.jpg`, `desert-960.*` | Proof | Full-bleed plate above the section, with parallax. |
+| `og.jpg` | Link previews | 1200 x 630 crop of the hero. |
 
-Keep each file under about 400 KB. The opacity and blend of a slot are set on
-`.art-<name>` in `styles.css`.
+Still empty, and harmless until a file exists (the browser logs one "not found" request for each):
 
-Until a file exists the browser logs one "not found" request for it. That is
-expected and harmless.
+| File | Section | Suggested size |
+|---|---|---|
+| `mascots.webp` | Agent Orchestrator | 1920 wide |
+| `contact.webp` | Contact | 1600 wide |
+
+To convert a new painting:
+
+```bash
+ffmpeg -i in.png -vf "scale=1920:-2,format=yuv420p" -frames:v 1 -c:v libsvtav1 -crf 30 -preset 4 name.avif
+ffmpeg -i in.png -vf "scale=1920:-2" -frames:v 1 -q:v 4 name.jpg
+```
