@@ -21,7 +21,8 @@ function fixture() {
     if (file === 'claude') throw new Error('not installed');
     if (file === 'codex') return { stdout: 'Logged in using ChatGPT', stderr: '' };
     if (file === 'git') return { stdout: args[0] === 'rev-parse' ? cwd : args[0] === 'branch' ? 'main' : '', stderr: '' };
-    if (file === 'gh' || args[0] === 'status') return { stdout: 'ok', stderr: '' };
+    if (file === 'ao' && args[0] === 'status') return { stdout: '{"state":"running"}', stderr: '' };
+    if (file === 'gh') return { stdout: 'ok', stderr: '' };
     if (args[0] === 'agent') return { stdout: '{"installed":[{"id":"codex"}]}', stderr: '' };
     if (args[1] === 'get') { if (!project) throw new Error('missing project'); return { stdout: JSON.stringify({ project: { config: project, path: cwd } }), stderr: '' }; }
     if (args[1] === 'add') { mutations.push('add'); project = { worker: { agentConfig: { effort: 'high' } }, postCreate: ['echo existing'] }; }

@@ -23,6 +23,7 @@ describe('init process lifecycle', () => {
       const command = async (file, args) => {
         if (file === 'claude') throw new Error('missing CLI');
         return {stdout: file === 'codex' ? 'Logged in using ChatGPT' : file === 'git' && args[0] === 'rev-parse' ? process.cwd()
+        : file === 'ao' && args[0] === 'status' ? JSON.stringify({state:'running'})
         : args[0] === 'agent' ? JSON.stringify({installed:[{id:'codex'}]})
         : args[1] === 'get' ? JSON.stringify({project:{config:{}}}) : '', stderr:''}; };
       try { const result = await runInit({command, onboarding: async () => {}, doctor: async () => {

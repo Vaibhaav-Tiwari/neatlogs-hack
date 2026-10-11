@@ -9,13 +9,17 @@ import { runUninstall } from './uninstall.js';
 import { claudeAllowList } from './harness.js';
 import { validateConfig } from '../schema/index.js';
 
-function fixture(ao = false, installed = ['claude', 'codex'], signedIn = installed) {
+function fixture(ao = false, installed = ['claude', 'codex'], signedIn = installed, aoState: 'running' | 'stopped' = 'running') {
   const cwd = mkdtempSync(join(tmpdir(), 'tally-init-runners-'));
   writeFileSync(join(cwd, 'Makefile'), 'test:\n\ttrue\nsetup:\n\ttrue\n');
   const calls: string[] = [];
   const command: InitCommandRunner = async (file, args) => {
     calls.push(`${file} ${args.join(' ')}`);
-    if (file === 'ao') { if (!ao) throw new Error('AO missing'); return { stdout: args[0] === 'project' ? '{"project":{"config":{}}}' : 'ok', stderr: '' }; }
+    if (file === 'ao') {
+      if (!ao) throw new Error('AO missing');
+      if (args[0] === 'status') return { stdout: JSON.stringify({ state: aoState }), stderr: '' };
+      return { stdout: args[0] === 'project' ? '{"project":{"config":{}}}' : 'ok', stderr: '' };
+    }
     if (file === 'git') return { stdout: args[0] === 'rev-parse' ? cwd : args[0] === 'branch' ? 'main' : '', stderr: '' };
     if (file === 'gh') return { stdout: 'ok', stderr: '' };
     if (!installed.includes(file)) throw new Error('missing CLI');
@@ -50,6 +54,20 @@ describe('runner and coding CLI setup', () => {
     expect(parse(readFileSync(result.configPath, 'utf8')).runner).toBe(runner);
     expect(readLine.mock.calls.some(([q]) => q.startsWith('Runner:'))).toBe(true);
     expect(f.calls.some(call => call.startsWith('ao project'))).toBe(runner === 'ao');
+  });
+  it('defaults to direct when AO is installed but its daemon is stopped', async () => {
+    const f = fixture(true, ['codex'], ['codex'], 'stopped');
+    const result = await runInit({ ...f, yes: true, harnessChoice: 'codex', testCommand: 'true', setupCommand: '',
+      integrations: { neatlogs: false, entire: false, cfoai: false }, doctor: async () => [] });
+    expect(parse(readFileSync(result.configPath, 'utf8')).runner).toBe('direct');
+    expect(f.print.mock.calls.join(' ')).toContain('AO daemon is stopped. AO is unavailable; direct is the default. Run ao start to use AO.');
+    expect(f.calls.some(call => call.startsWith('ao project'))).toBe(false);
+  });
+  it('refuses AO selection when the installed daemon is stopped', async () => {
+    const f = fixture(true, ['codex'], ['codex'], 'stopped');
+    await expect(runInit({ ...f, yes: true, runner: 'ao', harnessChoice: 'codex', testCommand: 'true', setupCommand: '',
+      integrations: { neatlogs: false, entire: false, cfoai: false }, doctor: async () => [] })).rejects.toThrow('AO daemon is stopped; run ao start and retry, or select direct');
+    expect(existsSync(join(f.cwd, 'tally.yaml'))).toBe(false);
   });
   it.each(['claude-code', 'codex', 'mixed'] as const)('persists the requested harnesses with both CLIs installed: %s', async choice => {
     const f = fixture();

@@ -95,7 +95,7 @@ tally doctor
 tally init
 ```
 
-Doctor before init is a general availability check: it does not yet know which optional products or runner you will choose, so missing AO or product credentials need not block a direct setup with those products off. Run it again after init to check the actual repository, runner, harnesses and integrations in your configuration.
+Before init, doctor checks core account availability and shows AO plus optional sponsor integrations as off because no runner or products have been selected yet. Run it again after init to check the actual repository, runner, harnesses and integrations in your configuration.
 
 ### Every Init Question
 
@@ -109,7 +109,7 @@ Some questions are conditional: detected commands, existing credentials, already
 | Enable neatlogs traces? | Say yes for external routing/worker evidence; no keeps decisions and costs in the local ledger. See the additional connection prompts below. |
 | Enable Entire graph/checkpoints? | Say yes for code-impact sizing and captured session/checkpoint handoff; no uses repository code search and no Entire checkpoint handoff. Enabling capture does not enable Brain or guarantee hosted recall. |
 | Enable cfo.ai budget integration? | Say yes to read the monthly budget and write real agent spend to your cfo.ai model; no uses the local configured budget and ledger. |
-| Runner: AO or direct? | Choose `direct` for Tally-managed local agent processes/worktrees without AO, or `ao` for AO-managed sessions. If AO is absent, init selects direct. Direct always runs one task at a time. |
+| Runner: AO or direct? | Choose `direct` for Tally-managed local agent processes/worktrees without AO, or `ao` for AO-managed sessions. Init defaults to AO only when its daemon reports running; if AO is missing, stopped or cannot be verified, init defaults to direct and explains why. Direct always runs one task at a time. |
 | Run tasks in parallel through AO? | AO only; default No keeps one worker. Say yes, then enter the maximum worker count. Each task reserves its first ceiling plus one possible escalation against both budgets, so available funds can reduce actual overlap. Parallel execution is covered by fake-loop tests; its live proof is pending. |
 | Coding agents: Claude Code, Codex, or mixed? | Type `claude-code`, `codex`, or `mixed`. Only installed, signed-in agents are usable. Mixed currently proposes cheap Codex and stronger Claude tiers; inspect the exact models in the summary. Tally never silently substitutes a different harness. |
 | Approve the Claude Code allow-list? | Asked only if any tier uses Claude. Review every rule and the printed test/setup script contents, then say yes only if you trust them. No stops setup of those Claude tiers; choose Codex instead or rerun when ready. |
@@ -175,6 +175,8 @@ If no tests can be detected, supply your real command even for the preview. To p
 ```sh
 tally init --runner direct --harness codex
 ```
+
+`tally run --plan` prints a message when no tasks match the backlog, including when a file backlog is empty or no GitHub issues are runnable. In that case no task would start.
 
 Available input flags include `--test-command`, `--setup-command` (an empty string means none), `--issue-label`, `--neatlogs yes|no`, `--entire yes|no`, and `--cfoai yes|no`. `--yes` approves the final detected proposal without prompting; it does not replace missing verification evidence or Claude consent. Scripted Claude setup also needs the explicit `--allow-claude` approval. Use interactive setup first if you are unsure.
 

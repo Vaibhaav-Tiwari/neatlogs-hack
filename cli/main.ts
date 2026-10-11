@@ -307,6 +307,16 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
         only: options.only,
         budgetInfo: budget,
       });
+      if (plan.length === 0) {
+        if (options.only) io.stdout(`No task matched --only ${JSON.stringify(options.only)}; nothing would start.`);
+        else if (config.backlog.source === 'github-issues') {
+          const label = config.backlog.issueLabel ?? 'tally';
+          const repo = config.repo.slug ?? config.repo.path;
+          io.stdout(`No runnable open issues with label ${JSON.stringify(label)} in ${repo}; nothing would start. Issues already linked to open PRs are excluded. Check the label and backlog before starting a run.`);
+        } else {
+          io.stdout(`No tasks found in the configured file backlog${config.backlog.file ? ` ${JSON.stringify(config.backlog.file)}` : ''}; nothing would start.`);
+        }
+      }
       for (const task of plan) {
         const route = task.skipped
           ? 'skip'

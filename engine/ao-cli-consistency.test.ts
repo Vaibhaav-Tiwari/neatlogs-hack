@@ -17,7 +17,7 @@ describe('ordinary-terminal AO CLI consistency', () => {
     const bin = join(dir, 'bin');
     mkdirSync(bin);
     const aoBin = join(dir, 'ao-cli');
-    script(aoBin, `case "$1" in\nagent) printf '{"installed":[{"id":"claude-code"}]}' ;;\nproject) printf '{"project":{"config":{"worker":{"agentConfig":{"permissions":"auto"}}}}}' ;;\n*) printf 'ok' ;;\nesac`);
+    script(aoBin, `case "$1" in\nagent) printf '{"installed":[{"id":"claude-code"}]}' ;;\nproject) printf '{"project":{"config":{"worker":{"agentConfig":{"permissions":"auto"}}}}}' ;;\nstatus) printf '{"state":"running"}' ;;\n*) printf 'ok' ;;\nesac`);
     script(join(bin, 'git'), `case "$1" in\nrev-parse) printf '%s' "$PWD" ;;\nbranch) printf 'main' ;;\n*) printf 'ok' ;;\nesac`);
     script(join(bin, 'gh'), "printf 'ok'");
     script(join(bin, 'claude'), `printf '{"loggedIn":true}'`);
@@ -35,7 +35,9 @@ describe('ordinary-terminal AO CLI consistency', () => {
       expect(result.tiers.every((tier) => tier.includes('claude-code'))).toBe(true);
       expect(existsSync(join(dir, '.tally'))).toBe(false);
       const lines = await runDoctor({ env: {}, cfoaiCheck: async () => ({ status: 'missing', detail: 'test disabled' }) });
-      expect(lines.find((line) => line.product === 'AO daemon')?.status).toBe('connected');
+      expect(lines.find((line) => line.product === 'AO daemon')?.status).toBe('off');
+      expect(lines.find((line) => line.product === 'neatlogs key')?.status).toBe('off');
+      expect(lines.find((line) => line.product === 'Entire CLI')?.status).toBe('off');
       await new AoCliAdapter({ aoBin, cwd: dir }).stop('fake-test-session', 'test only');
       vi.stubEnv('TALLY_AO_BIN', '');
       const configPath = join(dir, 'doctor.yaml');
