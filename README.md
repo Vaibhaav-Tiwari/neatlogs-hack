@@ -5,8 +5,10 @@ each task, sends it to the cheapest model likely to finish it, stops any task
 that overruns its spend ceiling, hands failed work to a stronger model, and
 ends with a ledger tying spend to each attempt, its test result and any opened PR.
 
-Status: early build, being prepared for npm publication as `tally-agents`.
-Until it is published, use the GitHub release alternative below. The seven-task demo uses simulated workers; real
+**Start here: [Getting Started](docs/GETTING_STARTED.md)** covers the no-account demo, every init question, your first real run, troubleshooting and uninstall.
+
+Status: early build, published on npm as `tally-agents` version `0.1.0`.
+The GitHub release alternative is also available below. The seven-task demo uses simulated workers; real
 runs use Agent Orchestrator by default, or the direct runner (Claude Code or Codex),
 and record their attempts and evidence separately.
 
@@ -102,8 +104,8 @@ instructions are excluded from commits. No bypass-permissions mode is used.
 Mixed AO tiers select the harness mode immediately before spawning under an
 in-process project lock; separate Tally processes and manual AO changes are not
 coordinated by that lock. Both Codex AO and Claude Code AO have real-run evidence.
-For Claude AO, worker traces reach neatlogs, but the worker trace id is not yet
-recorded on the ledger row; routing trace ids are recorded.
+Correlated worker-trace read-back covers all four runner/harness paths; delivery
+still needs capture hooks and read access, and unverified traces remain missing.
 
 ### Real-Run Evidence
 
@@ -128,7 +130,7 @@ The simulated demo is not evidence of any real worker path.
 
 Three ways in:
 
-1. **npm (primary):** `npm install -g tally-agents` once version `0.1.0` is published.
+1. **npm (primary):** `npm install -g tally-agents`.
 2. **GitHub (alternative, available now):** `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack#release`.
    The `release` branch includes the compiled CLI and records its source commit
    in `release-source.json`; no TypeScript or manual build is needed. The main
