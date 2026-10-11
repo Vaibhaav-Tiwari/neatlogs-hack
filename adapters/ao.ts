@@ -1,24 +1,10 @@
-import { resolveAoBinary, runCommand } from './command.js';
-import { aoProjectCommand } from './ao-project.js';
-import { AO_HARNESS_PERMISSIONS } from '../engine/harness.js';
+import { runCommand } from './command.js';
 import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import type { LiveUsage, LiveUsagePort, SessionControlPort } from '../agent/ports.js';
 import type { TokenUsage } from '../schema/index.js';
 import type { WorkerPort, WorkerResult, WorkerStartInput } from '../engine/real.js';
-
-const spawnLocks = new Map<string, Promise<void>>();
-
-async function withProjectSpawnLock<T>(project: string, action: () => Promise<T>): Promise<T> {
-  const previous = spawnLocks.get(project) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>(resolve => { release = resolve; });
-  spawnLocks.set(project, current);
-  await previous;
-  try { return await action(); }
-  finally { release(); if (spawnLocks.get(project) === current) spawnLocks.delete(project); }
-}
 
 export interface CommandResult {
   stdout: string;
@@ -136,13 +122,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(private readonly options: AoAdapterOptions = {}) {
-    this.command = options.command ?? ((file, args, commandOptions) => {
-      if (file === 'ao' && args[0] === 'project' && ['get', 'set-config'].includes(args[1]!)) {
-        resolveAoBinary({ aoBin: options.aoBin });
-        return aoProjectCommand(args);
-      }
-      return runCommand(file, args, { ...commandOptions, aoBin: options.aoBin });
-    });
+    this.command = options.command ?? ((file, args, commandOptions) => runCommand(file, args, { ...commandOptions, aoBin: options.aoBin }));
     this.fetchImpl = options.fetch ?? fetch;
     this.usageBaseUrl = options.usageBaseUrl ?? 'http://127.0.0.1:3001/api/v1';
     this.pollMs = options.pollMs ?? 5000;
@@ -161,7 +141,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     if (input.sessionMode) args.push('--mode', input.sessionMode);
     args.push('--harness', input.harness, '--model', input.model, '--name', input.name);
     if (!this.options.requiredBaseCommit) args.push('--prompt', input.prompt);
-    const { stdout } = await this.spawnWithPermissions(input, args);
+    const { stdout } = await this.command('ao', args, { cwd: this.options.cwd });
     const sessionId = parseSpawn(stdout);
     if (!this.options.requiredBaseCommit) return { sessionId, branch: null, checkoutPath: null };
     try {
@@ -183,28 +163,6 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
       await this.stop(sessionId, 'experiment base preflight failed');
       throw error;
     }
-  }
-
-  private async spawnWithPermissions(input: WorkerStartInput, args: string[]): Promise<CommandResult> {
-    const project = input.aoProject ?? this.options.project;
-    if (!project) throw new Error('AO worker permission selection requires an explicit project; no worker was started.');
-    const mode = AO_HARNESS_PERMISSIONS[input.harness as keyof typeof AO_HARNESS_PERMISSIONS];
-    if (!mode) throw new Error(`Unsupported AO harness ${input.harness}; no worker was started.`);
-    return withProjectSpawnLock(project, async () => {
-      const read = await this.command('ao', ['project', 'get', project, '--json'], { cwd: this.options.cwd });
-      const payload = JSON.parse(read.stdout) as { project?: { config?: Record<string, unknown> } };
-      if (!payload.project || typeof payload.project !== 'object' || Array.isArray(payload.project)
-        || payload.project.config !== undefined && (!payload.project.config || typeof payload.project.config !== 'object' || Array.isArray(payload.project.config))) throw new Error('Invalid AO project config; refusing to change permissions or spawn.');
-      const config = payload.project.config ?? {};
-      const worker = config.worker as Record<string, unknown> | undefined;
-      const agent = worker?.agentConfig as Record<string, unknown> | undefined;
-      if (worker !== undefined && (!worker || typeof worker !== 'object' || Array.isArray(worker)) || agent !== undefined && (!agent || typeof agent !== 'object' || Array.isArray(agent))) throw new Error('Invalid AO worker config; refusing to change permissions or spawn.');
-      const next = { ...config, worker: { ...worker, agentConfig: { ...agent, permissions: mode } } };
-      await this.command('ao', ['project', 'set-config', project, '--config-json', JSON.stringify(next), '--json'], { cwd: this.options.cwd });
-      const verified = JSON.parse((await this.command('ao', ['project', 'get', project, '--json'], { cwd: this.options.cwd })).stdout);
-      if (verified.project?.config?.worker?.agentConfig?.permissions !== mode) throw new Error(`AO worker permission mode was not applied: expected ${mode}; no worker was started.`);
-      return this.command('ao', args, { cwd: this.options.cwd });
-    });
   }
 
   private async checkoutFor(branch: string): Promise<string | null> {
@@ -236,7 +194,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
       if (input.sessionMode) args.push('--mode', input.sessionMode);
       args.push('--branch', branch, '--harness', input.harness, '--model', input.model, '--name', input.name);
       if (!patch && !untracked.length) args.push('--prompt', input.prompt);
-      sessionId = parseSpawn((await this.spawnWithPermissions(input, args)).stdout);
+      sessionId = parseSpawn((await this.command('ao', args, { cwd: this.options.cwd })).stdout);
       const current = (await this.session(sessionId)).session;
       if (current?.branch !== branch) throw new Error(`continuation branch mismatch: expected ${branch}, got ${current?.branch}`);
       const checkoutPath = current.worktreePath ?? current.checkoutPath ?? await this.checkoutFor(branch);

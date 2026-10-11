@@ -9,15 +9,14 @@ import { tierPriceNote } from './pricing.js';
 import { CommandError, resolveAoBinary, runCommand } from '../adapters/command.js';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadEnv } from './env.js';
-import { aoWorkerMode, withWorkerPermissionMode } from './preflight.js';
+import { aoWorkerMode, withWorkerPermissionMode, workerPermissionMode } from './preflight.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
-import { aoProjectCommand } from '../adapters/ao-project.js';
 import { configureIntegrations } from '../onboarding/index.js';
 import { loadConfig } from './config.js';
 import { readPlanBudget } from './plan.js';
 import { formatUsd } from '../schema/money.js';
 import { applyReinit, finishReinit, prepareReinit, readReinit, reinitPath } from './reinit.js';
-import { AO_HARNESS_PERMISSIONS, checkHarness, claudeAllowList, claudeScripts, type Harness } from './harness.js';
+import { checkHarness, claudeAllowList, claudeScripts, type Harness } from './harness.js';
 
 export interface InitCommandResult {
   stdout: string;
@@ -80,7 +79,15 @@ export async function defaultCommand(file: string, args: string[], options?: { c
   if (file === 'ao') resolveAoBinary(options);
   // The CLI config mirror drops fields such as effort; use the full daemon object.
   if (file === 'ao' && args[0] === 'project' && (args[1] === 'get' || args[1] === 'set-config')) {
-    return aoProjectCommand(args);
+    const id = encodeURIComponent(args[2]!);
+    const editing = args[1] === 'set-config';
+    const response = await fetch(`http://127.0.0.1:3001/api/v1/projects/${id}${editing ? '/config' : ''}`, {
+      method: editing ? 'PUT' : 'GET',
+      ...(editing ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ config: JSON.parse(args[args.indexOf('--config-json') + 1]!) }) } : {}),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => { throw new InitError('AO project API could not be reached; start AO and retry.'); });
+    if (!response.ok) throw new InitError(`AO project ${args[1]} failed: HTTP ${response.status}; check AO is running before retrying.`);
+    return { stdout: JSON.stringify(await response.json()), stderr: '' };
   }
   return runCommand(file, args, options);
 }
@@ -341,7 +348,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
       print(options.verbose || key === 'integrations' ? `+ ${key}: ${JSON.stringify(config[key])}` : `+ ${key}: proposed setting shown above`);
     }
   }
-  print(`Preserve all other settings; ${plan.beforeRecord === null ? 'no installation ownership record will be created' : 'preserve installation ownership and update its config hash and consented harness modes'}. AO project, setup hooks and worker permissions will not change.`);
+  print(`Preserve all other settings; ${plan.beforeRecord === null ? 'no installation ownership record will be created' : 'preserve installation ownership and update only its config hash'}. AO project, setup hooks and worker permissions will not change.`);
   if (pending) print(`Resume interrupted re-init from ${reinitPath(configPath)}.`);
   if (options.dryRun || (!options.yes && !parseYes(await readLine('Apply these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
   applyReinit(plan);
@@ -469,7 +476,6 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     print(`${existingProject ? 'Update' : 'Register'} AO project ${projectId} at ${repoRoot}; preserve all existing config fields.`);
     print(`AO post-create entries: ${JSON.stringify(nextProjectConfig.postCreate ?? [])}`);
     print(`AO worker permission mode: ${workerMode}, only for this project's workers; no bypass-permissions or global settings changes. Uninstall restores the owned setting.`);
-    print('Before each AO spawn Tally selects the consented tier harness mode under one in-process project lock: Codex auto, Claude Code default with local dontAsk.');
     if (hasClaude) print('Worker allow-list: consented Claude rules installed before launch in .claude/settings.local.json; scripts outside the worktree; local settings and instructions excluded from Git.');
     else print('Worker allow-list: not installed; scoped enforcement is not available through the current AO worker launch API.');
     print(hasClaude ? 'Consented worker rules (installed locally before launch):' : 'Requested worker rules (not yet enforced):');
@@ -490,8 +496,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     projectCreated: runner === 'ao' && !existingProject, projectConfigHash: configHash(nextProjectConfig),
     postCreateExisted: Array.isArray(before.postCreate), postCreateAfterHash: configHash(nextProjectConfig.postCreate ?? []),
     addedSetupCommand: runner === 'ao' && ownedSetupCommand && !postCreateBefore.includes(ownedSetupCommand) ? ownedSetupCommand : null,
-    ...(runner === 'direct' ? {} : {
-      aoHarnessPermissions: Object.fromEntries(config.tiers.map(tier => [tier.harness, AO_HARNESS_PERMISSIONS[tier.harness]])),
+    ...(runner === 'direct' || workerPermissionMode(before) === workerMode ? {} : {
       workerPermissionMode: workerMode!,
       workerExisted: Object.hasOwn(before, 'worker'), workerBefore: before.worker ?? null,
       workerAfterHash: configHash(nextProjectConfig.worker),

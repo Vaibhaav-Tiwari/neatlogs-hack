@@ -61,7 +61,7 @@ describe('real run preflight', () => {
     project.postCreate = [aoClaudeSetupCommand(configPath)];
     await expect(validateRealRunConfig(config, configPath, runner)).resolves.toBeUndefined();
     config.tiers.push({ ...config.tiers[0]!, name: 'codex', harness: 'codex' });
-    await expect(validateRealRunConfig(config, configPath, runner)).resolves.toBeUndefined();
+    await expect(validateRealRunConfig(config, configPath, runner)).rejects.toThrow('Mixed AO harnesses');
   });
   it('checks the configured direct harness without requiring an AO project or session mode', async () => {
     const { configPath } = writeConfig();

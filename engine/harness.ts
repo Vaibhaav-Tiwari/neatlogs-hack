@@ -3,8 +3,6 @@ import type { InitCommandRunner } from './init.js';
 import { createHash } from 'node:crypto';
 
 export type Harness = Tier['harness'];
-export const AO_HARNESS_PERMISSIONS = { codex: 'auto', 'claude-code': 'default' } as const;
-export type AoHarnessPermissionModes = Partial<Record<Harness, 'auto' | 'default'>>;
 export interface HarnessStatus { harness: Harness; installed: boolean; signedIn: boolean; detail: string; fix: string }
 
 /** CLI-owned status only: never inspect credential files or invoke inference. */

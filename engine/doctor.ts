@@ -60,6 +60,7 @@ async function aoWorkerModeLine(configPath: string, runner: DoctorRunner): Promi
       fix: check.ok ? null : check.fix,
     };
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Mixed AO harnesses')) return { product: 'AO worker auto mode', status: 'broken', detail: error.message, fix: 'use Claude-only or Codex-only AO tiers, or runner: direct' };
     if (error instanceof CommandError && error.code === 'ENOENT') return { product: 'AO worker auto mode', status: 'missing', detail: error.message, fix: 'set TALLY_AO_BIN to the installed AO executable path' };
     return {
       product: 'AO worker auto mode',

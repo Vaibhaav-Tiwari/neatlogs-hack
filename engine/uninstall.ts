@@ -3,8 +3,6 @@ import { dirname, resolve } from 'node:path';
 import { defaultCommand, defaultReadLine, type InitCommandRunner, type PromptReader } from './init.js';
 import { configHash, contentHash, installRecordPath, type InstallRecord } from './install-record.js';
 import { parse as parseYaml } from 'yaml';
-import { AO_HARNESS_PERMISSIONS } from './harness.js';
-import { withWorkerPermissionMode, workerPermissionMode } from './preflight.js';
 
 export interface UninstallOptions {
   configPath?: string;
@@ -27,21 +25,12 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<{ re
   const cwd = dirname(configPath);
   const direct = record.runner === 'direct';
   const current = direct ? {} : (JSON.parse((await command('ao', ['project', 'get', record.projectId, '--json'], { cwd })).stdout) as { project: { config?: Record<string, unknown> } }).project.config ?? {};
-  if (direct && (record.projectCreated || record.addedSetupCommand || record.workerAfterHash || record.aoHarnessPermissions)) throw new Error('Invalid direct installation record contains AO ownership; refusing to uninstall.');
-  let ownedSnapshot = current;
-  if (record.aoHarnessPermissions) {
-    const modes = Object.entries(record.aoHarnessPermissions);
-    if (!modes.length || modes.some(([harness, mode]) => AO_HARNESS_PERMISSIONS[harness as keyof typeof AO_HARNESS_PERMISSIONS] !== mode)
-      || !record.workerAfterHash || !record.workerPermissionMode) throw new Error('Invalid Tally harness permission ownership record.');
-    if (!modes.some(([, mode]) => mode === workerPermissionMode(current))) throw new Error('AO worker permission mode changed outside the consented harness modes; refusing to overwrite it.');
-    // Spawn changes only the owned permission leaf. Other user edits still fail the hash checks.
-    ownedSnapshot = withWorkerPermissionMode(current, record.workerPermissionMode);
-  }
-  if (record.projectCreated && configHash(ownedSnapshot) !== record.projectConfigHash) throw new Error('AO project configuration changed after init; refusing to unregister it.');
+  if (direct && (record.projectCreated || record.addedSetupCommand || record.workerAfterHash)) throw new Error('Invalid direct installation record contains AO ownership; refusing to uninstall.');
+  if (record.projectCreated && configHash(current) !== record.projectConfigHash) throw new Error('AO project configuration changed after init; refusing to unregister it.');
   if (!record.projectCreated && record.addedSetupCommand && configHash(current.postCreate ?? []) !== record.postCreateAfterHash) {
     throw new Error('AO post-create hooks changed after init; refusing to overwrite them.');
   }
-  if (!record.projectCreated && record.workerAfterHash && configHash(ownedSnapshot.worker) !== record.workerAfterHash) throw new Error('AO worker settings changed after init; refusing to overwrite them.');
+  if (!record.projectCreated && record.workerAfterHash && configHash(current.worker) !== record.workerAfterHash) throw new Error('AO worker settings changed after init; refusing to overwrite them.');
   if (record.projectCreated) {
     const sessions = JSON.parse((await command('ao', ['session', 'ls', '--project', record.projectId, '--json'], { cwd })).stdout) as { sessions?: unknown[] } | unknown[];
     const active = Array.isArray(sessions) ? sessions : sessions.sessions;

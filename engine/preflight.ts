@@ -44,7 +44,9 @@ export function withWorkerAutoMode(config: unknown): Record<string, unknown> {
 }
 
 export function aoWorkerMode(config: TallyConfig): 'default' | 'auto' {
-  return config.tiers.some(tier => tier.harness === 'claude-code') ? 'default' : 'auto';
+  const harnesses = new Set(config.tiers.map(tier => tier.harness));
+  if (harnesses.size > 1) throw new Error('Mixed AO harnesses need per-harness permission modes; use Claude-only or Codex-only tiers, or runner: direct. No worker was started.');
+  return harnesses.has('claude-code') ? 'default' : 'auto';
 }
 
 export function withWorkerPermissionMode(config: unknown, mode: 'default' | 'auto'): Record<string, unknown> {
@@ -99,13 +101,6 @@ export function checkWorkerAutoMode(projectId: string, projectConfig: unknown): 
 
 export function checkConfiguredWorkerMode(config: TallyConfig, projectConfig: unknown): WorkerPermissionCheck {
   const expected = aoWorkerMode(config);
-  if (new Set(config.tiers.map(tier => tier.harness)).size > 1) {
-    const mode = workerPermissionMode(projectConfig);
-    return { ok: mode === 'auto' || mode === 'default', mode,
-      detail: mode === 'auto' || mode === 'default' ? 'mixed AO workers select Codex auto or Claude default immediately before each spawn under a project lock'
-        : `worker permission mode is ${mode ?? 'unset'}; mixed AO workers require a consented default or auto mode, never bypass-permissions`,
-      fix: `ao project set-config ${config.repo.aoProject} --config-json ${quoteJsonForShell(withWorkerPermissionMode(projectConfig, expected))}` };
-  }
   if (expected === 'auto') return checkWorkerAutoMode(config.repo.aoProject!, projectConfig);
   const mode = workerPermissionMode(projectConfig);
   return { ok: mode === expected, mode,
@@ -196,6 +191,7 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
   const resolvedBacklog = backlogPath(config, configPath);
   if (resolvedBacklog && !existsSync(resolvedBacklog)) problems.push(`backlog.file does not exist: ${resolvedBacklog}`);
   problems.push(...sessionModeProblems(config));
+  try { aoWorkerMode(config); } catch (error) { problems.push((error as Error).message); }
   if (config.repo.aoProject) {
     let project: AoProjectResponse | null = null;
     try {
@@ -207,6 +203,7 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
       );
     }
     if (project) {
+      if (new Set(config.tiers.map(tier => tier.harness)).size > 1) throw new ConfigError(configPath, problems);
       const permission = checkConfiguredWorkerMode(config, project.project?.config);
       if (!permission.ok) {
         problems.push(`${permission.detail}; fix: ${permission.fix}`);
