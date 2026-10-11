@@ -105,3 +105,26 @@ i merged it to main. move to the next focussed issue
 ---
 
 okay so now neatlogs traces would be used how by tally?
+
+---
+
+expalin the last para, si it not using the traces to decide better? work on the next issue. i wrote this, good for x post? Update #2 on Tally - CFO for AI spends
+
+We were able to point tally towards a repo which had 6 issues. Tally identified each issue's scope based on the @EntireHQ
+ graph and assigned cheap, medium or top models based on that. 
+
+> She linked each commit to it's corresponding @EntireHQ
+ checkpoint, which basically holds the complete agent session context. This is such a cool fucking feature if you think about it, because most people are using agents to create PRs but the context of the sessions behind the PRs gets lost. Loving this about entire. 
+
+> She created and maintained budget tables in @arithecfo
+ scenario. The tables are the sources of truth. BUT more than that, you can ask their Ari agent on slack anything about the spend and model scenarios. This is the thing which CFO's would love imo
+
+>She used the @neatlogs
+ traces of previous attempts to choose a model tier for future tasks. 
+Tally is literally using the traces to make better decisions for the future tasks, hence making routing more accurate with each run.
+
+What do you guys think we should focus on for the demo? @bettersayAJ
+ @akshay_hangloo
+ @HaimantikaM
+ @joseph
+ @agent_wrapper
