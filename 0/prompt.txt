@@ -132,3 +132,11 @@ What do you guys think we should focus on for the demo? @bettersayAJ
 ---
 
 fix the merge conflict
+
+---
+
+next issue work. make sure proper testing and all
+
+---
+
+merge and move to next issue with proper testing
