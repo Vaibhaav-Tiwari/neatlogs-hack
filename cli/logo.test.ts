@@ -9,12 +9,12 @@ import {
 } from './logo.js';
 
 const context = (over: Partial<LogoContext> = {}): LogoContext => ({
-  intent: 'bare', interactive: true, env: { TERM: 'xterm-256color' }, isTTY: true, columns: 100, colorDepth: 24, seen: false, ...over,
+  intent: 'bare', interactive: true, env: { TERM: 'xterm-256color' }, isTTY: true, columns: 100, rows: 30, colorDepth: 24, seen: false, ...over,
 });
 
 function fakeTerminal() {
   const written: string[] = [];
-  const state = { interrupt: null as null | (() => void), removed: 0, exitCode: null as number | null, sleeps: 0 };
+  const state = { interrupt: null as null | ((exitCode: number) => void), removed: 0, exitCode: null as number | null, sleeps: 0 };
   const terminal: LogoTerminal = {
     write: (text) => void written.push(text),
     sleep: async () => { state.sleeps += 1; },
@@ -70,6 +70,8 @@ describe('when the logo shows', () => {
     expect(planLogo(context({ columns: FULL_WIDTH })).show).toBe('static');
     expect(planLogo(context({ columns: FULL_WIDTH + 1 })).show).toBe('animate');
     expect(planLogo(context({ columns: COMPACT_WIDTH })).show).toBe('none');
+    expect(planLogo(context({ rows: FULL_ROWS + 2 })).show).toBe('static');
+    expect(planLogo(context({ rows: FULL_ROWS + 3 })).show).toBe('animate');
   });
 });
 
@@ -84,6 +86,9 @@ describe('frames', () => {
     expect(logoStateAt(TIMELINE.eyes).eyes).toBe(true);
     expect(logoStateAt(TIMELINE.blinkShut).eyes).toBe(false);
     expect(logoStateAt(TIMELINE.blinkOpen).eyes).toBe(true);
+    expect(logoFrame(logoStateAt(TIMELINE.eyes), 'none')[2]).toBe('   █   █ ▀ █ ▀ █');
+    expect(logoFrame(logoStateAt(TIMELINE.blinkShut), 'none')[2]).toBe('   █   █ ▔ █ ▔ █');
+    expect(logoFrame(logoStateAt(TIMELINE.blinkOpen), 'none')[2]).toBe('   █   █ ▀ █ ▀ █');
     expect(logoStateAt(TIMELINE.slash - 1)).toMatchObject({ slash: 0, text: 0 });
     expect(logoStateAt(TIMELINE.text - FRAME_MS).slash).toBe(SETTLED.slash);
     expect(logoStateAt(TIMELINE.text).text).toBe(1);
@@ -113,7 +118,7 @@ describe('frames', () => {
         "  ▄█▀▀ █   █   █         ▄███▄   ▀█▄▄▀█▄ ▄██▄ ▄██▄   ██▀",
         "▀▀ █   █   █   █                                    ▄█▀",
         "   █   █   █   █                                   ██▀",
-        "   █   █   █   █       the CFO for your agent fleet",
+        "   █   █   █   ▀       the CFO for your agent fleet",
       ]
     `);
     expect(compactLogo('none')).toMatchInlineSnapshot(`
@@ -150,9 +155,14 @@ describe('playing', () => {
 
   it('restores the cursor and exits 130 on Ctrl+C, and when a write fails', async () => {
     const { terminal, written, state } = fakeTerminal();
-    terminal.sleep = async () => { state.interrupt?.(); };
+    terminal.sleep = async () => { state.interrupt?.(130); };
     await playLogo(terminal, 'truecolor');
     expect(state.exitCode).toBe(130);
+    const stopped = fakeTerminal();
+    stopped.terminal.sleep = async () => { stopped.state.interrupt?.(143); };
+    await playLogo(stopped.terminal, 'truecolor');
+    expect(stopped.state.exitCode).toBe(143);
+    expect(stopped.written.join('')).toContain('\x1b[0m\x1b[?25h\n');
     expect(written.join('')).toContain('\x1b[0m\x1b[?25h\n');
 
     const broken = fakeTerminal();

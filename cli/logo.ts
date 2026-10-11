@@ -29,6 +29,8 @@ export interface LogoContext {
   env: Record<string, string | undefined>;
   isTTY: boolean;
   columns: number;
+  /** Terminal height in rows. */
+  rows: number;
   /** Bits of colour the terminal reports: 1, 4, 8 or 24. */
   colorDepth: number;
   /** Whether the first-run animation has already played on this machine. */
@@ -46,7 +48,7 @@ const STROKES = [
   { x: 3, top: 1, bottom: 19 },
   { x: 7, top: 0, bottom: 19 },
   { x: 11, top: 2, bottom: 19 },
-  { x: 15, top: 1, bottom: 19 },
+  { x: 15, top: 1, bottom: 18 },
 ] as const;
 const EYES = [
   { x: 9, y: 4 },
@@ -82,6 +84,8 @@ export interface LogoState {
   /** Pixels of each stroke drawn so far, from its top. */
   strokes: number[];
   eyes: boolean;
+  /** True for the two frames in which the eyes are shut. */
+  blink?: boolean;
   /** Columns of the slash drawn so far, from the left. */
   slash: number;
   /** 0 hidden, 1 arriving (dim, offset), 2 nearly there, 3 settled. */
@@ -102,7 +106,7 @@ export function logoStateAt(ms: number): LogoState {
   const slash = ms < TIMELINE.slash ? 0 : Math.round((1 - (1 - p) ** 2) * MARK_WIDTH);
   const sinceText = ms - TIMELINE.text;
   const text = sinceText < 0 ? 0 : sinceText < 100 ? 1 : sinceText < 200 ? 2 : 3;
-  return { strokes, eyes, slash, text };
+  return { strokes, eyes, blink: ms >= TIMELINE.blinkShut && ms < TIMELINE.blinkOpen, slash, text };
 }
 
 function markPixels(state: LogoState): Pixel[][] {
@@ -178,6 +182,12 @@ const padTo = (line: string, width: number): string => line + ' '.repeat(Math.ma
 /** The large mark with its text, as `FULL_ROWS` lines. */
 export function logoFrame(state: LogoState, color: LogoColor): string[] {
   const lines = rowsOf(markPixels(state), color);
+  if (state.blink) {
+    // Shut eyes are a thin line where each eye was. Nothing on this row is coloured yet, so columns are characters.
+    const row = [...padTo(lines[EYES[0].y / 2]!, MARK_WIDTH)];
+    for (const eye of EYES) row[eye.x] = '▔';
+    lines[EYES[0].y / 2] = row.join('').replace(/ +$/, '');
+  }
   if (state.text === 0) return lines;
   const dim = state.text === 1 ? '2' : '';
   const offset = TEXT_GAP + (state.text === 1 ? TEXT_SLIDE : state.text === 2 ? 1 : 0);
@@ -231,7 +241,7 @@ export function planLogo(context: LogoContext): LogoPlan {
   const wantsMotion = intent === 'logo' || firstRun;
   const still = (markSeen: boolean): LogoPlan => (context.columns >= COMPACT_WIDTH + 1 ? { show: 'static', color, markSeen } : none);
 
-  if (wantsMotion && color !== 'none' && !truthy(env.TALLY_NO_ANIMATION) && context.columns >= FULL_WIDTH + 1) {
+  if (wantsMotion && color !== 'none' && !truthy(env.TALLY_NO_ANIMATION) && context.columns >= FULL_WIDTH + 1 && context.rows >= FULL_ROWS + 3) {
     return { show: 'animate', color, markSeen: firstRun };
   }
   // No colour, no motion or no room: `init` only ever shows the mark as its first-run greeting.
@@ -243,8 +253,8 @@ export interface LogoTerminal {
   write: (text: string) => void;
   /** Resolves after `ms`. */
   sleep: (ms: number) => Promise<void>;
-  /** Registers a Ctrl+C handler and returns a function that removes it. */
-  onInterrupt: (handler: () => void) => () => void;
+  /** Registers a handler for Ctrl+C and for termination, and returns a function that removes it. */
+  onInterrupt: (handler: (exitCode: number) => void) => () => void;
   /** Ends the process after an interrupt. */
   exit: (code: number) => void;
 }
@@ -262,13 +272,13 @@ export function logoFrames(color: LogoColor): string[][] {
 
 /**
  * Plays the animation in place. The cursor is hidden while it runs and is
- * restored when it ends, when it throws, and when the user presses Ctrl+C.
+ * restored when it ends, when it throws, on Ctrl+C and when the process is told to stop.
  */
 export async function playLogo(terminal: LogoTerminal, color: LogoColor): Promise<void> {
   const restore = `${RESET}${SHOW_CURSOR}`;
-  const removeInterrupt = terminal.onInterrupt(() => {
+  const removeInterrupt = terminal.onInterrupt((exitCode) => {
     terminal.write(`${restore}\n`);
-    terminal.exit(130);
+    terminal.exit(exitCode);
   });
   try {
     terminal.write(`${HIDE_CURSOR}\n`);
@@ -313,8 +323,14 @@ export function processTerminal(): LogoTerminal {
     write: (text) => void process.stdout.write(text),
     sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
     onInterrupt: (handler) => {
-      process.once('SIGINT', handler);
-      return () => void process.removeListener('SIGINT', handler);
+      const interrupt = (): void => handler(130);
+      const terminate = (): void => handler(143);
+      process.once('SIGINT', interrupt);
+      process.once('SIGTERM', terminate);
+      return () => {
+        process.removeListener('SIGINT', interrupt);
+        process.removeListener('SIGTERM', terminate);
+      };
     },
     exit: (code) => process.exit(code),
   };
