@@ -10,7 +10,12 @@ import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPo
 import { usdToNanos, validateLedger, validateRunState, type TaskImpact, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
 import type { VerifierPort, VerifyResult } from '../adapters/verifier.js';
-import { runRealTally, type CfoaiBudgetPort, type WorkerPort, type WorkerResult, type WorkerStartInput, type WorktreePort } from './real.js';
+import { runRealTally as runRealTallyImpl, type RealRunOptions, type CfoaiBudgetPort, type WorkerPort, type WorkerResult, type WorkerStartInput, type WorktreePort } from './real.js';
+
+// Loop tests never consult hosted Entire history; adapter behavior has dedicated fakes.
+function runRealTally(options: RealRunOptions) {
+  return runRealTallyImpl({ ...options, ports: { recall: { recallFor: async () => null }, ...options.ports } });
+}
 
 const fixedNow = () => new Date('2026-10-11T03:00:00.000Z');
 
@@ -1242,6 +1247,24 @@ describe('runRealTally', () => {
     expect(result.runState.integrations.entire.detail).toContain('entire enable');
   });
 
+  it('persists unavailable recall separately from successful Graph sizing and states it in decisions', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: true, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+    const result = await runRealTally({
+      configPath, dryRun: true, baseline: false, outputDir: join(dir, 'recall-unavailable'),
+      now: fixedNow, latestRunDir: join(dir, 'latest'),
+      ports: { intake, signals: scriptedEntireSignals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        recall: { recallFor: async () => null, status: () => ({ status: 'missing', detail: 'checkpoint recall unavailable: repository not mirrored to Entire' }) },
+      },
+    });
+    expect(result.runState.integrations.entire).toMatchObject({ status: 'missing', detail: expect.stringContaining('Graph sizing: ok') });
+    expect(result.runState.integrations.entire.detail).toContain('not mirrored');
+    expect(result.ledger[0]?.decision).toContain('checkpoint recall unavailable');
+    const onDisk = JSON.parse(readFileSync(join(dir, 'recall-unavailable', 'run.json'), 'utf8'));
+    expect(onDisk.integrations.entire.detail).toContain('not mirrored');
+  });
+
   it('reads the run budget from cfo.ai, writes cumulative real spend and keeps a CSV fallback', async () => {
     const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
     writeFileSync(
@@ -1403,7 +1426,7 @@ describe('runRealTally', () => {
       },
     });
 
-    expect(result.runState.integrations.entire).toEqual({ status: 'ok', detail: 'not used: sample tasks carry scripted sizing' });
+    expect(result.runState.integrations.entire).toMatchObject({ status: 'ok', detail: expect.stringContaining('not used: sample tasks carry scripted sizing') });
   });
 
   it('reports neatlogs status from the trace port in a dry run', async () => {

@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { EntireCheckpointRecallAdapter, type CommandRunner } from './entire-recall.js';
+import { CommandError } from './command.js';
 
 describe('EntireCheckpointRecallAdapter', () => {
+  it('distinguishes unavailable recall from an available search with no failures', async () => {
+    const adapter = new EntireCheckpointRecallAdapter({ repoPath: '/repo', command: async () => {
+      throw new CommandError('search failed', 1, '', 'no matching repositories found (is the repo mirrored to Entire?)');
+    } });
+    await expect(adapter.recallFor({ taskId: 'T1', title: 'Fix src/calc.ts', body: '' })).resolves.toBeNull();
+    expect(adapter.status()).toMatchObject({ status: 'missing', detail: expect.stringContaining('not mirrored') });
+    const available = new EntireCheckpointRecallAdapter({ repoPath: '/repo', command: async () => ({ stdout: '[]' }) });
+    await expect(available.checkAvailability()).resolves.toEqual({ status: 'ok', detail: 'checkpoint search available' });
+    await available.recallFor({ taskId: 'T1', title: 'Fix src/calc.ts', body: '' });
+    expect(available.status().status).toBe('ok');
+  });
+
+  it('reports skipped recall honestly without invoking a search', async () => {
+    const adapter = new EntireCheckpointRecallAdapter({ repoPath: '/repo', command: async () => { throw new Error('must not search'); } });
+    await adapter.recallFor({ taskId: 'T1', title: 'Improve rendering', body: '' });
+    expect(adapter.status().detail).toContain('not used');
+  });
   it('returns a failed prior checkpoint that touched the same explicit file', async () => {
     const calls: string[] = [];
     const runner: CommandRunner = async (file, args) => {

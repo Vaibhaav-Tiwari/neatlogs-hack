@@ -18,7 +18,7 @@ class FakeRunner implements CommandRunner {
   }
 }
 
-const task = { taskId: 'T1', title: 'Fix refund validator', body: 'Calling `refund.validate(-5)` should fail.' };
+const task = { taskId: 'T1', title: 'Fix refund validator', body: 'Edit src/refund/validator.ts and tests/refund.test.ts. Calling `refund.validate(-5)` should fail.' };
 
 describe('EntireSizingAdapter', () => {
   it('uses entire-graph search and impact to count files, callers and co-change files', async () => {
@@ -58,7 +58,7 @@ describe('EntireSizingAdapter', () => {
       { from: 'tests/refund.test.ts', to: 'src/refund/validator.ts', kind: 'tests' },
     ]));
     expect(adapter.status()).toEqual({ status: 'ok', detail: null });
-    expect(runner.calls.map((call) => call.args.slice(0, 3).join(' '))).toEqual([
+    expect(runner.calls.filter(call => call.command === 'entire').map((call) => call.args.slice(0, 3).join(' '))).toEqual([
       'graph index --repo',
       'graph search --repo',
       'graph impact --repo',
@@ -108,7 +108,8 @@ describe('EntireSizingAdapter', () => {
       return { stdout: JSON.stringify({ callers: { total: 1, entries: [{ endpoint: { file_path: '/outside/private.ts' }, depth: 1 }] }, co_changes: { total: 60,
         entries: Array.from({ length: 60 }, (_, i) => ({ endpoint: { file_path: `/repo/src/c${i}.ts` }, weight: i })) } }) };
     });
-    const signals = await new EntireSizingAdapter({ repoPath: '/repo', runner }).signalsFor(task);
+    const namedTask = { ...task, body: `Edit ${Array.from({ length: 9 }, (_, i) => `src/f${i}.ts`).join(', ')}.` };
+    const signals = await new EntireSizingAdapter({ repoPath: '/repo', runner }).signalsFor(namedTask);
     expect(signals?.filesTouched).toBe(9);
     expect(sizeFromSignals(task, signals).size).toBe('large');
     expect(signals?.impact?.nodes).toHaveLength(40);
@@ -119,5 +120,27 @@ describe('EntireSizingAdapter', () => {
     expect(signals?.impact?.nodes.some((node) => node.id === 'src/c59.ts')).toBe(true);
     expect(signals?.impact?.nodes.some((node) => node.id.startsWith('/') || node.id.includes('..'))).toBe(false);
     expect(runner.calls.filter((call) => call.args.includes('impact'))).toHaveLength(3);
+  });
+
+  it('sizes makeSection on its issue target, not generated data or related renderers', async () => {
+    const runner = new FakeRunner((_command, args) => {
+      if (args.includes('index')) return { stdout: '' };
+      if (args.includes('search')) return { stdout: JSON.stringify({ results: [
+        { file_path: 'js/main.js', qualified_name: 'makeSection', score: 75 },
+        { file_path: '.tally/runs/latest/run.json', qualified_name: 'filesTouched', score: 20 },
+        { file_path: '.entire/settings.json', qualified_name: 'enabled', score: 20 },
+        { file_path: 'node_modules/pkg/index.js', qualified_name: 'render', score: 20 },
+        { file_path: 'dist/main.js', qualified_name: 'makeSection', score: 20 },
+        { file_path: 'js/sections/10-gputpu.js', qualified_name: 'render', score: 17 },
+      ] }) };
+      return { stdout: '{}' };
+    });
+    const specific = { taskId: 'T1', title: 'Fix makeSection in js/main.js', body: 'Edit js/main.js so makeSection should return the expected section. Do not change other renderers.' };
+    const signals = await new EntireSizingAdapter({ repoPath: '/repo', runner }).signalsFor(specific);
+    expect(signals).toMatchObject({ filesTouched: 1, contextFiles: ['js/sections/10-gputpu.js'] });
+    expect(signals?.impact?.nodes.map(node => node.id)).toEqual(['js/main.js']);
+    expect(sizeFromSignals(specific, signals).size).toBe('small');
+    expect(sizeFromSignals(specific, signals).summary).toContain('related context (not targets)');
+    expect(runner.calls.filter(call => call.args.includes('impact'))).toHaveLength(1);
   });
 });

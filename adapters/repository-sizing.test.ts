@@ -59,7 +59,9 @@ describe('RepositorySizingAdapter', () => {
 
   it('prefers identifier definitions over unrelated callers', async () => {
     const f = fixture({ 'src/a.ts': 'function renderWidget() {}', 'src/b.ts': 'renderWidget();' });
-    expect((await f.adapter.signalsFor(task('Fix `renderWidget` to reject invalid input.')))?.scope?.existingFiles).toEqual(['src/a.ts']);
+    const signals = await f.adapter.signalsFor(task('Fix `renderWidget` to reject invalid input.'));
+    expect(signals?.scope?.existingFiles).toEqual(['src/a.ts']);
+    expect(signals?.contextFiles).toEqual(['src/b.ts']);
   });
 
   it('uses a named test to infer only its same-stem source module', async () => {
@@ -71,7 +73,7 @@ describe('RepositorySizingAdapter', () => {
   });
 
   it('marks a truncated search and reduces confidence rather than treating partial evidence as complete', async () => {
-    const f = fixture({ 'a.ts': 'renderWidget()', 'b.ts': 'renderWidget()' }, { maxFiles: 1 });
+    const f = fixture({ 'a.ts': 'function renderWidget() {}', 'b.ts': 'renderWidget()' }, { maxFiles: 1 });
     const input = task('`renderWidget` should reject invalid input.');
     const bounded = await f.adapter.signalsFor(input);
     const full = await new RepositorySizingAdapter({ repoPath: f.repoPath, listFiles: async () => ['a.ts', 'b.ts'] }).signalsFor(input);

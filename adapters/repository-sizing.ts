@@ -2,6 +2,7 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { runCommand } from './command.js';
 import { capImpact } from '../agent/impact.js';
+import { sizingPath, sizingPaths } from './sizing-paths.js';
 import type { SizingSignals, SizingSignalsPort, TaskInput } from '../agent/ports.js';
 
 export interface RepositorySizingOptions {
@@ -17,9 +18,7 @@ export function looksLikeTest(path: string): boolean {
 }
 
 function safePath(value: string): string | null {
-  const path = value.replaceAll('\\', '/').replace(/^\.\//, '');
-  if (!path || isAbsolute(path) || /^[A-Za-z]:/.test(path) || path.split('/').some(part => part === '..' || part === '.git')) return null;
-  return path;
+  return sizingPath(value);
 }
 
 function clauses(text: string): string[] {
@@ -27,11 +26,11 @@ function clauses(text: string): string[] {
 }
 
 function paths(text: string): string[] {
-  return [...new Set([...text.matchAll(/(?<![\w./:\\-])(?:[\w.-]+\/)*[\w-]+\.[A-Za-z][\w-]{0,9}\b/g)]
+  return [...new Set([...text.matchAll(/(?<![\w./:\\-])(?:[\w.-]+\/)*[\w.-]+\.[A-Za-z][\w-]{0,9}\b/g)]
     .map(match => safePath(match[0])).filter((path): path is string => path !== null))];
 }
 
-function identifiers(text: string): string[] {
+export function issueIdentifiers(text: string): string[] {
   const quoted = [...text.matchAll(/`([^`\n]+)`|"([^"\n]+)"|'([^'\n]+)'/g)].map(match => match[1] ?? match[2] ?? match[3]!);
   const named = text.match(/\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+(?=\s*\()|\b[a-z]+[A-Z]\w*\b|\b\w+_\w+\b/g) ?? [];
   return [...new Set([...quoted.filter(value => !/\s/.test(value)), ...named].flatMap(value => value.match(/\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\b/g) ?? []))]
@@ -54,12 +53,13 @@ export class RepositorySizingAdapter implements SizingSignalsPort {
       tracked = this.options.listFiles ? await this.options.listFiles()
         : (await runCommand('git', ['ls-files', '-z'], { cwd: this.options.repoPath, maxBuffer: 4 * 1024 * 1024 })).stdout.split('\0');
     } catch { return null; }
-    tracked = [...new Set(tracked.map(safePath).filter((path): path is string => path !== null))].sort();
+    tracked = (await sizingPaths(this.options.repoPath, tracked)).sort();
     const known = new Set(tracked);
     const parts = clauses(query);
     const createOnly = /\b(?:do not|don['’]t)\s+(?:change|edit|modify|touch)\s+(?:any\s+)?existing files?\b/i.test(query);
     const existing = new Set<string>();
     const created = new Set<string>();
+    const context = new Set<string>();
     const excluded = new Set<string>();
     for (const part of parts) if (/\b(?:do not|don['’]t|never)\s+(?:change|edit|modify|touch)\b|\bfrozen\b/i.test(part)) {
       const directories = part.match(/(?:[\w.-]+\/)+(?=[\s,;`"'()]|$)/g) ?? [];
@@ -72,10 +72,11 @@ export class RepositorySizingAdapter implements SizingSignalsPort {
       const matches = known.has(name) ? [name] : tracked.filter(path => !name.includes('/') && basename(path) === name);
       // Dotted API/module names are identifier evidence, not new filenames.
       if (!matches.length && !name.includes('/') && !/\.(?:[cm]?[jt]sx?|py|go|rs|java|c|cpp|h|css|html|sh|md|txt|json|jsonl|ya?ml|toml|xml|sql|csv|svg|png|jpg|ini|conf)$/i.test(name)) continue;
-      if (prohibited) { matches.forEach(path => excluded.add(path)); continue; }
+      if (prohibited) { matches.forEach(path => { excluded.add(path); context.add(path); }); continue; }
       if (matches.length) {
         const contextOnly = mentions.every(part => /\b(using|defined in|described|following|loads?|read|refer(?:ence)?|pattern|example)\b/i.test(part)
           && !/\b(fix|edit|modify|update|change|remove|extend)\b/i.test(part));
+        if (createOnly || contextOnly) matches.forEach(path => context.add(path));
         if (!createOnly && !contextOnly) matches.filter(path => !excluded.has(path)).forEach(path => existing.add(path));
       } else if (mentions.some(part => /\b(create|add|write|new|implement)\b/i.test(part))
         || (createOnly && /\b(create|add|write)\b/i.test(query))) created.add(name);
@@ -90,7 +91,7 @@ export class RepositorySizingAdapter implements SizingSignalsPort {
     let truncated = false;
     // Search identifier boundaries, not generic issue words; never follow tracked symlinks.
     const pinnedSource = [...existing, ...created].some(path => !looksLikeTest(path));
-    const terms = createOnly || pinnedSource ? [] : identifiers(query);
+    const terms = createOnly || pinnedSource ? [] : issueIdentifiers(query);
     const patterns = terms.map(term => new RegExp(`(^|[^A-Za-z0-9_])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9_]|$)`));
     const definitions = terms.map(term => new RegExp(`\\b(?:def|class|function|interface|type|struct|fn|const|let|var)\\s+${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`));
     const references = new Set<string>();
@@ -122,8 +123,11 @@ export class RepositorySizingAdapter implements SizingSignalsPort {
       } catch { truncated = true; }
     }
     // Prefer owners of identifiers to every file that merely references them.
-    for (const path of declarations.size ? declarations : references) existing.add(path);
-    const targets = [...new Set([...existing, ...created])].sort();
+    for (const path of declarations) existing.add(path);
+    const allowed = new Set(await sizingPaths(this.options.repoPath, [...existing, ...created]));
+    for (const path of existing) if (!allowed.has(path)) existing.delete(path);
+    for (const path of created) if (!allowed.has(path)) created.delete(path);
+    const targets = [...allowed].sort();
     if (!targets.length) return null;
     const testsPresent = tracked.some(path => looksLikeTest(path) && (existing.has(path) || targets.some(target => {
       const stem = fileStem(target);
@@ -132,6 +136,7 @@ export class RepositorySizingAdapter implements SizingSignalsPort {
     const totals = { filesTouched: targets.length, dependents: 0, testsPresent, nodes: targets.length, edges: 0 };
     return {
       filesTouched: targets.length, dependents: 0, testsPresent, source: 'code-search',
+      contextFiles: [...new Set([...context, ...references])].filter(path => !existing.has(path)).sort(),
       scope: { existingFiles: [...existing].sort(), newFiles: [...created].sort(), createOnly,
         namedTargets: targets.filter(path => named.some(name => path === name || basename(path) === name)).length, truncated },
       impact: capImpact({ source: 'code-search', query, nodes: targets.map(id => ({ id, kind: 'target', weight: 1 })), edges: [], totals, truncated }),
