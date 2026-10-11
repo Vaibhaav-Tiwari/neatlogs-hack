@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4NQ0FPXQKKPEWDKANV071HC",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T14:49:14.643702Z",
+  "branch": "ao/neatlogs-hack-5/market-qualified",
+  "checkpoints_count": 9,
+  "save_step_count": 1,
+  "files_touched": [
+    "README.md",
+    "adapters/crustdata.test.ts",
+    "adapters/crustdata.ts",
+    "adapters/market-report.ts",
+    "cli/main.test.ts",
+    "cli/main.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "e7a6ed0a2ef2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 4954740,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 199971584,
+    "output_tokens": 665296,
+    "api_call_count": 1494
+  },
+  "session_metrics": {
+    "turn_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T14:49:13.297148Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 313,
+    "human_modified": 29,
+    "human_removed": 0,
+    "total_committed": 313,
+    "total_lines_changed": 342,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
