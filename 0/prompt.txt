@@ -1,0 +1,41 @@
+[from neatlogs-hack-8] Yes, in two steps so the proof is not held up. Step 1 (PR now): Claude-only AO setup and checks use permission default; Codex-only stays auto; mixed AO stops with a clear 'not supported yet' message in init/doctor/preflight, no silent substitution. Wire installAoClaudeSettings via the postCreate entry. Then the real AO Claude-only run (tell me first). Step 2 (second PR, after the proof): mixed AO via setting the project permission for the tier's harness immediately before each spawn under a lock, as in my earlier message. main is 0a237b0; rebase.
+
+---
+
+[from neatlogs-hack-8] The decision was sent just before your #108 note; in case it crossed: YES. In #108 itself, wire the installer to init via postCreate; Claude-only AO uses permission default, Codex-only stays auto, mixed AO stops with a clear not-supported-yet message in init/doctor/preflight. Rebase on main 0a237b0, mark #108 ready, tell me; I gate and merge, then you do the real AO Claude-only run after telling me. Mixed AO is a second PR afterwards.
+
+---
+
+[from neatlogs-hack-8] APPROVED, third time of sending, please acknowledge receipt: your proposed first slice is exactly the policy. Claude-only AO = permission default + installed local settings; Codex-only AO = auto; mixed AO = blocked with a clear not-supported-yet message in init, doctor and preflight. You may edit init, doctor and engine/preflight.ts for this. Wire it in #108, rebase on main a607dc0, mark ready, tell me. Then the real AO Claude-only Tally run after telling me.
+
+---
+
+[from neatlogs-hack-8] #108 (2e75847) gated together with #109 and merged; main is now 6fa9694. Go: run the single AO Claude-only proof now, cap 1 USD, a NEW small labelled issue of your own on chip-design-groundup (not #11, lane A is using it), fresh install from the release built at that commit, separate clone and dashboard port. Send me run id and link at start and the same check list at the end. Then open Step 2 (mixed AO, branch at c09932b) as a second PR.
+
+---
+
+[from neatlogs-hack-8] Correction: main is 6fa9694 (contains both #108 and #109), not 6fa9694. Use the release built from 6fa9694. Lane A: confirmed, go with eabb1207 for the fourth #11 proof.
+
+---
+
+[from neatlogs-hack-8] Ignore my last 'correction', it was garbled. Verified facts: main is 6fa9694. Order of merges: #109 merged first as eabb120, then #108 as 6fa9694, whose history contains eabb120. So 6fa9694 has BOTH fixes; eabb120 has #109 but not #108. Lane A: the fourth #11 direct proof may run on the eabb120 release (it has the host-commit fix and needs nothing from #108), go now. Lane B: your AO Claude proof needs #108, so wait until release-source.json shows 6fa9694. Lane C: base on 6fa9694.
+
+---
+
+[from neatlogs-hack-8] Release branch now reports sourceCommit 6fa9694 (build succeeded), which contains both #108 and #109. Both of you: install from it and start your proof now.
+
+---
+
+[from neatlogs-hack-8] #111 gated on current main (656 tests x2, typecheck, build, dry runs) and merged; main is 0c299e7. No repeat of the Claude-only proof; it stands. Instead one new run that covers what is still unproven, approved (Vaibhaav said not to worry about run cost): install from the published release branch once release-source.json shows 0c299e7; runner ao; MIXED tiers: cheap claude-code claude-haiku-4-5-20251001, middle codex terra, top claude-code claude-opus-5-5; neatlogs and cfo.ai ON (Entire off on that repo); one new small labelled issue on chip-design-groundup, cap 1 USD. This proves mixed setup through init/doctor/preflight, the per-harness permission switch on a real spawn, and whether decision and worker traces and cfo.ai spend are captured for a Claude worker launched by AO. Send run id and link at start; at the end the usual checks, and confirm the project permission mode before, during and after.
+
+---
+
+[from neatlogs-hack-8] Next task, queued behind your mixed run (finish and report that first): npm packaging of tally-agents. Vaibhaav has approved publishing now. Facts I checked: name tally-agents is free on npm (404), version in package.json is 0.1.0, main is 6d859bc, 'npm whoami' currently returns 401 so he must log in again; do NOT publish until I tell you he has. Prepare and verify, publishing nothing: (1) decide how the npm tarball is built: the release branch already holds the built package (dist included, no scripts); publish must come from that exact built content at the commit matching main, not from a source checkout without dist. (2) npm pack it, list contents, confirm no tests, secrets, .env, .tally, .claude or local settings files, and that bin/tally.js, dist, dashboard, schemas, README, LICENSE are in. (3) Install the tarball into a clean prefix with an empty cache and run: tally --version, tally logo (TTY and non-TTY), tally demo, tally doctor in a scratch repo, tally init --help paths. (4) README: npm install -g tally-agents as the primary install, GitHub release branch as the alternative; make sure the README matches the four runner paths as they are today (Codex direct is merged but its real run is still in progress; say so honestly). Any README or package.json change is a small PR; I gate and merge. (5) Report the exact publish command and the tarball's file count, size and sha. Use version 0.1.0 unless something forces otherwise. No npm publish, no npm login attempts, no tokens printed.
+
+---
+
+[from neatlogs-hack-8] npm login is done: 'npm whoami' returns vaibhaavtiwari. Still do NOT publish yet: finish the packaging checks and report the tarball contents, the clean-install results and the exact publish command first. I want lane A's worker-trace fix merged before the publish so the package contains it; I will tell you the commit to publish from. Note npm printed a notice that tokens bypassing 2FA are restricted for direct publishing, so the publish may ask for a one-time code; if it does, stop and tell me rather than retrying.
+
+---
+
+[from neatlogs-hack-8] Packaging report accepted. Update to your facts for the README: Codex direct is now PROVEN by a real run (run-20261011-130259Z, chip-design-groundup PR #18, luna direct, both trace ids, Tally commit). So all four paths have a real run: Codex via AO (PR #10), Claude via AO (PRs #13, #16), Claude direct (PR #14), Codex direct (PR #18). State honestly what is not proven: mixed AO with a real Codex spawn after a Claude one, parallel workers, escalation on the direct runner, the no-account onboarding path. Open the README PR; I gate and merge it together with lane A's worker-trace fix, then you repack from the release built at that final commit, re-run the clean-install checks, and publish 0.1.0 on my word.
