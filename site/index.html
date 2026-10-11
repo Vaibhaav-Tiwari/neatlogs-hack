@@ -8,75 +8,80 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="Meet Tally, the CFO for your agent fleet">
 <meta property="og:description" content="Routes GitHub issues to a cost-effective model, caps spend per task, escalates if needed, verifies the change and opens a pull request.">
-<meta property="og:image" content="art/og.jpg">
-<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:card" content="summary">
 <meta name="twitter:site" content="@battarchicken">
-<meta name="twitter:title" content="Meet Tally, the CFO for your agent fleet">
-<meta name="twitter:description" content="Routes GitHub issues to a cost-effective model, caps spend per task, escalates if needed, verifies the change and opens a pull request.">
-<meta name="twitter:image" content="art/og.jpg">
-<meta name="theme-color" content="#0a0716">
+<meta name="theme-color" content="#1b1e27">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap">
 <link rel="stylesheet" href="styles.css">
 <script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
-<a class="skip" href="#install">Skip to install</a>
+<a class="skip" href="#main">Skip to content</a>
 
-<header class="hero" id="top">
-  <div class="backdrop" aria-hidden="true"></div>
-
-  <nav class="top" aria-label="Sections">
-    <a href="#install">Install</a><a href="#what">What it does</a><a href="#toggles">Switches</a><a href="#proof">Proof</a><a href="#contact">Contact</a>
+<header class="site-head">
+  <a class="brand" href="#top" aria-label="Tally, top of page"><!-- nav-mark:start --><svg class="pixel-mark small" viewBox="0 0 19 20" role="img" aria-label="Tally" shape-rendering="crispEdges"><rect class="ink" x="15" y="7" width="1" height="1"/><rect class="ink" x="11" y="9" width="1" height="1"/><rect class="ink" x="7" y="11" width="1" height="1"/><rect class="ink" x="3" y="13" width="1" height="1"/><rect class="ink" x="7" y="0" width="1" height="1"/><rect class="ink" x="3" y="1" width="1" height="1"/><rect class="ink" x="7" y="1" width="1" height="1"/><rect class="ink" x="15" y="1" width="1" height="1"/><rect class="ink" x="3" y="2" width="1" height="1"/><rect class="ink" x="7" y="2" width="1" height="1"/><rect class="ink" x="11" y="2" width="1" height="1"/><rect class="ink" x="15" y="2" width="1" height="1"/><rect class="ink" x="3" y="3" width="1" height="1"/><rect class="ink" x="7" y="3" width="1" height="1"/><rect class="ink" x="11" y="3" width="1" height="1"/><rect class="ink" x="15" y="3" width="1" height="1"/><rect class="ink" x="3" y="4" width="1" height="1"/><rect class="ink" x="7" y="4" width="1" height="1"/><rect class="ink eye" x="9" y="4" width="1" height="1"/><rect class="ink" x="11" y="4" width="1" height="1"/><rect class="ink eye" x="13" y="4" width="1" height="1"/><rect class="ink" x="15" y="4" width="1" height="1"/><rect class="ink" x="3" y="5" width="1" height="1"/><rect class="ink" x="7" y="5" width="1" height="1"/><rect class="ink" x="11" y="5" width="1" height="1"/><rect class="ink" x="15" y="5" width="1" height="1"/><rect class="sl" x="18" y="5" width="1" height="1"/><rect class="ink" x="3" y="6" width="1" height="1"/><rect class="ink" x="7" y="6" width="1" height="1"/><rect class="ink" x="11" y="6" width="1" height="1"/><rect class="ink" x="15" y="6" width="1" height="1"/><rect class="sl" x="16" y="6" width="2" height="1"/><rect class="ink" x="3" y="7" width="1" height="1"/><rect class="ink" x="7" y="7" width="1" height="1"/><rect class="ink" x="11" y="7" width="1" height="1"/><rect class="sl" x="14" y="7" width="2" height="1"/><rect class="ink" x="3" y="8" width="1" height="1"/><rect class="ink" x="7" y="8" width="1" height="1"/><rect class="ink" x="11" y="8" width="1" height="1"/><rect class="sl" x="12" y="8" width="2" height="1"/><rect class="ink" x="15" y="8" width="1" height="1"/><rect class="ink" x="3" y="9" width="1" height="1"/><rect class="ink" x="7" y="9" width="1" height="1"/><rect class="sl" x="10" y="9" width="2" height="1"/><rect class="ink" x="15" y="9" width="1" height="1"/><rect class="ink" x="3" y="10" width="1" height="1"/><rect class="ink" x="7" y="10" width="1" height="1"/><rect class="sl" x="8" y="10" width="1" height="1"/><rect class="sl" x="9" y="10" width="1" height="1"/><rect class="ink" x="11" y="10" width="1" height="1"/><rect class="ink" x="15" y="10" width="1" height="1"/><rect class="ink" x="3" y="11" width="1" height="1"/><rect class="sl" x="6" y="11" width="2" height="1"/><rect class="ink" x="11" y="11" width="1" height="1"/><rect class="ink" x="15" y="11" width="1" height="1"/><rect class="ink" x="3" y="12" width="1" height="1"/><rect class="sl" x="4" y="12" width="2" height="1"/><rect class="ink" x="7" y="12" width="1" height="1"/><rect class="ink" x="11" y="12" width="1" height="1"/><rect class="ink" x="15" y="12" width="1" height="1"/><rect class="sl" x="2" y="13" width="2" height="1"/><rect class="ink" x="7" y="13" width="1" height="1"/><rect class="ink" x="11" y="13" width="1" height="1"/><rect class="ink" x="15" y="13" width="1" height="1"/><rect class="sl" x="0" y="14" width="2" height="1"/><rect class="ink" x="3" y="14" width="1" height="1"/><rect class="ink" x="7" y="14" width="1" height="1"/><rect class="ink" x="11" y="14" width="1" height="1"/><rect class="ink" x="15" y="14" width="1" height="1"/><rect class="ink" x="3" y="15" width="1" height="1"/><rect class="ink" x="7" y="15" width="1" height="1"/><rect class="ink" x="11" y="15" width="1" height="1"/><rect class="ink" x="15" y="15" width="1" height="1"/><rect class="ink" x="3" y="16" width="1" height="1"/><rect class="ink" x="7" y="16" width="1" height="1"/><rect class="ink" x="11" y="16" width="1" height="1"/><rect class="ink" x="15" y="16" width="1" height="1"/><rect class="ink" x="3" y="17" width="1" height="1"/><rect class="ink" x="7" y="17" width="1" height="1"/><rect class="ink" x="11" y="17" width="1" height="1"/><rect class="ink" x="15" y="17" width="1" height="1"/><rect class="ink" x="3" y="18" width="1" height="1"/><rect class="ink" x="7" y="18" width="1" height="1"/><rect class="ink" x="11" y="18" width="1" height="1"/><rect class="ink" x="15" y="18" width="1" height="1"/><rect class="ink" x="3" y="19" width="1" height="1"/><rect class="ink" x="7" y="19" width="1" height="1"/><rect class="ink" x="11" y="19" width="1" height="1"/></svg><!-- nav-mark:end --><span>Tally</span></a>
+  <nav aria-label="Sections">
+    <a href="#what">What it does</a><a href="#run">A real run</a><a href="#switches">Switches</a><a href="#judges">For the judges</a><a href="#contact">Contact</a>
   </nav>
-
-  <div class="hero-stage">
-    <div class="paper">
-      <svg class="mark" viewBox="0 0 380 430" role="img" aria-labelledby="mark-title">
-        <title id="mark-title">The Tally mark: four hand-drawn black strokes with two eyes, struck through by one orange-red slash</title>
-        <path class="stroke s1" pathLength="1" d="M61 34C58 118 66 232 60 322 59 352 63 380 62 402"/>
-        <path class="stroke s2" pathLength="1" d="M146 14C150 96 143 204 148 300 149 338 146 372 147 400"/>
-        <path class="stroke s3" pathLength="1" d="M224 44C219 130 226 236 221 318 220 350 223 378 222 403"/>
-        <path class="stroke s4" pathLength="1" d="M300 24C305 110 298 222 303 310 304 346 301 376 302 401"/>
-        <circle class="eye" cx="185" cy="98" r="12.5"/><circle class="eye" cx="261" cy="98" r="12.5"/>
-        <path class="slash" pathLength="1" d="M14 302C96 262 262 190 364 138"/>
-      </svg>
-    </div>
-
-    <div class="hero-copy">
-      <h1><span class="meet">Meet</span> <span class="tally">Tally</span></h1>
-      <p class="tagline">the CFO for your agent fleet</p>
-      <p class="pitch">Hand it your GitHub issues and a budget. It picks a cost-effective model for each one, stops any task at its spend ceiling, and opens a pull request only when your tests pass.</p>
-      <p class="hero-actions"><a class="button" href="#install">Install Tally</a><button class="ghost" type="button" data-replay-hero hidden>Replay the drawing</button></p>
-    </div>
-  </div>
 </header>
 
-<figure class="airbrush" role="img" aria-label="The Tally mark painted as a glossy black object with an orange slash, wet with droplets" hidden></figure>
+<main id="main">
+<section class="hero" id="top">
+  <div class="mark-stage" data-mark><!-- hero-mark:start --><svg class="pixel-mark draws" viewBox="0 0 58 20" role="img" aria-label="Meet Tally, the CFO for your agent fleet" shape-rendering="crispEdges" style="--shut:16"><rect class="ink" x="15" y="7" width="1" height="1" style="--t:11"/><rect class="ink" x="11" y="9" width="1" height="1" style="--t:8"/><rect class="ink" x="7" y="11" width="1" height="1" style="--t:5"/><rect class="ink" x="3" y="13" width="1" height="1" style="--t:2"/><rect class="ink" x="7" y="0" width="1" height="1" style="--t:4"/><rect class="ink" x="3" y="1" width="1" height="1" style="--t:1"/><rect class="ink" x="7" y="1" width="1" height="1" style="--t:4"/><rect class="ink" x="15" y="1" width="1" height="1" style="--t:10"/><rect class="ink" x="3" y="2" width="1" height="1" style="--t:1"/><rect class="ink" x="7" y="2" width="1" height="1" style="--t:4"/><rect class="ink" x="11" y="2" width="1" height="1" style="--t:7"/><rect class="ink" x="15" y="2" width="1" height="1" style="--t:10"/><rect class="ink" x="23" y="2" width="1" height="1" style="--t:30"/><rect class="ink" x="24" y="2" width="1" height="1" style="--t:27"/><rect class="ink" x="25" y="2" width="7" height="1" style="--t:25"/><rect class="ink" x="41" y="2" width="1" height="1" style="--t:30"/><rect class="ink" x="42" y="2" width="1" height="1" style="--t:27"/><rect class="ink" x="43" y="2" width="1" height="1" style="--t:25"/><rect class="ink" x="46" y="2" width="1" height="1" style="--t:30"/><rect class="ink" x="47" y="2" width="1" height="1" style="--t:27"/><rect class="ink" x="48" y="2" width="1" height="1" style="--t:25"/><rect class="ink" x="3" y="3" width="1" height="1" style="--t:1"/><rect class="ink" x="7" y="3" width="1" height="1" style="--t:4"/><rect class="ink" x="11" y="3" width="1" height="1" style="--t:7"/><rect class="ink" x="15" y="3" width="1" height="1" style="--t:10"/><rect class="ink" x="23" y="3" width="1" height="1" style="--t:30"/><rect class="ink" x="24" y="3" width="1" height="1" style="--t:27"/><rect class="ink" x="25" y="3" width="7" height="1" style="--t:25"/><rect class="ink" x="42" y="3" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="3" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="3" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="3" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="4" width="1" height="1" style="--t:1"/><rect class="ink" x="7" y="4" width="1" height="1" style="--t:4"/><rect class="ink eye" x="9" y="4" width="1" height="1" style="--t:13"/><rect class="ink" x="11" y="4" width="1" height="1" style="--t:7"/><rect class="ink eye" x="13" y="4" width="1" height="1" style="--t:13"/><rect class="ink" x="15" y="4" width="1" height="1" style="--t:10"/><rect class="ink" x="23" y="4" width="1" height="1" style="--t:30"/><rect class="ink" x="26" y="4" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="4" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="4" width="1" height="1" style="--t:25"/><rect class="ink" x="31" y="4" width="1" height="1" style="--t:30"/><rect class="ink" x="42" y="4" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="4" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="4" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="4" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="5" width="1" height="1" style="--t:1"/><rect class="ink" x="7" y="5" width="1" height="1" style="--t:4"/><rect class="ink" x="11" y="5" width="1" height="1" style="--t:7"/><rect class="ink" x="15" y="5" width="1" height="1" style="--t:10"/><rect class="sl" x="18" y="5" width="1" height="1" style="--t:23"/><rect class="ink" x="26" y="5" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="5" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="5" width="1" height="1" style="--t:25"/><rect class="ink" x="42" y="5" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="5" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="5" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="5" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="6" width="1" height="1" style="--t:1"/><rect class="ink" x="7" y="6" width="1" height="1" style="--t:4"/><rect class="ink" x="11" y="6" width="1" height="1" style="--t:7"/><rect class="ink" x="15" y="6" width="1" height="1" style="--t:10"/><rect class="sl" x="16" y="6" width="2" height="1" style="--t:23"/><rect class="ink" x="26" y="6" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="6" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="6" width="1" height="1" style="--t:25"/><rect class="ink" x="34" y="6" width="1" height="1" style="--t:30"/><rect class="ink" x="35" y="6" width="1" height="1" style="--t:27"/><rect class="ink" x="36" y="6" width="2" height="1" style="--t:25"/><rect class="ink" x="42" y="6" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="6" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="6" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="6" width="1" height="1" style="--t:27"/><rect class="ink" x="51" y="6" width="1" height="1" style="--t:30"/><rect class="ink" x="52" y="6" width="1" height="1" style="--t:27"/><rect class="ink" x="56" y="6" width="1" height="1" style="--t:30"/><rect class="ink" x="57" y="6" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="7" width="1" height="1" style="--t:2"/><rect class="ink" x="7" y="7" width="1" height="1" style="--t:5"/><rect class="ink" x="11" y="7" width="1" height="1" style="--t:7"/><rect class="sl" x="14" y="7" width="2" height="1" style="--t:22"/><rect class="ink" x="26" y="7" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="7" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="7" width="1" height="1" style="--t:25"/><rect class="ink" x="33" y="7" width="1" height="1" style="--t:30"/><rect class="ink" x="34" y="7" width="1" height="1" style="--t:27"/><rect class="ink" x="37" y="7" width="1" height="1" style="--t:30"/><rect class="ink" x="38" y="7" width="1" height="1" style="--t:27"/><rect class="ink" x="42" y="7" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="7" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="7" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="7" width="1" height="1" style="--t:27"/><rect class="ink" x="51" y="7" width="1" height="1" style="--t:30"/><rect class="ink" x="52" y="7" width="1" height="1" style="--t:27"/><rect class="ink" x="56" y="7" width="1" height="1" style="--t:30"/><rect class="ink" x="57" y="7" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="8" width="1" height="1" style="--t:2"/><rect class="ink" x="7" y="8" width="1" height="1" style="--t:5"/><rect class="ink" x="11" y="8" width="1" height="1" style="--t:8"/><rect class="sl" x="12" y="8" width="2" height="1" style="--t:22"/><rect class="ink" x="15" y="8" width="1" height="1" style="--t:11"/><rect class="ink" x="26" y="8" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="8" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="8" width="1" height="1" style="--t:25"/><rect class="ink" x="37" y="8" width="1" height="1" style="--t:30"/><rect class="ink" x="38" y="8" width="1" height="1" style="--t:27"/><rect class="ink" x="42" y="8" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="8" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="8" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="8" width="1" height="1" style="--t:27"/><rect class="ink" x="51" y="8" width="1" height="1" style="--t:30"/><rect class="ink" x="52" y="8" width="1" height="1" style="--t:27"/><rect class="ink" x="56" y="8" width="1" height="1" style="--t:30"/><rect class="ink" x="57" y="8" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="9" width="1" height="1" style="--t:2"/><rect class="ink" x="7" y="9" width="1" height="1" style="--t:5"/><rect class="sl" x="10" y="9" width="2" height="1" style="--t:22"/><rect class="ink" x="15" y="9" width="1" height="1" style="--t:11"/><rect class="ink" x="26" y="9" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="9" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="9" width="1" height="1" style="--t:25"/><rect class="ink" x="34" y="9" width="1" height="1" style="--t:30"/><rect class="ink" x="35" y="9" width="1" height="1" style="--t:27"/><rect class="ink" x="36" y="9" width="3" height="1" style="--t:25"/><rect class="ink" x="42" y="9" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="9" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="9" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="9" width="1" height="1" style="--t:27"/><rect class="ink" x="52" y="9" width="1" height="1" style="--t:30"/><rect class="ink" x="53" y="9" width="1" height="1" style="--t:27"/><rect class="ink eye" x="55" y="9" width="1" height="1" style="--t:25"/><rect class="ink" x="56" y="9" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="10" width="1" height="1" style="--t:2"/><rect class="ink" x="7" y="10" width="1" height="1" style="--t:5"/><rect class="sl" x="8" y="10" width="1" height="1" style="--t:21"/><rect class="sl" x="9" y="10" width="1" height="1" style="--t:22"/><rect class="ink" x="11" y="10" width="1" height="1" style="--t:8"/><rect class="ink" x="15" y="10" width="1" height="1" style="--t:11"/><rect class="ink" x="26" y="10" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="10" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="10" width="1" height="1" style="--t:25"/><rect class="ink" x="33" y="10" width="1" height="1" style="--t:30"/><rect class="ink" x="34" y="10" width="1" height="1" style="--t:27"/><rect class="ink" x="37" y="10" width="1" height="1" style="--t:30"/><rect class="ink" x="38" y="10" width="1" height="1" style="--t:27"/><rect class="ink" x="42" y="10" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="10" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="10" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="10" width="1" height="1" style="--t:27"/><rect class="ink" x="52" y="10" width="1" height="1" style="--t:30"/><rect class="ink" x="53" y="10" width="1" height="1" style="--t:27"/><rect class="ink eye" x="55" y="10" width="1" height="1" style="--t:25"/><rect class="ink" x="56" y="10" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="11" width="1" height="1" style="--t:2"/><rect class="sl" x="6" y="11" width="2" height="1" style="--t:21"/><rect class="ink" x="11" y="11" width="1" height="1" style="--t:8"/><rect class="ink" x="15" y="11" width="1" height="1" style="--t:11"/><rect class="ink" x="26" y="11" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="11" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="11" width="1" height="1" style="--t:25"/><rect class="ink" x="33" y="11" width="1" height="1" style="--t:30"/><rect class="ink" x="34" y="11" width="1" height="1" style="--t:27"/><rect class="ink" x="37" y="11" width="1" height="1" style="--t:30"/><rect class="ink" x="38" y="11" width="1" height="1" style="--t:27"/><rect class="ink" x="42" y="11" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="11" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="11" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="11" width="1" height="1" style="--t:27"/><rect class="ink" x="53" y="11" width="1" height="1" style="--t:30"/><rect class="ink" x="54" y="11" width="1" height="1" style="--t:27"/><rect class="ink" x="55" y="11" width="1" height="1" style="--t:25"/><rect class="ink" x="3" y="12" width="1" height="1" style="--t:2"/><rect class="sl" x="4" y="12" width="2" height="1" style="--t:21"/><rect class="ink" x="7" y="12" width="1" height="1" style="--t:5"/><rect class="ink" x="11" y="12" width="1" height="1" style="--t:8"/><rect class="ink" x="15" y="12" width="1" height="1" style="--t:11"/><rect class="ink" x="26" y="12" width="1" height="1" style="--t:30"/><rect class="ink" x="27" y="12" width="1" height="1" style="--t:27"/><rect class="ink" x="28" y="12" width="1" height="1" style="--t:25"/><rect class="ink" x="33" y="12" width="1" height="1" style="--t:30"/><rect class="ink" x="34" y="12" width="1" height="1" style="--t:27"/><rect class="ink" x="37" y="12" width="1" height="1" style="--t:30"/><rect class="ink" x="38" y="12" width="1" height="1" style="--t:27"/><rect class="ink" x="42" y="12" width="1" height="1" style="--t:30"/><rect class="ink" x="43" y="12" width="1" height="1" style="--t:27"/><rect class="ink" x="47" y="12" width="1" height="1" style="--t:30"/><rect class="ink" x="48" y="12" width="1" height="1" style="--t:27"/><rect class="ink" x="53" y="12" width="1" height="1" style="--t:30"/><rect class="ink" x="54" y="12" width="1" height="1" style="--t:27"/><rect class="ink" x="55" y="12" width="1" height="1" style="--t:25"/><rect class="sl" x="2" y="13" width="2" height="1" style="--t:21"/><rect class="ink" x="7" y="13" width="1" height="1" style="--t:6"/><rect class="ink" x="11" y="13" width="1" height="1" style="--t:8"/><rect class="ink" x="15" y="13" width="1" height="1" style="--t:12"/><rect class="ink" x="25" y="13" width="1" height="1" style="--t:30"/><rect class="ink" x="26" y="13" width="1" height="1" style="--t:27"/><rect class="ink" x="27" y="13" width="3" height="1" style="--t:25"/><rect class="ink" x="34" y="13" width="1" height="1" style="--t:30"/><rect class="ink" x="35" y="13" width="1" height="1" style="--t:27"/><rect class="ink" x="36" y="13" width="1" height="1" style="--t:25"/><rect class="ink eye" x="38" y="13" width="1" height="1" style="--t:25"/><rect class="ink" x="39" y="13" width="1" height="1" style="--t:27"/><rect class="ink eye" x="41" y="13" width="1" height="1" style="--t:25"/><rect class="ink" x="42" y="13" width="1" height="1" style="--t:27"/><rect class="ink" x="43" y="13" width="2" height="1" style="--t:25"/><rect class="ink eye" x="46" y="13" width="1" height="1" style="--t:25"/><rect class="ink" x="47" y="13" width="1" height="1" style="--t:27"/><rect class="ink" x="48" y="13" width="2" height="1" style="--t:25"/><rect class="ink" x="53" y="13" width="1" height="1" style="--t:30"/><rect class="ink" x="54" y="13" width="1" height="1" style="--t:27"/><rect class="sl" x="0" y="14" width="2" height="1" style="--t:21"/><rect class="ink" x="3" y="14" width="1" height="1" style="--t:3"/><rect class="ink" x="7" y="14" width="1" height="1" style="--t:6"/><rect class="ink" x="11" y="14" width="1" height="1" style="--t:9"/><rect class="ink" x="15" y="14" width="1" height="1" style="--t:12"/><rect class="ink" x="53" y="14" width="1" height="1" style="--t:30"/><rect class="ink" x="54" y="14" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="15" width="1" height="1" style="--t:3"/><rect class="ink" x="7" y="15" width="1" height="1" style="--t:6"/><rect class="ink" x="11" y="15" width="1" height="1" style="--t:9"/><rect class="ink" x="15" y="15" width="1" height="1" style="--t:12"/><rect class="ink" x="52" y="15" width="1" height="1" style="--t:30"/><rect class="ink" x="53" y="15" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="16" width="1" height="1" style="--t:3"/><rect class="ink" x="7" y="16" width="1" height="1" style="--t:6"/><rect class="ink" x="11" y="16" width="1" height="1" style="--t:9"/><rect class="ink" x="15" y="16" width="1" height="1" style="--t:12"/><rect class="ink" x="51" y="16" width="1" height="1" style="--t:30"/><rect class="ink" x="52" y="16" width="1" height="1" style="--t:27"/><rect class="ink" x="53" y="16" width="1" height="1" style="--t:25"/><rect class="ink" x="3" y="17" width="1" height="1" style="--t:3"/><rect class="ink" x="7" y="17" width="1" height="1" style="--t:6"/><rect class="ink" x="11" y="17" width="1" height="1" style="--t:9"/><rect class="ink" x="15" y="17" width="1" height="1" style="--t:12"/><rect class="ink" x="51" y="17" width="1" height="1" style="--t:30"/><rect class="ink" x="52" y="17" width="1" height="1" style="--t:27"/><rect class="ink" x="3" y="18" width="1" height="1" style="--t:3"/><rect class="ink" x="7" y="18" width="1" height="1" style="--t:6"/><rect class="ink" x="11" y="18" width="1" height="1" style="--t:9"/><rect class="ink" x="15" y="18" width="1" height="1" style="--t:12"/><rect class="ink" x="3" y="19" width="1" height="1" style="--t:3"/><rect class="ink" x="7" y="19" width="1" height="1" style="--t:6"/><rect class="ink" x="11" y="19" width="1" height="1" style="--t:9"/><text class="it" x="23" y="1.52" textLength="4" lengthAdjust="spacingAndGlyphs" style="--t:25">Meet</text><text class="tx" x="23" y="19.52" textLength="28" lengthAdjust="spacingAndGlyphs" style="--t:27">the CFO for your agent fleet</text></svg><!-- hero-mark:end --></div>
+  <h1>Coding agents, <em>on a budget.</em></h1>
+  <p class="lede">Tally routes each GitHub issue to a cost-effective model, caps what the task may spend, and opens a pull request only when your tests pass.</p>
+  <div class="install">
+    <div class="command" role="group" aria-label="Install command">
+      <span class="prompt" aria-hidden="true">$</span>
+      <code id="install-command">npm install -g tally-agents</code>
+      <button class="copy" type="button" data-copy="npm install -g tally-agents" hidden><span data-copy-label>Copy</span></button>
+    </div>
+    <p class="copy-status" role="status" aria-live="polite"></p>
+  </div>
+  <p class="actions"><a class="button" href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/blob/main/docs/GETTING_STARTED.md">Read the getting-started guide</a><a class="quiet" href="https://www.npmjs.com/package/tally-agents">npm</a><a class="quiet" href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">GitHub</a><button class="quiet" type="button" data-replay-mark hidden>Replay</button></p>
+</section>
 
-<main>
-<section class="install" id="install" aria-labelledby="install-title">
+<section class="band" id="video" aria-labelledby="video-title">
+  <div class="wrap narrow">
+    <p class="eyebrow">Walkthrough</p>
+    <h2 id="video-title">Watch a <em>first run</em></h2>
+    <!-- To show the real video, set data-video to a file path (onboarding.mp4) or an https embed address. Nothing else changes. -->
+    <div class="frame video-frame" data-video="">
+      <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>onboarding</span></div>
+      <div class="screen"><p class="pending"><b>Video coming</b><span>The walkthrough has not been recorded yet.</span></p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="what" aria-labelledby="what-title">
   <div class="wrap">
-    <h2 id="install-title" class="reveal">Install</h2>
-    <div class="install-grid">
-      <div class="install-left reveal">
-        <div class="command" role="group" aria-label="Install command">
-          <span class="prompt" aria-hidden="true">$</span>
-          <code id="install-command">npm install -g tally-agents</code>
-          <button class="copy" type="button" data-copy="npm install -g tally-agents" hidden><span data-copy-label>Copy</span></button>
-        </div>
-        <p class="copy-status" role="status" aria-live="polite"></p>
-        <p class="install-note">Needs Node 20 or later. The package is <code>tally-agents</code>; the command it installs is <code>tally</code>.</p>
-        <p class="install-actions"><a class="button" href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/blob/main/docs/GETTING_STARTED.md">Read the getting-started guide</a></p>
-        <p class="links"><a href="https://www.npmjs.com/package/tally-agents">tally-agents on npm</a><a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Source on GitHub</a></p>
-      </div>
+    <p class="eyebrow">What it does</p>
+    <h2 id="what-title">Five steps for <em>every issue</em></h2>
+    <ol class="steps">
+      <li><h3>Route</h3><p>Routes each GitHub issue to a cost-effective model.</p></li>
+      <li><h3>Cap</h3><p>Caps spend per task, and stops the agent at the ceiling.</p></li>
+      <li><h3>Escalate</h3><p>Escalates to a stronger model if needed, on the same branch.</p></li>
+      <li><h3>Verify</h3><p>Verifies the change by running your tests itself.</p></li>
+      <li><h3>Pull request</h3><p>Opens a pull request for the work that passed.</p></li>
+    </ol>
+    <p class="aside">Tally never merges. That decision stays with you.</p>
+  </div>
+</section>
 
-      <figure class="terminal reveal" aria-labelledby="term-caption">
+<section class="band" id="run" aria-labelledby="run-title">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">A real run</p>
+      <h2 id="run-title">One issue, <em>one cent</em></h2>
+      <p class="body">This is the terminal from a real run on <code>Vaibhaav-Tiwari/chip-design-groundup</code>. Tally sized issue #17 as small, sent it to the cheapest tier with a $0.30 ceiling, watched the spend, and opened <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18">pull request #18</a> for $0.0109, estimated at list price.</p>
+    </div>
+    <figure class="terminal" aria-labelledby="term-caption">
         <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>tally</span></div>
         <div class="term-body">
-          <pre class="term-logo" data-term-logo aria-label="The Tally logo as the command line draws it">    ▄   █       ▄       <span class="i">Meet</span>
+          <pre class="term-logo" data-term-logo aria-label="The Tally logo as the command line draws it"><!-- term-frame:start -->    ▄   █       ▄       <span class="i">Meet</span>
     █   █   █   █       <span class="b">█████████</span>         <span class="b">▀██</span>  <span class="b">▀██</span>
     █   █ ▀ █ ▀ █  <span class="s">▄</span>    <span class="b">▀</span>  <span class="b">███</span>  <span class="b">▀</span>          <span class="b">██</span>   <span class="b">██</span>
     █   █   █  <span class="s">▄</span><span class="sb">▀</span><span class="s">▀▀</span>        <span class="b">███</span>    <span class="b">▄█▀▀█▄</span>   <span class="b">██</span>   <span class="b">██</span>  <span class="b">██</span>   <span class="b">██</span>
@@ -85,7 +90,7 @@
    <span class="s">▄</span><span class="sb">▀</span><span class="s">▀▀</span> █   █   █         <span class="b">▄███▄</span>   <span class="b">▀█▄▄▀█▄</span> <span class="b">▄██▄</span> <span class="b">▄██▄</span>   <span class="b">██▀</span>
  <span class="s">▀▀</span> █   █   █   █                                    <span class="b">▄█▀</span>
     █   █   █   █                                   <span class="b">██▀</span>
-    █   █   █   ▀       the CFO for your agent fleet</pre>
+    █   █   █   ▀       the CFO for your agent fleet<!-- term-frame:end --></pre>
           <div class="term-lines" data-term-lines>
             <p class="cmd"><span class="ps">$</span> tally init</p>
             <p>Tally init proposed changes:</p>
@@ -105,33 +110,16 @@
             <p>summary: 1 passed, 0 failed, 0 skipped; total $0.0109 against run cap $1.00</p>
           </div>
         </div>
-        <figcaption id="term-caption">The logo is the command line's own animation, frame for frame. The lines below it are from the real run that opened <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18">pull request #18</a>, with other lines left out and long ids shortened. <button class="ghost small" type="button" data-replay-term hidden>Replay</button></figcaption>
+        <figcaption id="term-caption">The logo is the command line's own animation, frame for frame. The lines below it are from the real run that opened <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18">pull request #18</a>, with other lines left out and long ids shortened. <button class="quiet" type="button" data-replay-term hidden>Replay</button></figcaption>
       </figure>
-    </div>
   </div>
 </section>
 
-<section class="what" id="what" aria-labelledby="what-title">
+<section class="band" id="switches" aria-labelledby="switches-title">
   <div class="wrap">
-    <h2 id="what-title" class="reveal">Five moves on every issue.</h2>
-    <div class="flow-box reveal" data-flow>
-      <div class="rail" aria-hidden="true"><i class="token">#17</i></div>
-      <ol class="flow">
-        <li><span class="node" aria-hidden="true"><svg viewBox="0 0 46 46"><path d="M6 24h10c6 0 6-12 12-12h8M16 24c6 0 6 12 12 12h8"/><path d="m32 8 5 4-5 4M32 32l5 4-5 4"/></svg></span><h3>Route</h3><p>Routes each GitHub issue to a cost-effective model.</p></li>
-        <li><span class="node" aria-hidden="true"><svg viewBox="0 0 46 46"><path d="M8 12h30"/><path d="M14 38V24M23 38V18M32 38V28"/><path d="M8 12v4M38 12v4"/></svg></span><h3>Cap</h3><p>Caps spend per task, and stops the agent at the ceiling.</p></li>
-        <li><span class="node" aria-hidden="true"><svg viewBox="0 0 46 46"><path d="M8 36h9V26h9V16h9"/><path d="m30 11 5 5 5-5M35 16V6"/></svg></span><h3>Escalate</h3><p>Escalates to a stronger model if needed, on the same branch.</p></li>
-        <li><span class="node" aria-hidden="true"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="15"/><path d="m15 23 6 6 11-12"/></svg></span><h3>Verify</h3><p>Verifies the change by running your tests itself.</p></li>
-        <li><span class="node" aria-hidden="true"><svg viewBox="0 0 46 46"><circle cx="12" cy="10" r="4"/><circle cx="12" cy="36" r="4"/><circle cx="34" cy="36" r="4"/><path d="M12 14v18M34 32V20c0-5-3-8-8-8h-4"/><path d="m26 7-5 5 5 5"/></svg></span><h3>Pull request</h3><p>Opens a pull request for the work that passed.</p></li>
-      </ol>
-    </div>
-    <p class="never reveal">Tally never merges. That decision stays with you.</p>
-  </div>
-</section>
-
-<section class="toggles" id="toggles" aria-labelledby="toggles-title">
-  <div class="wrap">
-    <h2 id="toggles-title" class="reveal">Three switches.</h2>
-    <p class="lede reveal">Tally runs on its own. Each of these adds something to the same run when it is on. Flip them and watch one real run change.</p>
+    <p class="eyebrow">Integrations</p>
+    <h2 id="switches-title">Three switches, <em>one run</em></h2>
+    <p class="body">Tally runs on its own. Each of these adds something to the same run when it is on.</p>
     <div class="tg-grid reveal">
       <div class="switches">
         <div class="sw" data-product="entire">
@@ -167,89 +155,48 @@
           <div class="meter" aria-hidden="true"><i data-f="meter" style="width:0.03%"></i></div>
           <p class="src" data-f="spend">$0.0109 for this run, written back to cfo.ai and reconciled to the ledger</p>
         </div>
-        <p class="fine">Values are from <code>run-20261011-130259Z</code>, the run behind pull request #18. It ran with Entire off, neatlogs on and cfo.ai on. In any other setting the panel shows what Tally would record differently; it shows no ids or amounts that run did not produce.</p>
+        <p class="fine"><p class="fine">Values are from <code>run-20261011-130259Z</code>, the run behind pull request #18. It ran with Entire off, neatlogs on and cfo.ai on. In any other setting the panel shows what Tally would record differently; it shows no ids or amounts that run did not produce.</p>
       </div>
     </div>
   </div>
-</section>
 
-<section class="ao" id="orchestrator" aria-labelledby="ao-title">
-  <div class="wrap">
-    <h2 id="ao-title" class="reveal">Better with a conductor.</h2>
-    <p class="ao-lede reveal">With <a href="https://github.com/OrchestratorInc/agent-orchestrator">Agent Orchestrator</a>, Tally runs agents in parallel. Without it, Tally runs Claude Code or Codex directly, one task at a time.</p>
-  </div>
-  <figure class="stage" data-stage>
-    <div class="stage-plate" role="img" aria-label="The blue Agent Orchestrator mascot raises its conductor's baton; a row of small tally marks rises through the air towards the large Tally mark">
-      <i class="veil v1"></i><i class="veil v2"></i><i class="veil v3"></i><i class="veil v4"></i>
-      <i class="spark"></i>
-      <i class="star t1"></i><i class="star t2"></i><i class="star t3"></i><i class="star t4"></i><i class="star t5"></i>
-    </div>
-  </figure>
-  <div class="wrap">
-    <div class="modes reveal">
-      <div class="mode"><h3>With Agent Orchestrator</h3><p>Several tasks at once, each agent in its own worktree. <code>tally init</code> finds Agent Orchestrator and sets it up as the runner.</p></div>
-      <div class="mode"><h3>Without it</h3><p>Tally starts Claude Code or Codex itself and works through the tasks one at a time. No Agent Orchestrator needed.</p></div>
-    </div>
-    <p class="credit">The mascot is Agent Orchestrator's, from <a href="https://github.com/OrchestratorInc/agent-orchestrator">OrchestratorInc/agent-orchestrator</a> (Apache-2.0), shown here in a painted scene.</p>
   </div>
 </section>
 
-<section class="video" id="video" aria-labelledby="video-title">
+<section class="band" id="orchestrator" aria-labelledby="ao-title">
   <div class="wrap">
-    <h2 id="video-title" class="reveal">Watch a first run.</h2>
-    <!-- To show the real video, set data-video to a file path (onboarding.mp4) or an https embed address. Nothing else changes. -->
-    <div class="tv reveal" data-video="">
-      <div class="tube">
-        <div class="snow" aria-hidden="true"></div>
-        <p class="coming"><b>Video coming</b><span>The onboarding walkthrough has not been recorded yet.</span></p>
-      </div>
-      <div class="tv-foot" aria-hidden="true"><span>Tally</span><i></i><i></i><i class="lamp"></i></div>
+    <p class="eyebrow">Agent Orchestrator</p>
+    <h2 id="ao-title">In parallel, <em>or one at a time</em></h2>
+    <div class="modes">
+      <div class="mode"><img src="ao-mascot.png" alt="Agent Orchestrator mascot" width="56" height="56" loading="lazy"><h3>With Agent Orchestrator</h3><p>Tally runs agents in parallel, each in its own worktree.</p></div>
+      <div class="mode"><h3>Without it</h3><p>Tally runs Claude Code or Codex directly, one task at a time.</p></div>
     </div>
+    <p class="aside small"><code>tally init</code> detects which you have. Mascot from <a href="https://github.com/OrchestratorInc/agent-orchestrator">OrchestratorInc/agent-orchestrator</a>, Apache-2.0.</p>
   </div>
 </section>
 
-<section class="proof" id="proof" aria-labelledby="proof-title">
-  <figure class="desert" data-parallax>
-    <div class="plate" role="img" aria-label="Giant Tally marks standing as monuments in a red desert under a crimson sky"></div>
-  </figure>
+<section class="band light" id="judges" aria-labelledby="judges-title">
   <div class="wrap">
-    <h2 id="proof-title" class="reveal">Proof, with receipts.</h2>
-    <p class="lede reveal">There are four ways Tally can run an agent. Each has finished a real run on <code>Vaibhaav-Tiwari/chip-design-groundup</code> that ended in a pull request. Costs are estimated at list price.</p>
-    <ul class="receipts reveal">
-      <li><h3>Codex through Agent Orchestrator</h3><p class="cost"><span data-count="0.0121">$0.0121</span></p><p><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/10">pull request #10</a></p><p class="run">run-20261011-092229Z</p></li>
-      <li><h3>Claude Code through Agent Orchestrator</h3><p class="cost"><span data-count="0.0871">$0.0871</span></p><p><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/13">pull request #13</a></p><p class="run">run-20261011-123546Z</p></li>
-      <li><h3>Claude Code, direct</h3><p class="cost"><span data-count="0.0765">$0.0765</span></p><p><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/14">pull request #14</a></p><p class="run">run-20261011-123814Z</p></li>
-      <li><h3>Codex, direct</h3><p class="cost"><span data-count="0.0109">$0.0109</span></p><p><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18">pull request #18</a></p><p class="run">run-20261011-130259Z</p></li>
+    <p class="eyebrow">neatHack 2026</p>
+    <h2 id="judges-title">For the <em>judges</em></h2>
+    <p class="body">This section is being built: one block per judging criterion, each with its weight, its wording and evidence you can open.</p>
+  </div>
+</section>
+
+<section class="band" id="contact" aria-labelledby="contact-title">
+  <div class="wrap narrow">
+    <p class="eyebrow">Contact</p>
+    <h2 id="contact-title">Say <em>hello</em></h2>
+    <ul class="ways">
+      <li><span>Email</span><a href="mailto:vaibhaavtiwari@gmail.com">vaibhaavtiwari@gmail.com</a></li>
+      <li><span>X</span><a href="https://x.com/battarchicken">@battarchicken</a></li>
+      <li><span>npm</span><a href="https://www.npmjs.com/package/tally-agents">tally-agents</a></li>
+      <li><span>GitHub</span><a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a></li>
     </ul>
-    <div class="also reveal">
-      <div><h3>Stopped at the ceiling, then finished</h3><p>On <code>fly-doom-jev</code>, with a ceiling set low on purpose, the first attempt was stopped at $0.0153 against $0.0150. The next model up continued the same branch and passed for $0.0815: <a href="https://github.com/Vaibhaav-Tiwari/fly-doom-jev/pull/14">pull request #14</a>. This has been proven once.</p></div>
-      <div><h3>665 automated tests</h3><p>All passing when this page was built. They cover routing, ceilings, the ledger and every runner with fakes; the runs above are what prove it against real agents.</p></div>
-      <div><h3>What is not proven</h3><p>Parallel workers, and escalation on the direct runner, have not been shown in a real run yet. The <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack#real-run-evidence">README keeps the list</a>.</p></div>
-    </div>
-  </div>
-</section>
-
-<section class="contact" id="contact" aria-labelledby="contact-title">
-  <div class="wrap">
-    <div class="calling-card reveal">
-      <!-- Artwork slot "contact": drop site/art/contact.webp to add the painted figure. -->
-      <div class="art art-contact" aria-hidden="true"></div>
-      <div class="fronds" aria-hidden="true"></div>
-      <h2 id="contact-title">Contact us</h2>
-      <p class="card-line">Questions, a repository you want to try it on, or a bill that surprised you.</p>
-      <ul class="ways">
-        <li><span>Email</span><a href="mailto:vaibhaavtiwari@gmail.com">vaibhaavtiwari@gmail.com</a></li>
-        <li><span>X</span><a href="https://x.com/battarchicken">@battarchicken</a></li>
-        <li><span>npm</span><a href="https://www.npmjs.com/package/tally-agents">tally-agents</a></li>
-        <li><span>GitHub</span><a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a></li>
-      </ul>
-    </div>
-    <p class="colophon">Tally was built for neatHack, October 2026.</p>
   </div>
 </section>
 </main>
 
-<div class="grain" aria-hidden="true"></div>
 <script src="logo-frames.js" defer></script>
 <script src="main.js" defer></script>
 </body>

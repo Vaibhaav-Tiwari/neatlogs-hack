@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FRAME_MS, compactLogo, logoFrames } from './logo.js';
+// @ts-expect-error plain JavaScript helper shared with the page's build script
+import { markSvg, readFrame } from '../site/tools/mark-svg.mjs';
 
 // The project page promises the terminal replays the real CLI animation. The
 // generator in site/tools/build-frames.mjs reads dist/, so this checks the
@@ -23,6 +25,19 @@ describe('project page terminal frames', () => {
     logoFrames('truecolor').forEach((frame, index) => {
       expect((data.frames[index]!.match(/class="[^"]*\bsb?\b[^"]*"/g) ?? []).length).toBe(coloured(frame));
     });
+  });
+  it('the hero and nav marks are the settled CLI frame, square for square', () => {
+    const page = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
+    const frames = logoFrames('truecolor');
+    expect(page).toContain(markSvg(frames));
+    expect(page).toContain(markSvg(frames, { crop: 19, animate: false, title: 'Tally', className: 'pixel-mark small' }));
+    // Every lit half-cell of the terminal's last frame is one square in the mark, in the same colour.
+    const last = readFrame(frames.at(-1));
+    const squares = [...markSvg(frames).matchAll(/<rect class="(ink|sl)[^"]*" x="(\d+)" y="(\d+)" width="(\d+)"/g)];
+    const drawn = new Map<string, string>();
+    for (const [, kind, x, y, w] of squares) for (let i = 0; i < Number(w); i++) drawn.set(`${Number(x) + i},${y}`, kind === 'sl' ? 'slash' : 'ink');
+    expect(drawn).toEqual(last.pixels);
+    expect(last.texts.map((run: { text: string }) => run.text)).toEqual(['Meet', 'the CFO for your agent fleet']);
   });
   it('the page without JavaScript shows the settled frame', () => {
     const page = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');

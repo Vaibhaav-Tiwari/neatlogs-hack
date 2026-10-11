@@ -1,5 +1,5 @@
-// Tally project page. The page reads fine without this file; it adds the
-// copy button, the replayed terminal, scroll reveals and the hero replay.
+// Tally project page. The page reads fine without this file; it adds the copy
+// button, the replayed terminal, the three switches, scroll reveals and replays.
 
 const still = window.matchMedia('(prefers-reduced-motion: reduce)');
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -14,58 +14,6 @@ if ('IntersectionObserver' in window && !still.matches) {
   reveals.forEach((node) => seen.observe(node));
 } else {
   reveals.forEach((node) => node.classList.add('in'));
-}
-
-// ---------- painted hero: switch it on only once the file has really loaded ----------
-
-const heroArt = document.querySelector('.art-hero[data-art]');
-if (heroArt) {
-  const probe = new Image();
-  probe.onload = () => heroArt.closest('.hero').classList.add('has-hero-art');
-  probe.src = heroArt.dataset.art;
-}
-
-// ---------- parallax: the painted plate drifts more slowly than the page ----------
-
-const plates = [...document.querySelectorAll('[data-parallax]')];
-if (plates.length && !still.matches) {
-  let queued = false;
-  const slide = () => {
-    queued = false;
-    for (const frame of plates) {
-      const box = frame.getBoundingClientRect();
-      if (box.bottom < 0 || box.top > innerHeight) continue;
-      // -1 when the frame is just below the screen, 1 when it has just left the top.
-      const progress = (innerHeight / 2 - (box.top + box.height / 2)) / ((innerHeight + box.height) / 2);
-      frame.querySelector('.plate').style.transform = `translate3d(0, ${(progress * -9).toFixed(2)}%, 0) scale(${(1.04 + Math.abs(progress) * 0.03).toFixed(3)})`;
-    }
-  };
-  const request = () => { if (!queued) { queued = true; requestAnimationFrame(slide); } };
-  addEventListener('scroll', request, { passive: true });
-  addEventListener('resize', request);
-  slide();
-}
-
-// ---------- Agent Orchestrator stage: the baton's spark wakes each small tally in turn ----------
-
-const stage = document.querySelector('[data-stage]');
-if (stage && 'IntersectionObserver' in window && !still.matches) {
-  stage.classList.add('armed');
-  const conduct = new IntersectionObserver((entries) => {
-    if (entries.some((entry) => entry.isIntersecting)) { conduct.disconnect(); stage.classList.add('go'); }
-  }, { threshold: 0.55 });
-  conduct.observe(stage);
-}
-
-// ---------- the five-station flow runs only while it is on screen ----------
-
-const flow = document.querySelector('[data-flow]');
-if (flow) {
-  if ('IntersectionObserver' in window && !still.matches) {
-    new IntersectionObserver((entries) => flow.classList.toggle('run', entries.some((entry) => entry.isIntersecting)), { threshold: 0.2 }).observe(flow);
-  } else {
-    flow.classList.add('run');
-  }
 }
 
 // ---------- three switches redraw one real run ----------
@@ -139,10 +87,10 @@ if (counters.length && 'IntersectionObserver' in window && !still.matches) {
 
 // ---------- onboarding video: one attribute swaps the placeholder for the real thing ----------
 
-const tv = document.querySelector('.tv[data-video]');
+const tv = document.querySelector('.video-frame[data-video]');
 if (tv && tv.dataset.video.trim()) {
   const source = tv.dataset.video.trim();
-  const tube = tv.querySelector('.tube');
+  const tube = tv.querySelector('.screen');
   let player = null;
   if (/\.(mp4|webm|mov)(\?.*)?$/i.test(source)) {
     player = document.createElement('video');
@@ -232,18 +180,15 @@ if (logo && window.TALLY_LOGO && !still.matches) {
   }
 }
 
-// ---------- hero: play the draw-in again ----------
+// ---------- the mark: play the CLI's draw-in again ----------
 
-const hero = document.querySelector('.hero');
-function armHeroReplay() {
-  const button = hero.querySelector('[data-replay-hero]');
-  button.hidden = false;
-  button.addEventListener('click', () => {
-    // CSS animations restart only when their elements re-enter the page.
-    const stage = hero.querySelector('.hero-stage');
-    stage.replaceWith(stage.cloneNode(true));
-    armHeroReplay();
-    hero.querySelector('[data-replay-hero]').focus();
+const markStage = document.querySelector('[data-mark]');
+const replayMark = document.querySelector('[data-replay-mark]');
+if (markStage && replayMark && !still.matches) {
+  replayMark.hidden = false;
+  replayMark.addEventListener('click', () => {
+    // CSS animations restart only when their element re-enters the page.
+    const mark = markStage.querySelector('svg');
+    mark.replaceWith(mark.cloneNode(true));
   });
 }
-if (hero && hero.querySelector('[data-replay-hero]') && !still.matches) armHeroReplay();
