@@ -6,7 +6,7 @@ import { loadConfig } from './config.js';
 import { loadEnv } from './env.js';
 import { checkSetupPostCreate, checkWorkerAutoMode } from './preflight.js';
 
-export type DoctorStatus = 'connected' | 'missing' | 'broken';
+export type DoctorStatus = 'connected' | 'missing' | 'broken' | 'off';
 
 export interface DoctorLine {
   product: string;
@@ -119,8 +119,9 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
     if (setupPostCreate) lines.push(setupPostCreate);
   }
   lines.push(await commandLine('GitHub CLI', runner, 'gh', ['auth', 'status'], 'gh auth login'));
-  lines.push(await commandLine('Entire CLI', runner, 'entire', ['--version'], 'pipx install entire'));
-  lines.push(await commandLine('Entire graph plugin', runner, 'entire', ['graph', '--help'], 'entire enable'));
+  const off = (product: string): DoctorLine => ({ product, status: 'off', detail: 'disabled in tally.yaml; not required', fix: null });
+  lines.push(config?.integrations.entire === false ? off('Entire CLI') : await commandLine('Entire CLI', runner, 'entire', ['--version'], 'pipx install entire'));
+  lines.push(config?.integrations.entire === false ? off('Entire graph plugin') : await commandLine('Entire graph plugin', runner, 'entire', ['graph', '--help'], 'entire enable'));
   if (config?.integrations.entire) {
     const cwd = resolve(dirname(options.configPath!), config.repo.path);
     try {
@@ -132,7 +133,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
     }
   }
   lines.push(
-    env.NEATLOGS_API_KEY
+    config?.integrations.neatlogs === false ? off('neatlogs key') : env.NEATLOGS_API_KEY
       ? { product: 'neatlogs key', status: 'connected', detail: 'NEATLOGS_API_KEY is set', fix: null }
       : {
           product: 'neatlogs key',
@@ -141,6 +142,10 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
           fix: "mkdir -p ~/.tally && printf 'NEATLOGS_API_KEY=...\\n' >> ~/.tally/.env",
         },
   );
+  if (config?.integrations.cfoai === false && config.budget.source !== 'cfoai') {
+    lines.push(off('cfo.ai'));
+    return lines;
+  }
   const cfoai = await cfoaiCheck();
   lines.push({
     product: 'cfo.ai',

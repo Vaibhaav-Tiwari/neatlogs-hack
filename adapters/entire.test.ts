@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { CommandResult, CommandRunner } from './entire.js';
 import { EntireSizingAdapter } from './entire.js';
 import { sizeFromSignals } from '../agent/sizer.js';
+import { RepositorySizingAdapter } from './repository-sizing.js';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 class FakeRunner implements CommandRunner {
   calls: Array<{ command: string; args: string[] }> = [];
@@ -62,14 +66,21 @@ describe('EntireSizingAdapter', () => {
     ]);
   });
 
-  it('falls back to rg code search when entire is missing', async () => {
+  it('falls back to the shared repository sizing adapter when entire is missing', async () => {
+    const repoPath = mkdtempSync(join(tmpdir(), 'tally-entire-fallback-'));
+    mkdirSync(join(repoPath, 'src/refund'), { recursive: true });
+    mkdirSync(join(repoPath, 'tests'));
+    writeFileSync(join(repoPath, 'src/refund/validator.ts'), 'refund.validate(-5)');
+    writeFileSync(join(repoPath, 'tests/refund.test.ts'), 'refund.validate(-5)');
     const runner = new FakeRunner((command, args) => {
       if (command === 'entire') return new Error('entire missing');
-      if (command === 'rg' && args.includes('validator')) return { stdout: '/repo/src/refund/validator.ts\n/repo/tests/refund.test.ts\n' };
+      if (command === 'git' && args.includes('ls-files')) return { stdout: 'src/refund/validator.ts\0tests/refund.test.ts\0' };
       return new Error('no matches');
     });
-    const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner });
+    const adapter = new EntireSizingAdapter({ repoPath, runner });
     const signals = await adapter.signalsFor(task);
+    const shared = await new RepositorySizingAdapter({ repoPath, listFiles: async () => ['src/refund/validator.ts', 'tests/refund.test.ts'] }).signalsFor(task);
+    expect(signals).toEqual(shared);
     expect(signals).toMatchObject({ filesTouched: 2, dependents: 0, testsPresent: true, source: 'code-search' });
     expect(signals?.impact?.nodes.map((node) => node.id)).toEqual(['src/refund/validator.ts', 'tests/refund.test.ts']);
     expect(signals?.impact?.nodes.every((node) => node.kind === 'target')).toBe(true);

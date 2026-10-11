@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { stringify as stringifyYaml } from 'yaml';
+import { execFileSync } from 'node:child_process';
 import { loadConfig } from './config.js';
 import { CODEX_LIST_PRICES } from './pricing.js';
 import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
@@ -283,6 +284,20 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it('uses real repository sizing with Entire off and fake worker/verifier ports', async () => {
+    const { dir, configPath } = fixture();
+    writeFileSync(join(dir, 'index.html'), '<main>Static site</main>');
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['add', 'index.html'], { cwd: dir });
+    const worker = new FakeWorker();
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: { tasks: async () => [{ taskId: 'README', title: 'Add README.md', body: 'Create README.md to document how the repository is used. Keep it under 80 lines. Do not change any existing file.', size: 'medium', outcomes: ['passed'], issueNumber: null, issueUrl: null }] },
+        worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+    expect(worker.starts[0]?.tier.name).toBe('cheap');
+    expect(result.ledger[0]?.size).toBe('small');
+    expect(result.ledger[0]?.decision).toContain('from the issue text and a search of the repository');
+    expect(result.runState.tasks[0]?.impact?.nodes.map(node => node.id)).toEqual(['README.md']);
+  });
   it.each(['file', 'github-issues'] as const)('records %s backlog provenance even with zero tasks', async (source) => {
     const { dir, configPath } = fixture();
     const config = loadConfig(configPath);

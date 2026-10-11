@@ -257,7 +257,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
         const route = task.skipped
           ? 'skip'
           : `${task.tier} ${task.harness}/${task.model} ceiling ${task.ceilingNanos === null ? 'none' : formatUsd(task.ceilingNanos)}`;
-        io.stdout(`${task.taskId}: ${task.size} -> ${route}`);
+        io.stdout(`${task.taskId}: ${task.size} (confidence ${task.confidence.toFixed(2)}) -> ${route}`);
         io.stdout(`  ${task.decision}`);
       }
       return 0;
@@ -304,7 +304,7 @@ async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
     for (const line of result.doctor) {
       io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
     }
-    return result.doctor.some((line) => line.status !== 'connected') ? 1 : 0;
+    return result.doctor.some((line) => line.status !== 'connected' && line.status !== 'off') ? 1 : 0;
   } catch (e) {
     io.stderr(`tally init: ${e instanceof Error ? e.message : 'initialization failed; no changes confirmed'}`);
     return 2;
@@ -368,7 +368,7 @@ async function doctorCommand(options: CliOptions, io: CliIO): Promise<number> {
   for (const line of lines) {
     io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
   }
-  return lines.some((line) => line.status !== 'connected') ? 1 : 0;
+  return lines.some((line) => line.status !== 'connected' && line.status !== 'off') ? 1 : 0;
 }
 
 async function marketCommand(options: CliOptions, io: CliIO): Promise<number> {

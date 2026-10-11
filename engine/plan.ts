@@ -5,6 +5,7 @@ import type { BudgetPort, SizingSignalsPort } from '../agent/ports.js';
 import { routeTask } from '../agent/router.js';
 import { sizeTask } from '../agent/sizer.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
+import { RepositorySizingAdapter } from '../adapters/repository-sizing.js';
 import { CfoaiBudgetAdapter } from '../adapters/cfoai.js';
 import { ConfigBacklogIntake } from '../adapters/github.js';
 import { usdToNanos } from '../schema/index.js';
@@ -17,6 +18,7 @@ export interface PlannedTask {
   taskId: string;
   title: string;
   size: TaskSize;
+  confidence: number;
   tier: string | null;
   model: string | null;
   harness: string | null;
@@ -51,12 +53,6 @@ class PlanBudget implements BudgetPort {
   }
 }
 
-const nullSignals: SizingSignalsPort = {
-  async signalsFor() {
-    return null;
-  },
-};
-
 export async function readPlanBudget(config: TallyConfig, options: Pick<PlanOptions, 'budgetUsd'>): Promise<PlanBudgetInfo> {
   if (options.budgetUsd !== undefined) return { source: 'config', limitNanos: usdToNanos(options.budgetUsd) };
   if (config.budget.source === 'cfoai') {
@@ -78,7 +74,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
   const signals =
     options.signals ??
     dryRunPorts.signals ??
-    (config.integrations.entire ? new EntireSizingAdapter({ repoPath: resolve(configDir, config.repo.path) }) : nullSignals);
+    (config.integrations.entire ? new EntireSizingAdapter({ repoPath: resolve(configDir, config.repo.path) }) : new RepositorySizingAdapter({ repoPath: resolve(configDir, config.repo.path) }));
   const intake = dryRunPorts.intake ?? new ConfigBacklogIntake();
   const tasks = (await intake.tasks(config, options.configPath)).filter((task) => {
     if (options.only === undefined) return true;
@@ -101,6 +97,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         taskId: task.taskId,
         title: task.title,
         size: estimate.size,
+        confidence: estimate.confidence,
         tier: route.tier.name,
         model: route.tier.model,
         harness: route.tier.harness,
@@ -113,6 +110,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         taskId: task.taskId,
         title: task.title,
         size: estimate.size,
+        confidence: estimate.confidence,
         tier: null,
         model: null,
         harness: null,

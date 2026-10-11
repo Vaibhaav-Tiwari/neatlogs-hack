@@ -69,8 +69,10 @@ function plural(count: number, noun: string): string {
 function summarise(signals: SizingSignals | null): string {
   if (!signals) return 'no sizing signals';
   const files = `${plural(signals.filesTouched, 'file')} touched`;
-  const dependents = signals.dependents === 0 ? 'no dependents' : plural(signals.dependents, 'dependent');
-  return `${files}, ${dependents} and ${signals.testsPresent ? 'tests present' : 'no tests'}`;
+  const dependents = signals.scope && signals.source === 'code-search' ? 'dependents unmeasured' : signals.dependents === 0 ? 'no dependents' : plural(signals.dependents, 'dependent');
+  const source = signals.scope ? ' from the issue text and a search of the repository' : '';
+  const newFiles = signals.scope?.newFiles.length ? ` (create: ${signals.scope.newFiles.join(', ')})` : '';
+  return `${files}${source}${newFiles}, ${dependents} and ${signals.testsPresent ? 'tests present' : 'no tests'}${signals.scope?.createOnly ? '; no existing edits requested' : ''}${signals.scope?.truncated ? '; search bounded/truncated' : ''}`;
 }
 
 /** The deterministic rules. */
@@ -89,11 +91,16 @@ export function sizeFromSignals(task: TaskInput, signals: SizingSignals | null):
   const index = Math.min(2, files + (broad ? 1 : 0));
 
   let confidence = 0.5;
-  confidence += signals.testsPresent ? 0.2 : -0.15;
+  const isolatedCreation = signals.scope?.createOnly && signals.scope.existingFiles.length === 0 && signals.scope.newFiles.length === signals.filesTouched;
+  confidence += signals.testsPresent ? 0.2 : isolatedCreation ? 0 : -0.15;
   confidence += specific * 0.25;
+  if (signals.scope?.namedTargets === signals.filesTouched) confidence += 0.2;
+  if (signals.scope?.truncated) confidence -= 0.2;
   confidence -= dependents * 0.1;
   if (signals.source === 'code-search') confidence -= 0.1;
   if (broad) confidence -= 0.1;
+  // Target-only local evidence cannot provide graph-level certainty.
+  if (signals.scope && signals.source === 'code-search') confidence = Math.min(confidence, 0.85);
 
   return { ...base, size: SIZES[index]!, confidence: round2(clamp01(confidence)) };
 }
