@@ -9,7 +9,7 @@ import type { WorkerPort, WorkerResult, WorkerStartInput } from '../engine/real.
 import type { TallyConfig, TokenUsage } from '../schema/index.js';
 import { runCommand } from './command.js';
 import type { CommandRunner } from './ao.js';
-import { claudeAllowList } from '../engine/harness.js';
+import { checkHarness } from '../engine/harness.js';
 
 type Json = Record<string, unknown>;
 function record(value: unknown): Json { return value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {}; }
@@ -63,21 +63,19 @@ export class ClaudeUsageMeter {
 
 export async function checkDirectHarness(harness: string, command: CommandRunner = runCommand): Promise<void> {
   if (harness !== 'claude-code') throw new Error(`Direct runner does not support harness "${harness}" yet; no harness will be substituted.`);
-  let loggedIn = false;
-  try { loggedIn = record(JSON.parse((await command('claude', ['auth', 'status'])).stdout)).loggedIn === true; }
-  catch (error) {
-    throw new Error(`Claude Code is required for runner: direct with harness: claude-code; install claude and run claude auth login. ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (!loggedIn) throw new Error('Claude Code is signed out; run claude auth login before starting Tally. No harness will be substituted.');
+  const status = await checkHarness(harness, command);
+  if (!status.installed) throw new Error(`Claude Code is required for runner: direct; ${status.detail}. ${status.fix}. No harness will be substituted.`);
+  if (!status.signedIn) throw new Error(`${status.detail}; run ${status.fix} before starting Tally. No harness will be substituted.`);
 }
 
-export function claudeArguments(input: WorkerStartInput, checkoutPath: string, sessionId: string, test: TallyConfig['test'], approvedRules?: string[]): string[] {
-  const supported = claudeAllowList(test);
-  const approved = new Set(approvedRules ?? supported);
-  const allow = [`Read(/${checkoutPath}/**)`, ...(approved.has('Edit(./**)') ? [`Edit(/${checkoutPath}/**)`] : []),
-    ...supported.filter(rule => rule.startsWith('Bash(') && approved.has(rule))];
+export function requireClaudeConsent(approvedRules: string[] | undefined): asserts approvedRules is string[] {
+  if (!approvedRules?.length) throw new Error('Claude Code worker consent is missing (claudeCode.allow); run tally init to review and approve its allow-list before starting a worker.');
+}
+
+export function claudeArguments(input: WorkerStartInput, sessionId: string, approvedRules: string[]): string[] {
+  requireClaudeConsent(approvedRules);
   return ['-p', '--model', input.model, '--session-id', sessionId, '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-    '--permission-mode', 'dontAsk', '--allowedTools', ...allow,
+    '--permission-mode', 'dontAsk', '--allowedTools', ...approvedRules,
     '--disallowedTools', 'Bash(git push *)', 'Bash(gh *)', 'WebFetch', 'WebSearch', 'Agent',
     '--tools', 'Read,Edit,Write,Glob,Grep,Bash', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'];
 }
@@ -115,6 +113,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
   }
 
   async start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string; checkoutPath: string; setupDurationMs: number }> {
+    requireClaudeConsent(this.options.approvedRules);
     await checkDirectHarness(input.harness, this.command);
     const previous = input.continueSessionId ? this.sessions.get(input.continueSessionId) : undefined;
     if (input.continueBranch && (!previous?.closed || previous.branch !== input.continueBranch)) throw new Error('Direct continuation requires a stopped worker on the same branch.');
@@ -141,7 +140,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
       const env = { ...process.env };
       // Do not attribute the child to the AO session running Tally or trigger nested-Claude detection.
       for (const key of Object.keys(env)) if (key === 'CLAUDECODE' || key.startsWith('AO_') || key.startsWith('ORCA_')) delete env[key];
-      const child = (this.options.launch ?? ((file, args, options) => spawn(file, args, options)))('claude', claudeArguments(input, checkoutPath, sessionId, this.options.test, this.options.approvedRules), { cwd: checkoutPath, env, detached: true, stdio: 'pipe' });
+      const child = (this.options.launch ?? ((file, args, options) => spawn(file, args, options)))('claude', claudeArguments(input, sessionId, this.options.approvedRules), { cwd: checkoutPath, env, detached: true, stdio: 'pipe' });
       const meter = new ClaudeUsageMeter();
       let complete!: () => void;
       const session: Session = { child, branch, checkoutPath, directory, meter, completion: new Promise(resolve => { complete = resolve; }), closed: false, stopped: false, error: null, denied: false };

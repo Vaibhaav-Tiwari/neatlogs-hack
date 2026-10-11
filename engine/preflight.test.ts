@@ -41,15 +41,27 @@ describe('real run preflight', () => {
     const { configPath } = writeConfig();
     const config = loadConfig(configPath);
     config.runner = 'direct';
+    config.claudeCode = { allow: ['Edit(./**)', 'Write(./**)', 'Bash(npm test)'] };
     delete config.tiers[0]!.sessionMode;
     const calls: string[] = [];
     await validateRealRunConfig(config, configPath, async (file, args) => {
       calls.push(`${file} ${args.join(' ')}`);
       return { stdout: '{"loggedIn":true}', stderr: '' };
     });
-    expect(calls).toEqual(['claude auth status']);
+    expect(calls).toEqual(['claude --version', 'claude auth status']);
     config.tiers[0]!.harness = 'codex';
     await expect(validateRealRunConfig(config, configPath, async () => ({ stdout: '{}', stderr: '' }))).rejects.toThrow('no harness will be substituted');
+  });
+  it('requires direct Claude consent before checking auth or spawning', async () => {
+    const { configPath } = writeConfig();
+    const config = loadConfig(configPath);
+    config.runner = 'direct';
+    const calls: string[] = [];
+    await expect(validateRealRunConfig(config, configPath, async file => {
+      calls.push(file);
+      return { stdout: '{"loggedIn":true}', stderr: '' };
+    })).rejects.toThrow('run tally init');
+    expect(calls).toEqual([]);
   });
   it('reports missing AO executable as a prerequisite error before any run output or worker', async () => {
     const { configPath } = writeConfig(', aoProject: "test-project"');
