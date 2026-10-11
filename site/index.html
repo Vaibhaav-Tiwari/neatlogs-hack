@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tally, the CFO for your agent fleet</title>
+<meta name="description" content="Tally routes GitHub issues to a cost-effective coding model, caps spend per task, escalates if needed, verifies the change and opens a pull request. It never merges.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Meet Tally, the CFO for your agent fleet">
+<meta property="og:description" content="Routes GitHub issues to a cost-effective model, caps spend per task, escalates if needed, verifies the change and opens a pull request.">
+<meta property="og:image" content="art/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@battarchicken">
+<meta name="twitter:title" content="Meet Tally, the CFO for your agent fleet">
+<meta name="twitter:description" content="Routes GitHub issues to a cost-effective model, caps spend per task, escalates if needed, verifies the change and opens a pull request.">
+<meta name="twitter:image" content="art/og.png">
+<meta name="theme-color" content="#0a0716">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=IBM+Plex+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,900;1,500&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.add('js');</script>
+</head>
+<body>
+<a class="skip" href="#install">Skip to install</a>
+
+<svg class="defs" aria-hidden="true" focusable="false" width="0" height="0">
+  <defs>
+    <linearGradient id="chrome" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#1b2247"/><stop offset=".14" stop-color="#7e93d6"/><stop offset=".3" stop-color="#f7fbff"/>
+      <stop offset=".46" stop-color="#b9c8f2"/><stop offset=".62" stop-color="#3b467f"/><stop offset=".8" stop-color="#8a78c9"/><stop offset="1" stop-color="#150f33"/>
+    </linearGradient>
+    <linearGradient id="enamel" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#ffb07a"/><stop offset=".28" stop-color="#ff6a2b"/><stop offset=".62" stop-color="#e2401a"/><stop offset="1" stop-color="#8e1a0c"/>
+    </linearGradient>
+    <radialGradient id="bead" cx=".36" cy=".3" r=".8">
+      <stop offset="0" stop-color="#ffffff"/><stop offset=".22" stop-color="#cfdcff"/><stop offset=".6" stop-color="#4b5aa6"/><stop offset="1" stop-color="#120e2e"/>
+    </radialGradient>
+    <radialGradient id="drop" cx=".35" cy=".28" r=".85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".95"/><stop offset=".3" stop-color="#bfd4ff" stop-opacity=".55"/><stop offset=".75" stop-color="#5a6fd0" stop-opacity=".25"/><stop offset="1" stop-color="#0b0a24" stop-opacity=".6"/>
+    </radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>
+  </defs>
+</svg>
+
+<header class="hero" id="top">
+  <div class="backdrop" aria-hidden="true"><i class="burst"></i><i class="stars"></i></div>
+  <!-- Artwork slot "hero": drop site/art/hero.webp to add the painted layer. See site/art/README.md. -->
+  <div class="art art-hero" aria-hidden="true"></div>
+
+  <nav class="top" aria-label="Sections">
+    <a href="#install">Install</a><a href="#what">What it does</a><a href="#toggles">Toggles</a><a href="#proof">Proof</a><a href="#contact">Contact</a>
+  </nav>
+
+  <div class="hero-stage">
+    <svg class="mark" viewBox="0 0 380 430" role="img" aria-labelledby="mark-title">
+      <title id="mark-title">The Tally mark: four upright strokes with two eyes, struck through by one orange slash</title>
+      <ellipse class="mark-shadow" cx="190" cy="418" rx="170" ry="11"/>
+      <g class="stroke s1" transform="rotate(-1.2 62 215)"><rect x="47" y="22" width="30" height="388" rx="15" fill="url(#chrome)"/><rect class="spec" x="54" y="34" width="4" height="362" rx="2"/></g>
+      <g class="stroke s2" transform="rotate(.7 147 207)"><rect x="132" y="6" width="30" height="402" rx="15" fill="url(#chrome)"/><rect class="spec" x="139" y="18" width="4" height="376" rx="2"/></g>
+      <g class="stroke s3" transform="rotate(-.5 222 220)"><rect x="207" y="32" width="30" height="378" rx="15" fill="url(#chrome)"/><rect class="spec" x="214" y="44" width="4" height="352" rx="2"/></g>
+      <g class="stroke s4" transform="rotate(1.3 302 211)"><rect x="287" y="14" width="30" height="392" rx="15" fill="url(#chrome)"/><rect class="spec" x="294" y="26" width="4" height="366" rx="2"/></g>
+      <g class="eyes"><circle class="eye" cx="184" cy="94" r="13.5" fill="url(#bead)"/><circle class="eye" cx="260" cy="94" r="13.5" fill="url(#bead)"/></g>
+      <g class="drops">
+        <ellipse class="drop" cx="68" cy="150" rx="5" ry="6.5" fill="url(#drop)"/><ellipse class="drop slide" cx="153" cy="236" rx="4.5" ry="7" fill="url(#drop)"/>
+        <ellipse class="drop" cx="228" cy="318" rx="4" ry="5" fill="url(#drop)"/><ellipse class="drop" cx="307" cy="92" rx="5.5" ry="7" fill="url(#drop)"/>
+        <ellipse class="drop" cx="296" cy="352" rx="3.5" ry="4.5" fill="url(#drop)"/>
+      </g>
+      <g class="slash">
+        <path d="M22 300 358 138" stroke="#2a0b05" stroke-width="30" stroke-linecap="round" opacity=".45" transform="translate(3 7)" filter="url(#soft)"/>
+        <path d="M22 300 358 138" stroke="url(#enamel)" stroke-width="27" stroke-linecap="round"/>
+        <path d="M30 289 350 135" stroke="#ffe3cf" stroke-width="3.5" stroke-linecap="round" opacity=".85"/>
+      </g>
+      <g transform="translate(360 137) scale(.66)"><path class="glint g1" d="M0-50C3-12 12-3 50 0 12 3 3 12 0 50-3 12-12 3-50 0-12-3-3-12 0-50Z"/></g>
+      <g transform="translate(147 6) scale(.44)"><path class="glint g2" d="M0-50C3-12 12-3 50 0 12 3 3 12 0 50-3 12-12 3-50 0-12-3-3-12 0-50Z"/></g>
+      <g transform="translate(60 408) scale(.34)"><path class="glint g3" d="M0-50C3-12 12-3 50 0 12 3 3 12 0 50-3 12-12 3-50 0-12-3-3-12 0-50Z"/></g>
+    </svg>
+
+    <div class="hero-copy">
+      <h1><span class="meet">Meet</span> <span class="tally">Tally</span></h1>
+      <p class="tagline">the CFO for your agent fleet</p>
+      <p class="pitch">Hand it your GitHub issues and a budget. It picks a cost-effective model for each one, stops any task at its spend ceiling, and opens a pull request only when your tests pass.</p>
+      <p class="hero-actions"><a class="button" href="#install">Install Tally</a><button class="ghost" type="button" data-replay-hero hidden>Play it again</button></p>
+    </div>
+  </div>
+</header>
+
+<main>
+<section class="install" id="install" aria-labelledby="install-title">
+  <div class="wrap">
+    <h2 id="install-title" class="reveal">One line and it is on your machine.</h2>
+    <div class="install-grid">
+      <div class="install-left reveal">
+        <div class="command" role="group" aria-label="Install command">
+          <span class="prompt" aria-hidden="true">$</span>
+          <code id="install-command">npm install -g tally-agents</code>
+          <button class="copy" type="button" data-copy="npm install -g tally-agents" hidden><span data-copy-label>Copy</span></button>
+        </div>
+        <p class="copy-status" role="status" aria-live="polite"></p>
+        <p class="install-note">Needs Node 20 or later. The package is <code>tally-agents</code>; the command it installs is <code>tally</code>. Then, in an empty folder:</p>
+        <pre class="next"><code>tally demo        <span class="c"># seven simulated tasks, no accounts or keys</span>
+tally dashboard   <span class="c"># watch the ledger fill in</span></code></pre>
+        <p class="links"><a href="https://www.npmjs.com/package/tally-agents">tally-agents on npm</a><a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Source on GitHub</a></p>
+      </div>
+
+      <figure class="terminal reveal" aria-labelledby="term-caption">
+        <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>tally</span></div>
+        <div class="term-body">
+          <pre class="term-logo" data-term-logo aria-label="The Tally logo as the command line draws it">    ▄   █       ▄       <span class="i">Meet</span>
+    █   █   █   █       <span class="b">█████████</span>         <span class="b">▀██</span>  <span class="b">▀██</span>
+    █   █ ▀ █ ▀ █  <span class="s">▄</span>    <span class="b">▀</span>  <span class="b">███</span>  <span class="b">▀</span>          <span class="b">██</span>   <span class="b">██</span>
+    █   █   █  <span class="s">▄</span><span class="sb">▀</span><span class="s">▀▀</span>        <span class="b">███</span>    <span class="b">▄█▀▀█▄</span>   <span class="b">██</span>   <span class="b">██</span>  <span class="b">██</span>   <span class="b">██</span>
+    █   █  <span class="s">▄</span><span class="sb">▀</span><span class="s">▀▀</span> █          <span class="b">███</span>     <span class="b">▄▄▄██</span>   <span class="b">██</span>   <span class="b">██</span>  <span class="b">▀█▄</span> <span class="b">▄█▀</span>
+    █  <span class="s">▄</span><span class="sb">▀</span><span class="s">▀▀</span> █   █          <span class="b">███</span>    <span class="b">██</span>  <span class="b">██</span>   <span class="b">██</span>   <span class="b">██</span>   <span class="b">▀█▄█▀</span>
+   <span class="s">▄</span><span class="sb">▀</span><span class="s">▀▀</span> █   █   █         <span class="b">▄███▄</span>   <span class="b">▀█▄▄▀█▄</span> <span class="b">▄██▄</span> <span class="b">▄██▄</span>   <span class="b">██▀</span>
+ <span class="s">▀▀</span> █   █   █   █                                    <span class="b">▄█▀</span>
+    █   █   █   █                                   <span class="b">██▀</span>
+    █   █   █   ▀       the CFO for your agent fleet</pre>
+          <div class="term-lines" data-term-lines>
+            <p class="cmd"><span class="ps">$</span> tally init</p>
+            <p>Tally init proposed changes:</p>
+            <p>Runner: direct (one task at a time)</p>
+            <p>Repository: Vaibhaav-Tiwari/chip-design-groundup (base: main)</p>
+            <p>Tier cheap: codex/gpt-5.6-luna (tui)</p>
+            <p>Products: neatlogs on, entire off, cfoai on</p>
+            <p>Apply these changes? y/N [N]: y</p>
+            <p class="cmd"><span class="ps">$</span> tally run --budget 1</p>
+            <p>monthly budget: $40.00 from cfo.ai; run cap: $1.00 (CLI --budget)</p>
+            <p>#17: small (confidence 0.74) -&gt; cheap codex/gpt-5.6-luna ceiling $0.30</p>
+            <p>#17 attempt 1: worker 01a12b0f… started on cheap</p>
+            <p class="spend">#17 attempt 1: spend $0.0029</p>
+            <p class="spend">#17 attempt 1: spend $0.0061</p>
+            <p class="spend">#17 attempt 1: spend $0.0109</p>
+            <p class="ok">#17 attempt 1: passed $0.0109 (Tally committed task changes as 297c70d…) <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18">chip-design-groundup/pull/18</a></p>
+            <p>summary: 1 passed, 0 failed, 0 skipped; total $0.0109 against run cap $1.00</p>
+          </div>
+        </div>
+        <figcaption id="term-caption">The logo is the command line's own animation, frame for frame. The lines below it are from the real run that opened <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18">pull request #18</a>, with other lines left out and long ids shortened. <button class="ghost small" type="button" data-replay-term hidden>Replay</button></figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="stub" id="what" aria-labelledby="what-title">
+  <div class="wrap reveal">
+    <h2 id="what-title">What Tally does</h2>
+    <ol class="steps">
+      <li>Routes each GitHub issue to a cost-effective model.</li>
+      <li>Caps spend per task.</li>
+      <li>Escalates to a stronger model if needed.</li>
+      <li>Verifies the change with your tests.</li>
+      <li>Opens a pull request. Tally never merges.</li>
+    </ol>
+    <p class="stub-note">The animated flow for this section is being built.</p>
+  </div>
+</section>
+
+<section class="stub" id="toggles" aria-labelledby="toggles-title">
+  <div class="wrap reveal">
+    <h2 id="toggles-title">Three switches</h2>
+    <ul class="plain">
+      <li><b>Entire.</b> Off: a task is sized by a search of the repository. On: sized from the code graph, with a checkpoint attached to each commit.</li>
+      <li><b>neatlogs.</b> Off: no trace. On: a decision trace and a worker trace id on every ledger row.</li>
+      <li><b>cfo.ai.</b> Off: the budget is typed into <code>tally.yaml</code>. On: the live monthly budget is read from cfo.ai, and spend is written back and reconciled to the ledger.</li>
+    </ul>
+    <p class="stub-note">The working switches and the sample run they redraw are being built.</p>
+  </div>
+</section>
+
+<section class="stub" id="orchestrator" aria-labelledby="ao-title">
+  <!-- Artwork slot "mascots": site/art/mascots.webp -->
+  <div class="art art-mascots" aria-hidden="true"></div>
+  <div class="wrap reveal">
+    <h2 id="ao-title">With Agent Orchestrator, or without</h2>
+    <p>With Agent Orchestrator, Tally runs agents in parallel. Without it, Tally runs Claude Code or Codex directly, one task at a time. <code>tally init</code> detects which you have.</p>
+    <p class="stub-note">The scene with the Agent Orchestrator mascot is being built.</p>
+  </div>
+</section>
+
+<section class="stub" id="video" aria-labelledby="video-title">
+  <div class="wrap reveal">
+    <h2 id="video-title">See a first run</h2>
+    <p class="stub-note">The onboarding video is not recorded yet. Its frame is being built.</p>
+  </div>
+</section>
+
+<section class="stub" id="proof" aria-labelledby="proof-title">
+  <!-- Artwork slot "desert": site/art/desert.webp -->
+  <div class="art art-desert" aria-hidden="true"></div>
+  <div class="wrap reveal">
+    <h2 id="proof-title">Proof, with receipts</h2>
+    <p>Each of the four ways Tally can run an agent has completed a real run on <code>Vaibhaav-Tiwari/chip-design-groundup</code>:</p>
+    <ul class="plain">
+      <li>Codex through Agent Orchestrator: <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/10">pull request #10</a>.</li>
+      <li>Claude Code through Agent Orchestrator: <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/13">pull request #13</a>.</li>
+      <li>Claude Code direct: <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/14">pull request #14</a>.</li>
+      <li>Codex direct: <a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18">pull request #18</a>.</li>
+    </ul>
+    <p class="stub-note">The full proof section is being built.</p>
+  </div>
+</section>
+
+<section class="stub" id="contact" aria-labelledby="contact-title">
+  <!-- Artwork slot "contact": site/art/contact.webp -->
+  <div class="art art-contact" aria-hidden="true"></div>
+  <div class="wrap reveal">
+    <h2 id="contact-title">Contact us</h2>
+    <ul class="plain">
+      <li>Email <a href="mailto:vaibhaavtiwari@gmail.com">vaibhaavtiwari@gmail.com</a></li>
+      <li>X <a href="https://x.com/battarchicken">@battarchicken</a></li>
+      <li><a href="https://www.npmjs.com/package/tally-agents">tally-agents on npm</a></li>
+      <li><a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Source on GitHub</a></li>
+    </ul>
+  </div>
+</section>
+</main>
+
+<div class="grain" aria-hidden="true"></div>
+<script src="logo-frames.js" defer></script>
+<script src="main.js" defer></script>
+</body>
+</html>
