@@ -1,0 +1,154 @@
+AO transferred the previous agent's context in hidden system instructions. Continue a clear, safe, already-authorized unfinished action; otherwise, acknowledge the current objective and wait for the user.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: #55 is merged. I rendered it on a fresh tally demo run at 1440 px: the graph is open on the first task, the control is obvious, the Why column is readable. Good work. Next from dashboard-priorities-2.md: the cfo.ai link and ao:// session link fixes, then the single Ledger section.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator. #55 (graph view) and #64 (budget links) are both merged; main is at 4609a19. The human has seen the graph on a demo run. You have been idle for 15 minutes: please carry on now with the two remaining items from /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/dashboard-priorities-2.md , each as its own PR from the latest origin/main, without waiting for me in between: (a) the AO session evidence as copyable text instead of a dead ao:// link in ordinary browsers; (b) ONE Ledger section in place of Tasks plus Ledger: a group per task (title, issue link, size, final status, total cost, the why sentence at a readable width, the code graph), with its attempts beneath as ledger rows; remove the separate Tasks table. The human asked for (b) directly and is waiting to record a video on it, so it is the priority; do (a) inside the same PR if that is quicker. Check it rendered at 1440 and 390 px on a fresh tally demo run and on the real run folder at /Users/vaibhaav/.ao/data/worktrees/neatlogs-hack/neatlogs-hack-2/.tally/runs before reporting.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: please start now. #55 and #64 are merged; main is at 4609a19. Build the single Ledger section the human asked for (replacing Tasks plus Ledger: a group per task with title, issue link, size, final status, total cost, the why sentence and the code graph, and its attempts beneath as ledger rows), and in the same PR show the AO session id as copyable text instead of an ao:// link in ordinary browsers. Spec: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/dashboard-priorities-2.md sections 2 and 4. Check it rendered at 1440 and 390 px on a fresh tally demo run. Reply with one line when you have started.
+
+---
+
+AO transferred the previous agent's context in hidden system instructions. Continue a clear, safe, already-authorized unfinished action; otherwise, acknowledge the current objective and wait for the user.
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: understood that the earlier dashboard items were done; those were queued messages arriving late. #79 is merged after my own check: a cold-cache global install from github:Vaibhaav-Tiwari/neatlogs-hack#release into a clean prefix gave tally 0.1.0 and a 7-task demo from an empty folder. No AO review needed; the human has asked for merges on my combined gate. Next for you, one PR each, no waiting between them: (1) confirm the workflow you added actually refreshed 'release' after this merge to main and that an install from it now includes lane A's #78 (init changes); if Actions did not run, run release:branch --push yourself and tell me. (2) The human is testing Tally as a real user on a second repository and hit rough edges in the first minutes, so make the first-run experience honest in the README: prerequisites exactly as they are today (Agent Orchestrator is still required until lane A's direct runner lands; say so), the install line with #release, and a short 'first run on your own repo' section: label issues, tally init, tally run --plan, tally run, tally dashboard. (3) On the dashboard, an empty state for a repo's first real run that has not started any task yet, and for a run where GitHub intake found zero issues with the configured label: say exactly that, with the label name and the gh command to label an issue, instead of an empty Ledger. He typed a label that matched no issues and would have got a silent empty run.
+
+---
+
+<task-notification>
+<task-id>bkmc1lcxm</task-id>
+<tool-use-id>toolu_01YZSmCQuvfT3bF4vujnpimR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-vaibhaav--ao-data-worktrees-neatlogs-hack-neatlogs-hack-6/62bf8255-2828-4016-bc6c-8d8c4893b1a2/tasks/bkmc1lcxm.output</output-file>
+<status>failed</status>
+<summary>Background command "Capture the empty states with headless Chrome at 1440 and 390 px" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: lane A's #81 (AO discovery, recoverable init) is merged and your README PR #80 now conflicts with it in README.md. Rebase #80 on origin/main, keep both sets of changes, push, and tell me; I will merge it straight away. The human is about to hand this project to teammates, so finish and push anything in progress as PRs now rather than holding work locally.
+
+---
+
+There are merge conflicts on PR #80 "docs(readme): honest prerequisites and a first run on your own repo" (ao/neatlogs-hack-6/first-run-readme → main). Rebase onto the base branch and resolve them.
+PR: https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/80
+
+---
+
+<task-notification>
+<task-id>bfmc5lc8i</task-id>
+<tool-use-id>toolu_01B7FGuxnMmhHF8hwxaHcT77</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-vaibhaav--ao-data-worktrees-neatlogs-hack-neatlogs-hack-6/62bf8255-2828-4016-bc6c-8d8c4893b1a2/tasks/bfmc5lc8i.output</output-file>
+<status>failed</status>
+<summary>Background command "Commit, push and open the empty-state PR" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+[from neatlogs-hack-8] From the orchestrator: the human has moved to one section at a time with a single worker, and the first-user flow is with lane A. You are stood down for now; thank you for the dashboard and packaging work. Do not start anything new; if you have unpushed work, push it as a clearly named branch and tell me in one line.
+
+---
+
+[from neatlogs-hack-8] New task from Vaibhaav, needed before npm publish. main is cc42d77 (many merges since you last worked: direct runner, Claude tiers, script allow-list); start from it. Build a first-run terminal animation of the Tally logo.
+
+Reference image: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/tally-logo-reference.png (read it). The symbol: four black vertical tally strokes, slightly hand-drawn and uneven in height, two small dots like eyes between the strokes near the top, and one orange-red diagonal slash rising left to right across all four. Beside it: 'Meet Tally' and 'the CFO for your agent fleet'. Animation: strokes draw in one at a time top to bottom, the eyes appear (a blink is welcome), then the orange slash strikes across, then the text settles in. About 1 to 1.5 seconds, tasteful, not busy. Aesthetics matter to him: get the proportions of the mark right in block/half-block or braille characters, and look at it in a real terminal, light and dark backgrounds, before calling it done.
+
+Rules: plays the first time the user runs bare 'tally' or 'tally init' after install (marker under ~/.tally so it plays once); afterwards a compact static mark on bare 'tally'/help only. Never during 'tally run', 'doctor', or any command with machine-readable output. Skip when stdout is not a TTY, in CI, with TERM=dumb or TALLY_NO_ANIMATION=1; with NO_COLOR show plain uncoloured static text; degrade truecolour to 256/16 colours; restore the cursor and exit cleanly on Ctrl+C; never leave the terminal in a bad state. No new dependencies, plain ANSI. No postinstall script (npm hides install output). Add 'tally logo' to replay it for the demo video. Tests for the gating logic and frame generation; dry run must still pass. Lane B may hand over a branch with a start; I will tell you if so. One PR, tell me when it is open with a path to a recording or frame dump I can show him; I gate and merge. Say plainly anything that does not work.
+
+---
+
+[from neatlogs-hack-8] Lane B finished a version of the logo before my handover reached it: PR #103, branch ao/neatlogs-hack-5/terminal-logo (e7c5f31), frames at /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-5/tally-logo-frames.ansi. It has the gating, marker, 'tally logo' replay and tests. You now own it; lane B has stopped. Do not build a second copy of the plumbing. Take that branch as the base (check it out, continue on your own branch from e7c5f31 and open your own PR that supersedes #103, or tell me if what you have is already better and why). Your job is the look: compare its final frame to the reference image in a real terminal. To my eye the slash distorts the strokes where it crosses them and the strokes are more uniform than the hand-drawn reference; improve proportions, the slash, the eyes and the timing, on light and dark backgrounds. Tell me when your PR is open with a frame dump or recording path.
+
+---
+
+<task-notification>
+<task-id>bh92k6hop</task-id>
+<tool-use-id>toolu_01PTACLymoWbACqEaFidYa9t</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-vaibhaav--ao-data-worktrees-neatlogs-hack-neatlogs-hack-6/62bf8255-2828-4016-bc6c-8d8c4893b1a2/tasks/bh92k6hop.output</output-file>
+<status>failed</status>
+<summary>Background command "Fetch a terminal emulator library to a temp folder and export frames" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+[from neatlogs-hack-8] Vaibhaav approved the logo; #104 is merged, #103 closed. Thank you. Stand by; no further work until I send it.
+
+---
+
+[from neatlogs-hack-8] Logo polish #107 approved by Vaibhaav and merged. New task, critical path for npm publish, he wants it shipped fast: CODEX DIRECT (Tally running Codex itself, no Agent Orchestrator). main is a607dc0. Lane A built the direct runner for Claude Code (adapters/direct.ts, engine/preflight.ts, engine/harness.ts, engine/real.ts wiring; PRs #99-#106) and is busy fixing it, so you build the Codex side in parallel. Read lane A's spike first: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-2/direct-runner-spike.md, and its proof report claude-direct-proof.md in the same folder for the pitfalls already hit.
+
+Build: in a NEW file (e.g. adapters/direct-codex.ts) plus the smallest possible hook in the existing direct runner to dispatch by tier harness, launch 'codex exec --json' non-interactively in the Tally-owned worktree with the tier's model; live spend read from that session's rollout JSONL priced with engine/pricing.ts; stop at the ceiling by ending the process; same branch on escalation. Sandbox: workspace-write confined to the worktree, no network beyond what the test needs, NEVER a danger/bypass/full-access flag; check 'codex exec --help' for exact flags rather than assuming. The repo's test and setup run through the same Tally-written scripts as Claude (see #101). Tally commits the worker's uncommitted work itself (lane A is adding that now; build on it once merged, I will tell you). preflight: codex missing or signed out stops the run; never substitute a harness. Remove the 'Codex direct not supported yet' stop. Before opening the PR, prove with one real cheap 'codex exec' call in a scratch repo (not a Tally run) that it edits a file and runs the script unattended in that sandbox mode. Keep your diff out of lane A's lines as far as you can and tell me which shared lines you had to touch. Tests with fakes; dry run must pass. Tell me when the PR is open and say plainly what does not work.
+
+---
+
+[from neatlogs-hack-8] Status check: you have been idle for an hour with no Codex direct PR. Lane A's #109 is merged (main 6fa9694): it adds WorkerPort.commitChanges(sessionId), called by the engine after a normal direct completion; implement that on your Codex direct adapter and dispatch by harness. Reply now with where you are: not started, in progress (what is done), or blocked (on what).
+
+---
+
+[from neatlogs-hack-8] Correction: main is 6fa9694 (contains both #108 and #109), not 6fa9694. Use the release built from 6fa9694. Lane A: confirmed, go with eabb1207 for the fourth #11 proof.
+
+---
+
+[from neatlogs-hack-8] Ignore my last 'correction', it was garbled. Verified facts: main is 6fa9694. Order of merges: #109 merged first as eabb120, then #108 as 6fa9694, whose history contains eabb120. So 6fa9694 has BOTH fixes; eabb120 has #109 but not #108. Lane A: the fourth #11 direct proof may run on the eabb120 release (it has the host-commit fix and needs nothing from #108), go now. Lane B: your AO Claude proof needs #108, so wait until release-source.json shows 6fa9694. Lane C: base on 6fa9694.
+
+---
+
+[from neatlogs-hack-8] #110 gated and merged; main is 3598d8c. Good work and thank you for the plain list of what is not done. Lane A (owner of real.ts) is taking the per-runner worker prompt fix, the init check for direct Codex, and the real Tally run. Stand by; if lane A asks about your adapter, answer through me.
+
+---
+
+[from neatlogs-hack-8] New task, approved by Vaibhaav, yours alone: build the Tally project page. Read the full brief first: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/site-brief.md and every file in /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/site-reference/ (four 1980s airbrush-ad reference tiles, the Tally logo reference, the Agent Orchestrator mascot and logo). main is 74d7231. Static site in a new site/ folder, eight sections in the brief's order, heavy on animation, fully working without the painted artwork (I am generating that separately and will drop files in; leave named image slots). Milestone 1: hero and install sections complete and animated, the rest stubbed in order; open a PR, tell me the preview path, and stop for his review. Do not deploy. Look at your own work in the AO browser panel at desktop and phone widths before reporting, and say plainly what you could not check.
+
+---
+
+[from neatlogs-hack-8] Artwork update: two painted images are approved for use and are in /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/site-reference/: art-hero.png (2048x1152, the tally mark as a glossy black enamel and chrome object with the orange slash, wet reflective floor, black to indigo backdrop; use it in the hero behind or after the SVG draw-in, e.g. the SVG strokes draw and then cross-fade or 'develop' into the painted object) and art-desert.png (2048x1152, giant tally monuments in a red desert under a crimson sky; use it full-bleed with parallax for 'What Tally does' or Proof). A third (the AO mascot and Tally together) is coming; the contact-card figure will not arrive before tomorrow, so build that card without it. Convert to WebP/AVIF at sensible sizes; keep the PNGs out of git if they would add more than about 1 MB each.
+
+---
+
+[from neatlogs-hack-8] Third painted image is in the reference folder: art-mascots.png (2048x1152): the AO mascot on the left conducting with its baton, a row of small tally groups rising in mid-air following the baton, the large Tally mark on the right, on the same wet black-to-indigo stage as the hero. Use it for the Agent Orchestrator section; animate over it if you can (glints, the row of small tallies appearing one by one). Note: some of the small groups in the painting have three bars, not four; if you overlay your own SVG tallies, use four.
+
+---
+
+[from neatlogs-hack-8] Milestone 1 received; I have looked at the screenshots: strong start, and thank you for saying plainly what was not checked. Do NOT wait: carry on to milestone 2 on the same branch while Vaibhaav reviews (I am serving your site/ folder on http://127.0.0.1:4391/ for him; I will pass his notes on). Proof numbers, which you may use (the 'README only' rule is relaxed to: README or these verified ledger rows): PR #10 Codex via AO $0.0121, run-20261011-092229Z; PR #13 Claude Code via AO $0.0871, run-20261011-123546Z (/private/tmp/tally-ao-claude-chip-proof/.tally/runs/run-20261011-123546Z/ledger.json); PR #14 Claude Code direct $0.0765, run-20261011-123814Z (/private/tmp/tally-claude-fourth.UxDQAZ/chip-claude-fourth/.tally/runs/run-20261011-123814Z/ledger.json); PR #18 Codex direct $0.0109, run-20261011-130259Z (/private/tmp/tally-codex-proof.oLOOcL/chip-codex-proof/.tally/runs/run-20261011-130259Z/ledger.json). Label them 'estimated at list price'. Tests: 662 passing at commit 4dfe5bb, the commit npm 0.1.0 was built from (run npm test to confirm the current count rather than hard-coding a stale one). My notes on milestone 1: (1) the three painted images are now in site-reference (art-hero.png, art-mascots.png, art-desert.png): wire them in; for the hero, keep your SVG draw-in and let it resolve into, or sit in front of, the painted hero so the page gets the airbrush look from the references, which the flat gradient alone does not yet reach; (2) the hero SVG strokes are silver-lilac; the Tally mark is black enamel with chrome edges on the painted art and in his logo, so match that; (3) on the phone the nav wraps to two lines; fix. Then milestone 2 as briefed.
+
+---
+
+[from neatlogs-hack-8] STOP the current site design. Vaibhaav has rejected it outright, including the 80s airbrush direction, the painted images and both mascot treatments. Do not push more work in that style. A new brief with new references is coming from me within minutes; keep the content, the terminal card and the section structure you built, since the content was not the problem. Wait for the brief.
+
+---
+
+[from neatlogs-hack-8] Vaibhaav has reviewed milestone 1 at http://127.0.0.1:4391/. His verdict, in his terms: KEEP the overall gradient and KEEP the terminal card where Tally opens. CHANGE everything else; 'too much going on', it must be much better as design. Specifics: (1) Fonts are bad throughout. The fat, bouncy display face (the 'One line and it is on your machine' headline) has to go. Use restrained, high-quality type: the high-contrast serif from his logo reference for display (the 'Meet Tally' feeling: something like Playfair Display / DM Serif Display / Fraunces at a refined weight), one clean grotesque for body and UI (Inter, Geist or similar), one mono for code. Two families plus mono, a clear scale, generous spacing, no novelty faces. (2) The Tally logo you drew is wrong and 'ruins the point of view' he created: silver-lilac chrome tubes are not his mark. His mark is in tally-logo-reference.png: four BLACK slightly hand-drawn strokes of uneven height, two small black eye dots, one orange-red slash, simple and characterful. Draw exactly that as SVG (hand-drawn stroke feel, black on a light plate or with a subtle light edge so it reads on the dark gradient), animate the same draw-in, and use the approved painted art-hero.png for the airbrush moment rather than inventing a chrome version. Remove the ray burst and the decorative clutter. (3) Calm the whole page: fewer effects, more space, one accent colour (the orange-red), strong hierarchy. The 80s airbrush reference should come from the painted images and the palette, not from piling on effects. (4) The install section's two commands (tally demo, tally dashboard) are not good enough: replace them with one clear button, 'Read the getting-started guide', linking to a Markdown guide on GitHub that lane A is writing: https://github.com/Vaibhaav-Tiwari/neatlogs-hack/blob/main/docs/GETTING_STARTED.md (keep the npm and GitHub links). Apply this to milestone 1 and carry the same restraint through milestone 2. When the hero and install are redone, send me new screenshots before going further on the rest.
+
+---
+
+[from neatlogs-hack-8] New brief: /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/site-brief-v2.md . Read all of it and open his five reference sites yourself before designing (orchestrator.inc, neatlogs.com, firstrun.atharvashah.com/judges/, projectminimi.com, wisprflow.ai). Summary: the 80s direction, painted images, heavy fonts, chrome logo and mascot scenes are all gone. The Tally mark is the pixel terminal mark from cli/logo.ts (site-reference-v2/tally-mark-approved.png), used as logo and mascot. Clean, calm, modern: refined serif display with italics, clean sans body, mono labels, one orange accent, real product screenshots in window frames, purposeful motion. Add a 'For the judges' section modelled on the firstrun judges page: one block per judging criterion with its weight, its wording and real evidence. Keep your content, terminal card, copy button and switch logic. Send hero and install screenshots at 1440 and 390 as soon as they exist.
+
+---
+
+[from neatlogs-hack-8] Answer: (A) stands, and brief v2 supersedes BOTH earlier messages. Order of events: (B) was his first reaction; (A) is his later, final verdict after thinking about it. So: ALL painted images are out (hero, desert, mascots), the gradient is not required, and the mark is NOT a black hand-drawn mark on a cream plate: it is the pixel terminal mark from cli/logo.ts, white block strokes with an orange stepped slash on dark slate, exactly as in site-reference-v2/tally-mark-approved.png. Stop the cream-plate hero. Read /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-8/site-brief-v2.md and his five reference sites, then redo hero and install on that. Playfair + Inter + Plex Mono is an acceptable starting set; compare against wisprflow's serif before settling.
+
+---
+
+[from neatlogs-hack-8] Version 3 hero received and I have looked at site-v3-hero.png: this is the right direction (pixel mark, 'Coding agents, on a budget.', calm type). Carry on in the order you proposed: judges section, switches, five steps, Agent Orchestrator, real dashboard screenshots, video frame, contact. Notes: the getting-started guide is merged and its link now returns 200 (main is 61899ce; rebase). On the phone show the full nav behind a simple menu rather than dropping items. New facts for the judges section: a cfo.ai page 'Tally business plan' now exists (share-of-savings pricing; unit economics, funnel and a measured price gap, all assumptions labelled), and CrustData found 20 companies whose engineering job posts name coding agents (hiring intent, not confirmed use; report at /Users/vaibhaav/.ao/data/artifacts/neatlogs-hack-5/market-job-intent/report.md). Entire Trails and Brain are NOT used; do not mention them. Push to the PR when the judges section and switches are designed, and send screenshots.
+
+---
+
+[from neatlogs-hack-8] Site v3 gated (687 tests x2, typecheck, build, dry runs) and PR #116 merged; main is 7d36558. Good work; the judges section is what he asked for. Follow-ups as a new small PR from 7d36558: (1) the text in the switches section (the off/on descriptions and the run panel) is too faint to read comfortably in my capture; raise contrast to pass AA. (2) The Agent Orchestrator card says 'Tally runs agents in parallel': that is NOT true today, the engine runs one task at a time for every runner. Lane A is building parallel through AO now with a real-run proof due by 12 Oct 12:00 IST. Until I tell you it passed, word that card truthfully: 'With Agent Orchestrator: each agent runs in its own AO session and worktree; parallel runs are being proven now.' and change the section headline so it does not promise parallel. (3) The demo video frame and the #neatHack links stay as marked empty slots until he supplies them. Send screenshots when pushed.
+
+---
+
+[from neatlogs-hack-8] Vaibhaav has asked for the site to be deployed on Vercel now. You do it. Facts: the vercel CLI 59.25.0 is installed at /opt/homebrew/bin/vercel and 'vercel whoami' returns vaibhaav-tiwari (his account; do not log in or out, do not print tokens). main is 2015d09 and contains the site (#116, #127). Steps: (1) from a clean checkout of main, in site/, link a NEW Vercel project named 'tally-agents' (vercel link --yes --project tally-agents, creating it under his personal scope; if that name is taken use 'tally-cfo'), static, no build step, output is the folder itself; (2) make sure .vercel/ is gitignored and nothing from it is committed; (3) vercel deploy --prod; (4) verify the production URL from outside: HTTP 200, the hero animation assets, fonts, the copy button, the getting-started link, npm and GitHub links, the phone menu at 390 wide, no mixed content, no console errors, Open Graph tags present (add a real og image generated from the pixel mark if still missing: a PR for that is fine); check it with scripts off too. (5) Report the production URL and the project name to me, plus anything that does not work. Do not attach a custom domain, do not enable analytics or any paid add-on, do not connect the GitHub integration (CLI deploys only for now), and stop and tell me if Vercel asks for payment or a team upgrade. Then stand by for one small edit: lane A's real parallel run through Agent Orchestrator is in progress (issues #19, #20, #21 on chip-design-groundup); when I tell you it passed, update the Agent Orchestrator card and the judges block to say so with the real numbers I send, PR it, and redeploy.
+
+---
+
+[from neatlogs-hack-8] Lane A's real parallel run PASSED and I verified the ledger and PRs myself. Make the small edit, PR it, and redeploy to Vercel after I merge (or include it in the first deploy if you have not deployed yet). Facts you may state: run-20261011-190131Z on Vaibhaav-Tiwari/chip-design-groundup, through Agent Orchestrator with three Codex workers at once ('tally run --parallel 3'); issues #19, #20, #21 all started within the same second and passed on the cheap tier; pull requests #24 (closes #19, $0.0150), #23 (closes #20, $0.0136), #22 (closes #21, $0.0126); total $0.0411 estimated at list price against a $2 cap; the three AO sessions overlapped for 70 seconds; cfo.ai spend rose by exactly the ledger total; none merged. Update: the Agent Orchestrator card and headline may now say Tally runs agents in parallel through AO (opt-in, each in its own worktree, inside one budget: each task's ceiling is reserved before it starts); move parallel from 'not proven' to proven in the judges 30% block with these numbers and PR links. Do NOT claim: zero overshoot to the cent (spend is read with a delay), parallel on the direct runner (it is AO only), or full tracing for this run (one decision trace was not readable at first read; say nothing about traces for this run). Then give me the production URL.
+
+---
+
+[from neatlogs-hack-8] Still owed, and the live site is now wrong by omission: https://tally-agents-pi.vercel.app still says parallel runs 'are being proven now'. The real parallel run PASSED hours ago. main is 4d42683 (lane B added the demo video to the site in #131 at the user's direct request, and it is deployed; rebase onto it). Do now, as one small PR: Agent Orchestrator card and headline say Tally runs agents in parallel through AO (opt-in with --parallel, each in its own worktree, each task's ceiling reserved before it starts); judges 30% block lists it as proven: run-20261011-190131Z on chip-design-groundup, three Codex workers at once, issues #19/#20/#21 started in the same second, PRs #24 ($0.0150), #23 ($0.0136), #22 ($0.0126), total $0.0411 at list price against a $2 cap, sessions overlapped 70 seconds, cfo.ai rose by exactly the ledger total, none merged; the judges 20% demo-video block must no longer say the video is not recorded; refresh the commit/PR/test counts. Do not claim parallel on the direct runner, zero overshoot, or traces for that run. Tell me the PR number; after I merge, redeploy with vercel deploy --prod from site/ and confirm the live text.
