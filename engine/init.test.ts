@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultCommand, runInit, type InitCommandRunner } from './init.js';
 import { installRecordPath } from './install-record.js';
@@ -22,6 +22,10 @@ describe('runInit', () => {
     expect(config.backlog.issueLabel).toBe('ready');
     expect(output.join('\n')).toContain('Test: node --check js/app.js');
     expect(output.join('\n')).not.toContain('priceNote:');
+    expect(output.join('\n')).toContain('test script contents:\n#!/bin/sh\nset -e\nnode --check js/app.js\n');
+    expect(config.claudeCode.allow.join(' ')).toContain('Bash({{tally.testScript:');
+    expect(config.claudeCode.allow.join(' ')).not.toContain(repo);
+    expect(config.claudeCode.allow).not.toContain('Bash(node --check js/app.js)');
   });
   it('shows full YAML only in verbose proposals', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-verbose-'));
@@ -41,6 +45,29 @@ describe('runInit', () => {
       return { stdout: '{}', stderr: '' };
     };
   }
+
+  it('re-consents legacy rules without changing other settings, and leaves everything untouched on refusal', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-script-consent-'));
+    const options = { cwd: repo, command: detectedAgents(repo), doctor: async () => [], onboarding: async () => undefined,
+      runner: 'direct' as const, harnessChoice: 'claude-code' as const, testCommand: 'node --check app.js', setupCommand: '',
+      integrations: { neatlogs: false, entire: false, cfoai: false }, print: () => {} };
+    const first = await runInit({ ...options, yes: true, allowClaude: true });
+    const config = parseYaml(readFileSync(first.configPath, 'utf8'));
+    config.claudeCode.allow = ['Edit(./**)', 'Write(./**)', 'Bash(node --check app.js)'];
+    writeFileSync(first.configPath, stringifyYaml(config));
+    const before = readFileSync(first.configPath, 'utf8');
+    const recordPath = installRecordPath(first.configPath);
+    const record = readFileSync(recordPath, 'utf8');
+    await expect(runInit({ ...options, allowClaude: false })).rejects.toThrow('not approved');
+    expect(readFileSync(first.configPath, 'utf8')).toBe(before);
+    expect(readFileSync(recordPath, 'utf8')).toBe(record);
+    const output: string[] = [];
+    await runInit({ ...options, yes: true, allowClaude: true, print: line => output.push(line) });
+    const updated = parseYaml(readFileSync(first.configPath, 'utf8'));
+    expect(updated.claudeCode.allow.join(' ')).toContain('Bash({{tally.testScript:');
+    expect({ ...updated, claudeCode: config.claudeCode }).toEqual(config);
+    expect(output.join('\n')).toContain('test script contents:\n#!/bin/sh\nset -e\nnode --check app.js\n');
+  });
 
   it('persists the cfo.ai onboarding proposal instead of a source without a config block', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-cfoai-'));

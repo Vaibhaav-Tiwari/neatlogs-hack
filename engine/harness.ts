@@ -1,5 +1,6 @@
 import type { Tier } from '../schema/types.js';
 import type { InitCommandRunner } from './init.js';
+import { createHash } from 'node:crypto';
 
 export type Harness = Tier['harness'];
 export interface HarnessStatus { harness: Harness; installed: boolean; signedIn: boolean; detail: string; fix: string }
@@ -19,7 +20,25 @@ export async function checkHarness(harness: Harness, command: InitCommandRunner,
 }
 
 export function claudeAllowList(test: { command: string; setupCommand?: string }): string[] {
-  const commands = ['git add *', 'git commit *', 'git status', 'git status *', 'git diff', 'git diff *', test.command, ...(test.setupCommand ? [test.setupCommand] : [])];
+  const commands = ['git add *', 'git commit *', 'git status', 'git status *', 'git diff', 'git diff *'];
+  return [...new Set(['Edit(./**)', 'Write(./**)', ...commands.map(value => `Bash(${value})`), ...claudeScripts(test).map(script => script.rule)])];
+}
+
+export function claudeScripts(test: { command: string; setupCommand?: string }): Array<{ name: 'test' | 'setup'; contents: string; rule: string }> {
+  const commands = [test.command, ...(test.setupCommand ? [test.setupCommand] : [])];
   if (commands.some(value => /[\r\n]/.test(value))) throw new Error('Claude allow-list needs single-line test and setup commands');
-  return [...new Set(['Edit(./**)', 'Write(./**)', ...commands.map(value => `Bash(${value})`)])];
+  if (commands.some(value => value.includes('\0'))) throw new Error('Claude script commands cannot contain NUL');
+  return commands.map((command, index) => {
+    const name = index === 0 ? 'test' as const : 'setup' as const;
+    const contents = `#!/bin/sh\nset -e\n${command}\n`;
+    const hash = createHash('sha256').update(contents).digest('hex');
+    return { name, contents, rule: `Bash({{tally.${name}Script:${hash}}})` };
+  });
+}
+
+export function requireClaudeScriptConsent(allow: string[] | undefined, test: { command: string; setupCommand?: string }): asserts allow is string[] {
+  const expected = claudeAllowList(test);
+  if (!allow?.length || allow.length !== expected.length || expected.some(rule => !allow.includes(rule))) {
+    throw new Error('Claude Code script consent is missing or outdated (old raw-command rules do not authorize scripts); re-run tally init to review and approve the current test/setup script contents.');
+  }
 }

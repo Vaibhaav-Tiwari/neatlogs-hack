@@ -292,7 +292,9 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
     `Neatlogs correlation: runId=${runId} taskId=${task.taskId} attempt=${attempt}.`,
     '',
     config.runner === 'direct' ? 'You are already inside your own git worktree for the target repo. Work only in the current working directory.' : 'You are already inside your own AO git worktree for the target repo. Work only in the current working directory.',
-    'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
+    config.runner === 'direct' && tier.harness === 'claude-code'
+      ? 'Never read or write any other checkout or path outside this worktree. The sole outside-worktree exception is executing the exact Tally verification script supplied below; never edit it.'
+      : 'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
     publishInstruction,
     'Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.',
     '',
@@ -300,7 +302,9 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
     '',
     `Target repo: ${repoName(config)}`,
     ...setup,
-    `Run this verification command before claiming success: ${config.test.command}`,
+    config.runner === 'direct' && tier.harness === 'claude-code'
+      ? 'Run the exact Tally verification script path supplied below before claiming success. Do not run the raw test command.'
+      : `Run this verification command before claiming success: ${config.test.command}`,
     `You are running on tier ${tier.name} (${tier.harness}/${tier.model}).`,
     handoffSummary ? `\nHandoff from the previous attempt:\n${handoffSummary}` : '',
     handoffSummary ? 'Preserve all inherited commits, including Tally work-in-progress commits. Add a new commit for your changes; do not amend, squash, reset, or rebase the inherited history.' : '',
