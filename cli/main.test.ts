@@ -17,6 +17,19 @@ function capture() {
   return { io: { stdout: (s: string) => out.push(s), stderr: (s: string) => err.push(s) }, out, err };
 }
 
+it('prints a plain error when a paid parallel run cannot read its monthly budget', async () => {
+  const { io, err } = capture();
+  const mocked = vi.spyOn(runModule, 'runTally').mockRejectedValueOnce(new runModule.RunError([
+    'parallel AO run cannot reserve the monthly budget: cfo.ai read failed: access denied; no workers were started. Restore cfo.ai access or run sequentially with --parallel 1.',
+  ]));
+  try {
+    expect(await main(['run', '--parallel', '3'], io)).toBe(2);
+    expect(err).toHaveLength(1);
+    expect(err[0]).toContain('no workers were started');
+    expect(err[0]).not.toContain('\n    at ');
+  } finally { mocked.mockRestore(); }
+});
+
 async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
   const previous = process.cwd();
   const dir = mkdtempSync(join(tmpdir(), 'tally-cli-cwd-'));

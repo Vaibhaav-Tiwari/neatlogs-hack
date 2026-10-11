@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { stringify as stringifyYaml } from 'yaml';
 import { execFileSync } from 'node:child_process';
 import { loadConfig } from './config.js';
+import { createDryRunPorts } from './dry-run.js';
+import { RunError } from './run.js';
 import { CODEX_LIST_PRICES } from './pricing.js';
 import { PriceHistory } from '../agent/history.js';
 import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
@@ -291,6 +293,55 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it.each(['live-demo', 'legacy-init'])('keeps %s legacy concurrency sequential when cfo.ai is unreachable', async kind => {
+    const { dir, configPath } = fixture();
+    const config = kind === 'live-demo' ? loadConfig(join(process.cwd(), 'demo/tally.live.yaml')) : loadConfig(configPath);
+    config.concurrency = 3;
+    config.integrations.cfoai = true;
+    config.budget.source = 'cfoai';
+    config.backlog = { source: 'file', file: join(process.cwd(), 'demo/sample-backlog.yaml') };
+    writeFileSync(configPath, stringifyYaml(config));
+    const dry = createDryRunPorts({ config, configPath });
+    const active = new Set<string>();
+    let peak = 0;
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), true);
+    const result = await runRealTally({ configPath, dryRun: true, baseline: false,
+      outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { ...dry, trace: new FakeTrace(), checkpoints: { checkpointFor: async () => null }, cfoai,
+        sessions: { stop: async (id, reason) => { active.delete(id); await dry.sessions!.stop(id, reason); } },
+        worker: {
+          start: async input => { const started = await dry.worker!.start(input); active.add(started.sessionId); peak = Math.max(peak, active.size); return started; },
+          wait: async id => { try { await new Promise(resolve => setTimeout(resolve, 5)); return await dry.worker!.wait(id); } finally { active.delete(id); } },
+        },
+      } });
+    expect(peak).toBe(1);
+    expect(result.runState.tasks).toHaveLength(7);
+    expect(result.runState.status).toBe('finished');
+    expect(result.runState.budget.source).toBe('config');
+    expect(result.runState.integrations.cfoai.status).toBe('missing');
+    expect(result.runState.integrations.cfoai.detail).toContain('using the fallback budget in tally.yaml');
+    expect(cfoai.writes).toEqual([]);
+  });
+
+  it('allows explicitly parallel dry workers to fall back when cfo.ai is unreachable', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    const config = loadConfig(configPath);
+    config.parallelWorkers = 3;
+    writeFileSync(configPath, stringifyYaml(config));
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), true);
+    cfoai.status = () => ({ status: 'ok', detail: 'transport connected but budget inaccessible' });
+    const result = await runRealTally({ configPath, dryRun: true, baseline: false,
+      outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, cfoai,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+    expect(worker.starts).toHaveLength(1);
+    expect(result.runState.status).toBe('finished');
+    expect(result.runState.budget.source).toBe('config');
+    expect(result.runState.integrations.cfoai.status).toBe('missing');
+    expect(cfoai.writes).toEqual([]);
+  });
+
   it('keeps absent concurrency byte-for-byte identical to explicit 1', async () => {
     const { dir, configPath } = fixture();
     const config = loadConfig(configPath);
@@ -374,6 +425,7 @@ describe('runRealTally', () => {
   for (const width of [2, 3]) {
     it(`overlaps ${width} AO workers, persists valid interleaved JSON and serializes accounting`, async () => {
       const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+      if (width === 3) writeFileSync(configPath, stringifyYaml({ ...loadConfig(configPath), parallelWorkers: width }));
       const backlog = (await intake.tasks(loadConfig(configPath), configPath))[0]!;
       const tasks = Array.from({ length: width * 2 }, (_, i) => ({ ...backlog, taskId: `T${i + 1}` }));
       class OverlapWorker extends FakeWorker {
@@ -406,7 +458,7 @@ describe('runRealTally', () => {
         },
       };
       let snapshots = 0;
-      const result = await runRealTally({ configPath, parallel: width, dryRun: false, baseline: false,
+      const result = await runRealTally({ configPath, ...(width === 2 ? { parallel: width } : {}), dryRun: false, baseline: false,
         outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
         onEvent: () => {
           for (const root of ['out', 'latest']) {
@@ -469,7 +521,7 @@ describe('runRealTally', () => {
       ports: { worker, usage: worker, sessions: worker, cfoai: {
         budgetLimitNanos: async () => { throw new Error('budget unavailable'); }, remainingNanos: async () => 0,
         writeCumulativeActualSpend: async () => {}, status: () => ({ status: 'missing', detail: 'unavailable' }),
-      } } })).rejects.toThrow('cannot reserve the monthly budget');
+      } } })).rejects.toThrow(RunError);
     expect(worker.starts).toHaveLength(0);
   });
 

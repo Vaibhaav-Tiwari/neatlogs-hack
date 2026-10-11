@@ -191,7 +191,7 @@ function printSummary(config: TallyConfig, print: (line: string) => void): void 
   print(config.budget.source === 'cfoai' ? `Budget: cfo.ai live account budget (local fallback: $${config.budget.usd})` : `Budget: $${config.budget.usd} from config`);
   for (const tier of config.tiers) print(`Tier ${tier.name}: ${tier.harness}/${tier.model} (${tier.sessionMode})`);
   print(`Products: ${(['neatlogs', 'entire', 'cfoai'] as const).map(name => `${name} ${config.integrations[name] ? 'on' : 'off'}`).join(', ')}`);
-  print(`Workers: ${config.runner === 'direct' ? 1 : config.concurrency ?? 1} (${config.runner ?? 'ao'})`);
+  print(`Workers: ${config.runner === 'direct' ? 1 : config.parallelWorkers ?? 1} (${config.runner ?? 'ao'})`);
 }
 
 function tiersFor(choice: 'codex' | 'claude-code' | 'mixed'): TallyConfig['tiers'] {
@@ -324,7 +324,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
       const setup = await chooseSetup({ ...options, runner: options.runner ?? before.runner ?? 'ao' }, options.command ?? defaultCommand, resolve(dirname(configPath), config.repo.path), readLine, print);
       if (setup.runner !== (before.runner ?? 'ao')) throw new InitError('Changing an existing installation runner requires uninstall and a fresh init; AO ownership will not be silently changed.');
       config.runner = setup.runner;
-      if (!options.yes && !options.dryRun) config.concurrency = setup.concurrency;
+      if (!options.yes && !options.dryRun) config.parallelWorkers = setup.concurrency;
       if (options.harnessChoice) config.tiers = setup.tiers;
     }
     if ((config.runner ?? 'ao') === 'ao') aoWorkerMode(config);
@@ -437,6 +437,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
       usd: options.budgetUsd ?? 40,
     },
     concurrency,
+    parallelWorkers: concurrency,
     integrations: { neatlogs, entire, cfoai, slack: false },
   };
   await consentClaude(config, options, readLine, print);

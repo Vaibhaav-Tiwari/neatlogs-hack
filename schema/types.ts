@@ -266,8 +266,10 @@ export interface TallyConfig {
       serverUrl?: string;
     };
   };
-  /** AO worker slots; absent means 1. Direct runners always execute sequentially. */
+  /** Legacy worker count; does not enable parallel execution. */
   concurrency?: number;
+  /** Explicit AO parallel opt-in; absent means 1. Direct remains sequential. */
+  parallelWorkers?: number;
   entire?: {
     /** Off by default: generation may export session content to Entire's summary provider. */
     generatedSummaries?: boolean;

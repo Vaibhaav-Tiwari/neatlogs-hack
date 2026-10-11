@@ -18,6 +18,7 @@ describe('runInit', () => {
         integrations: { neatlogs: false, entire: false, cfoai: false }, doctor: async () => [], onboarding: async () => undefined, print: () => {},
         readLine: async (question, fallback) => { questions.push(question); return question.startsWith('Maximum concurrent') ? '3' : question.startsWith('Run tasks') || question.startsWith('Apply these') ? 'y' : fallback ?? ''; } });
       expect(parseYaml(readFileSync(result.configPath, 'utf8')).concurrency).toBe(runner === 'ao' ? 3 : 1);
+      expect(parseYaml(readFileSync(result.configPath, 'utf8')).parallelWorkers).toBe(runner === 'ao' ? 3 : 1);
       expect(questions.some(question => question.startsWith('Run tasks'))).toBe(runner === 'ao');
     }
   });

@@ -42,7 +42,7 @@ import { loadConfig } from './config.js';
 import { createPriceHistory } from './price-history.js';
 import { writeRunFiles } from './output.js';
 import { tierPriceNote } from './pricing.js';
-import type { RunOptions, RunResult } from './run.js';
+import { RunError, type RunOptions, type RunResult } from './run.js';
 import { Reservations, runPool, SerialQueue } from './concurrency.js';
 
 const execFileAsync = runCommand;
@@ -252,8 +252,10 @@ function portStatus(port: unknown, fallback: RunState['integrations']['entire'])
   return withStatus.status?.() ?? fallback;
 }
 
-function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource }): RunState['integrations'] {
-  const cfoaiStatus = ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
+function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource; cfoaiReadFailure: string | null }): RunState['integrations'] {
+  const cfoaiStatus = options.cfoaiReadFailure
+    ? { status: 'missing' as const, detail: `cfo.ai budget read failed: ${options.cfoaiReadFailure}; using the fallback budget in tally.yaml${options.dryRun ? '; simulated workers only; spend not written' : ''}` }
+    : ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
   const graph = portStatus(ports.signals, { status: 'missing', detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.' });
   const recall = ports.recall?.status?.();
   return {
@@ -798,7 +800,7 @@ function handoffSummaryLedgerRow(input: {
 
 export async function runRealTally(options: RealRunOptions): Promise<RunResult> {
   const config = loadConfig(options.configPath);
-  const requestedConcurrency = options.parallel ?? config.concurrency ?? 1;
+  const requestedConcurrency = options.parallel ?? config.parallelWorkers ?? 1;
   if (!Number.isInteger(requestedConcurrency) || requestedConcurrency < 1) throw new Error('parallel worker count must be a positive integer');
   if (config.runner === 'direct' && options.parallel !== undefined && options.parallel > 1) throw new Error('parallel workers require runner ao; direct remains sequential');
   const concurrency = config.runner === 'direct' || options.baseline ? 1 : requestedConcurrency;
@@ -819,6 +821,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   let monthlyLimitNanos = usdToNanos(config.budget.usd);
   let monthlySpentNanos = 0;
   let cfoaiWriteFailure: string | null = null;
+  let cfoaiReadFailure: string | null = null;
   let committedBeforeRunNanos = 0;
   if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
     try {
@@ -831,7 +834,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
       }
     } catch (error) {
-      if (concurrency > 1) throw new Error(`parallel AO run cannot reserve the monthly budget: cfo.ai read failed: ${error instanceof Error ? error.message : String(error)}; no workers were started`);
+      cfoaiReadFailure = error instanceof Error ? error.message : String(error);
+      if (concurrency > 1 && !options.dryRun) throw new RunError([`parallel AO run cannot reserve the monthly budget: cfo.ai read failed: ${error instanceof Error ? error.message : String(error)}; no workers were started. Restore cfo.ai access or run sequentially with --parallel 1.`]);
       budgetSource = 'config';
     }
   }
@@ -935,7 +939,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         spentNanos: ledgerSpend(ledger) + [...liveCosts.values()].reduce((sum, cost) => sum + cost, 0),
       },
       tasks: taskStates,
-      integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource }),
+      integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource, cfoaiReadFailure }),
     };
     if (cfoaiWriteFailure) runState.integrations.cfoai = { status: 'error', detail: cfoaiWriteFailure };
     const workerRows = ledger.filter(row => row.harness === 'codex' || row.harness === 'claude-code');
