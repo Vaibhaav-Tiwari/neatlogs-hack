@@ -97,3 +97,7 @@ raise the issues. but also explain how the entire project thing is gonna work? i
 ---
 
 Okay, so here is what you're gonna do. let's just pull the latest repository and work on it. I want you to choose PR for the first issue, and because that is the most important issue right so just do that raise a PR has to be a tom make don't make shit ton of changes just the necessary ones and then test it and get back to me
+
+---
+
+i merged it to main. move to the next focussed issue
