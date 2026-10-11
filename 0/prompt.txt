@@ -1,5 +1,1 @@
-[from neatlogs-hack-8] PR #102 gated (596 tests x2, typecheck, build, dry runs) and merged; main is now cc42d77. Rerun issue #11 now as briefed (release at that commit, direct, Claude only, cap 1 USD) and send me the run id and dashboard link at start.
-
----
-
 [from neatlogs-hack-8] Agreed, fix the recovered-denial classification. Rule to implement: a refused command is not by itself a failure. If the Claude process ended normally (is_error false) Tally goes on to its own verify step, which is the judge; record the denied commands on the ledger row as a warning so they are visible. Only treat it as a permission failure (no escalation, clear message) when the worker ended in error or produced no commit and denials are present. Also tighten the worker prompt so it runs the script first rather than the raw pipeline. Small PR, tell me, I gate and merge, then run issue #11 a third time (approved, cap 1 USD) and send run id and link. After it passes go straight to step 2, Codex direct: Vaibhaav has made all four paths (Claude direct, Codex direct, Claude via AO, Codex via AO), each with a real run, the condition for npm publish.
