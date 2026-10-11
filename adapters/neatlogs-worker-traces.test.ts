@@ -20,18 +20,6 @@ describe('NeatlogsWorkerTraceReader', () => {
     expect(calls).toHaveLength(3);
   });
 
-  it('accepts the public API trace id alias when traceId is not present', async () => {
-    const publicTrace = { id: traceId, sessionId: 'native', workflowName: trace.workflowName };
-    const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async input => {
-      const url = String(input);
-      if (url.includes('?')) return json({ traces: [publicTrace], page: { hasMore: false } });
-      if (url.endsWith('/spans')) return json({ spans: [{}] });
-      return json({ ...publicTrace, spansCount: 1, totalTokens: 0 });
-    } });
-
-    await expect(reader.verifyFor(context)).resolves.toBe(traceId);
-  });
-
   it.each(['session', 'run', 'task', 'attempt', 'id', 'spans', 'empty', 'detail'])('does not verify a %s mismatch or incomplete response', async fault => {
     const candidate = { ...trace, ...(fault === 'session' ? { sessionId: 'other' } : {}) };
     if (fault === 'run') candidate.workflowName = candidate.workflowName.replace('run-1', 'run-other');

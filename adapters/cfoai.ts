@@ -272,7 +272,6 @@ export class CfoaiBudgetAdapter implements BudgetPort {
   private statusState: IntegrationState = { status: 'missing', detail: CFOAI_FIX_COMMAND };
   private toolsChecked = false;
   private runBaseSpendNanos: number | null = null;
-  private detailBaseSpendNanos: number | null = null;
   private baseDetailSpendNanos: Map<string, number> | null = null;
   private seededDetailGapNanos = 0;
   private readyPromise: Promise<void> | null = null;
@@ -293,11 +292,6 @@ export class CfoaiBudgetAdapter implements BudgetPort {
 
   tableUrl(): string | undefined {
     return this.config.tableUrl;
-  }
-
-  setRunBaseSpendNanos(nanos: number, detailBaseSpendNanos = nanos): void {
-    this.runBaseSpendNanos = Math.max(0, Math.round(nanos));
-    this.detailBaseSpendNanos = Math.max(0, Math.round(detailBaseSpendNanos));
   }
 
   spendDetailTableUrl(): string | undefined {
@@ -433,7 +427,7 @@ export class CfoaiBudgetAdapter implements BudgetPort {
     const entries = await Promise.all(mappedRows.map(async (row) => [row, usdToNanos(await this.readUsdFrom(this.config.spendDetailTable, row))] as const));
     const base = new Map(entries);
     const tierSum = [...base.values()].reduce((sum, value) => sum + value, 0);
-    const agentSpend = this.detailBaseSpendNanos ?? this.runBaseSpendNanos ?? (await this.currentSpendNanos());
+    const agentSpend = this.runBaseSpendNanos ?? (await this.currentSpendNanos());
     const gap = agentSpend - tierSum;
     if (gap > 1 && mappedRows[0]) {
       base.set(mappedRows[0], (base.get(mappedRows[0]) ?? 0) + gap);

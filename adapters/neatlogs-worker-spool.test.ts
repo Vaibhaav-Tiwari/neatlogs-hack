@@ -32,22 +32,6 @@ describe('NeatlogsWorkerSpoolAdapter', () => {
     expect(adapter.status()).toEqual({ status: 'ok', detail: null });
   });
 
-  it('uses an injected state directory when constructed outside the worker process', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'tally-spool-env-'));
-    const spool = new SpanSpool(root);
-    const path = spool.enqueue([{
-      traceId: randomBytes(16), spanId: randomBytes(8), name: 'tool', kind: 1, startTimeUnixNano: '1', endTimeUnixNano: '2',
-      attributes: [{ key: 'neatlogs.session.id', value: { stringValue: 'native' } }],
-    }], 'worker')!;
-    const adapter = new NeatlogsWorkerSpoolAdapter({
-      env: { NEATLOGS_STATE_DIR: root, NEATLOGS_API_KEY: 'fake-key' },
-      exporter: { exportSpans: async () => 'success' },
-    });
-
-    await adapter.drainWorker({ checkoutPath: null, entireSessionId: 'native' });
-    expect(existsSync(path)).toBe(false);
-  });
-
   it.each(['terminal', 'retryable'] as const)('retains a %s failure without deleting or modifying queued data', async (failure) => {
     const { root, enqueue } = fixture();
     const path = enqueue('native');

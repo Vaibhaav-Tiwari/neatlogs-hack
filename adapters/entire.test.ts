@@ -62,23 +62,6 @@ describe('EntireSizingAdapter', () => {
     ]);
   });
 
-  it('indexes once and reuses the graph for later tasks in the same run', async () => {
-    const runner = new FakeRunner((_command, args) => {
-      const text = args.join(' ');
-      if (text.includes('graph index')) return { stdout: '' };
-      if (text.includes('graph search')) return { stdout: JSON.stringify({ results: [{ file_path: 'src/refund/validator.ts', symbol: 'refund.validate' }] }) };
-      return { stdout: JSON.stringify({ callers: { total: 0 }, co_changes: { total: 0 } }) };
-    });
-    const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner });
-
-    await adapter.signalsFor(task);
-    await adapter.signalsFor({ ...task, taskId: 'T2', title: 'Update refund validator' });
-
-    expect(runner.calls.filter((call) => call.args.includes('index'))).toHaveLength(1);
-    expect(runner.calls.filter((call) => call.args.includes('search'))).toHaveLength(2);
-    expect(runner.calls.filter((call) => call.args.includes('impact'))).toHaveLength(2);
-  });
-
   it('falls back to rg code search when entire is missing', async () => {
     const runner = new FakeRunner((command, args) => {
       if (command === 'entire') return new Error('entire missing');

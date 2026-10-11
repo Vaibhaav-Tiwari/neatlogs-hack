@@ -61,6 +61,7 @@ const CLAUDE_TIERS = [
 ] as const;
 
 export async function defaultCommand(file: string, args: string[], options?: { cwd?: string; aoBin?: string }): Promise<InitCommandResult> {
+  if (file === 'ao') resolveAoBinary(options);
   // The CLI config mirror drops fields such as effort; use the full daemon object.
   if (file === 'ao' && args[0] === 'project' && (args[1] === 'get' || args[1] === 'set-config')) {
     const id = encodeURIComponent(args[2]!);
@@ -73,7 +74,6 @@ export async function defaultCommand(file: string, args: string[], options?: { c
     if (!response.ok) throw new InitError(`AO project ${args[1]} failed: HTTP ${response.status}; check AO is running before retrying.`);
     return { stdout: JSON.stringify(await response.json()), stderr: '' };
   }
-  if (file === 'ao') resolveAoBinary(options);
   return runCommand(file, args, options);
 }
 
@@ -247,33 +247,10 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
   const before = pending ? parseYaml(pending.beforeConfig) as TallyConfig : loadConfig(configPath);
   const config = pending ? parseYaml(pending.afterConfig) as TallyConfig : structuredClone(before);
   if (!validateConfig(before).ok || !validateConfig(config).ok) throw new InitError('Re-init recovery configuration is invalid; no changes made.');
-  const targetRepo = resolve(dirname(configPath), config.repo.path);
   if (!pending) {
     for (const name of ['neatlogs', 'entire', 'cfoai'] as const) {
       const label = name === 'cfoai' ? 'cfo.ai' : name === 'entire' ? 'Entire' : name;
       config.integrations[name] = parseYes(await readLine(`Enable ${label} integration? y/N`, before.integrations[name] ? 'y' : 'N'));
-    }
-    if (before.integrations.cfoai && !config.integrations.cfoai && config.budget.source === 'cfoai') {
-      config.budget = { source: 'config', usd: before.budget.usd };
-    }
-    const newlyEnabled = (['cfoai', 'neatlogs', 'entire'] as const).filter((name) => config.integrations[name] && !before.integrations[name]);
-    if (!options.dryRun && newlyEnabled.length > 0) {
-      await (options.onboarding ?? configureIntegrations)({
-        config,
-        repoRoot: targetRepo,
-        integrationNames: newlyEnabled,
-        ui: {
-          print,
-          confirm: async (question) => !options.yes && parseYes(await readLine(`${question} y/N`, 'N')),
-          select: async (question, choices) => {
-            if (options.yes) return null;
-            choices.forEach((choice, index) => print(`${index + 1}. ${choice}`));
-            const value = (await readLine(`${question}; enter a number, or blank to skip`, '')).trim();
-            const index = Number(value) - 1;
-            return /^\d+$/.test(value) && index >= 0 && index < choices.length ? index : null;
-          },
-        },
-      });
     }
   }
   const result = { configPath, projectId: config.repo.aoProject ?? '', testCommand: config.test.command, setupCommand: config.test.setupCommand ?? null, baseBranch: config.repo.baseBranch, tiers: config.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
@@ -282,6 +259,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
     return { ...result, applied: false, doctor: [] };
   }
   const command: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: config.repo.aoBin ? resolve(dirname(configPath), config.repo.aoBin) : undefined }));
+  const targetRepo = resolve(dirname(configPath), config.repo.path);
   await initPrerequisites(config, command, targetRepo, options);
   const plan = pending ?? prepareReinit(configPath, stringifyYaml(config));
   print(`Tally re-init proposed diff for ${configPath}:`);
