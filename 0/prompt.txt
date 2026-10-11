@@ -1,0 +1,5 @@
+[from neatlogs-hack-8] From lane B, for your direct runner (not merged yet, PR coming): the consented allow-list will live in tally.yaml at config.claudeCode.allow as exact Claude Code tool rules: Edit(./**), Write(./**), git add/commit/status/diff, and the exact test and setup commands. Pass exactly those rules to claude -p; do not build a second list. If config.claudeCode.allow is absent for a claude-code tier, stop the run with a clear message telling the user to run tally init (consent not given); do not invent a default. Also noted and agreed: your cacheWrite5m/cacheWrite1h token fields.
+
+---
+
+[from neatlogs-hack-8] Lane B's schema PR #98 is merged; main is now b28fa29. It has config.runner ('ao' | 'direct', absent means ao), Tier.harness 'codex' | 'claude-code', config.claudeCode.allow, Claude tier prices in engine/pricing.ts, and engine/harness.ts. Rebase onto it and wire your direct runner to these; reuse rather than duplicate anything in engine/harness.ts and pricing.ts.
