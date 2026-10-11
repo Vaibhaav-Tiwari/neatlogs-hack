@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4NCMQXDVH5MZBBF59WH69K8",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/ao-claude-permissions",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "engine/doctor.test.ts",
+    "engine/init.test.ts",
+    "engine/init.ts",
+    "engine/preflight.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6173,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1168896,
+    "output_tokens": 4294,
+    "api_call_count": 6
+  }
+}
