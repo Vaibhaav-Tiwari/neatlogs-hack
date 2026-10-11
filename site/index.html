@@ -115,6 +115,15 @@
   </div>
 </section>
 
+<section class="band" id="ledger" aria-labelledby="ledger-title">
+  <div class="wrap">
+    <p class="eyebrow">The ledger</p>
+    <h2 id="ledger-title">Every attempt, <em>written down</em></h2>
+    <p class="body">The dashboard is a read-only page over two files Tally writes as it works. This is the same run: the budget, the decision in one sentence, and the attempt with its tokens, cost and trace ids.</p>
+    <figure class="frame shot reveal"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>tally dashboard</span></div><img src="shots/dashboard-budget.png" alt="Tally dashboard for the real run: cost per passed task one cent, one cent spent of a one dollar cap, neatlogs and cfo.ai on, Entire off" width="1360" height="640" loading="lazy"></figure>
+  </div>
+</section>
+
 <section class="band" id="switches" aria-labelledby="switches-title">
   <div class="wrap">
     <p class="eyebrow">Integrations</p>
@@ -168,7 +177,7 @@
     <p class="eyebrow">Agent Orchestrator</p>
     <h2 id="ao-title">In parallel, <em>or one at a time</em></h2>
     <div class="modes">
-      <div class="mode"><img src="ao-mascot.png" alt="Agent Orchestrator mascot" width="56" height="56" loading="lazy"><h3>With Agent Orchestrator</h3><p>Tally runs agents in parallel, each in its own worktree.</p></div>
+      <div class="mode"><img src="ao-mascot.png" alt="Agent Orchestrator mascot" width="52" height="52" loading="lazy"><h3>With Agent Orchestrator</h3><p>Tally runs agents in parallel, each in its own worktree.</p></div>
       <div class="mode"><h3>Without it</h3><p>Tally runs Claude Code or Codex directly, one task at a time.</p></div>
     </div>
     <p class="aside small"><code>tally init</code> detects which you have. Mascot from <a href="https://github.com/OrchestratorInc/agent-orchestrator">OrchestratorInc/agent-orchestrator</a>, Apache-2.0.</p>
@@ -179,7 +188,78 @@
   <div class="wrap">
     <p class="eyebrow">neatHack 2026</p>
     <h2 id="judges-title">For the <em>judges</em></h2>
-    <p class="body">This section is being built: one block per judging criterion, each with its weight, its wording and evidence you can open.</p>
+    <p class="body">One block per judging criterion, with its weight and its wording. Everything shown is from a real run or the public repository and can be opened. Where evidence does not exist yet, the slot says so.</p>
+    <ul class="weights" aria-label="Judging criteria">
+      <li><a href="#j-agent"><b>30%</b> The agent</a></li><li><a href="#j-tools"><b>25%</b> neatlogs, Entire, cfo.ai</a></li><li><a href="#j-video"><b>20%</b> Demo video</a></li><li><a href="#j-public"><b>15%</b> Building in public</a></li><li><a href="#j-useful"><b>10%</b> Usefulness and originality</a></li>
+    </ul>
+
+    <article class="criterion" id="j-agent">
+      <header><p class="weight">30%</p><div><h3>The agent</h3><p class="quote">“How well the agent, or the system of agents, handles a substantial task from start to finish.”</p></div></header>
+      <div class="evidence two reveal">
+        <div class="ev">
+          <h4>Four ways to run an agent, each ending in a real pull request</h4>
+          <ul class="bars">
+            <li><span class="b-name">Codex through Agent Orchestrator</span><span class="b-track"><i style="width:13.9%"></i></span><span class="b-cost" data-count="0.0121">$0.0121</span><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/10">PR #10</a></li>
+            <li><span class="b-name">Claude Code through Agent Orchestrator</span><span class="b-track"><i style="width:100%"></i></span><span class="b-cost" data-count="0.0871">$0.0871</span><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/13">PR #13</a></li>
+            <li><span class="b-name">Claude Code, direct</span><span class="b-track"><i style="width:87.8%"></i></span><span class="b-cost" data-count="0.0765">$0.0765</span><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/14">PR #14</a></li>
+            <li><span class="b-name">Codex, direct</span><span class="b-track"><i style="width:12.5%"></i></span><span class="b-cost" data-count="0.0109">$0.0109</span><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18">PR #18</a></li>
+          </ul>
+          <p class="note">One task each on <code>Vaibhaav-Tiwari/chip-design-groundup</code>. Cost per run, estimated at list price.</p>
+        </div>
+        <div class="ev">
+          <h4>Stopped at its ceiling, then finished by a stronger model</h4>
+          <ol class="trail">
+            <li><span class="chip bad">stopped</span><span>Attempt 1, cheap tier: $0.0153 spent against a $0.0150 ceiling, set low on purpose.</span></li>
+            <li><span class="chip">handoff</span><span>Work in progress committed; the next model continued the same branch.</span></li>
+            <li><span class="chip good">passed</span><span>Attempt 2, middle tier: $0.0815, <a href="https://github.com/Vaibhaav-Tiwari/fly-doom-jev/pull/14">fly-doom-jev PR #14</a>.</span></li>
+          </ol>
+          <p class="note">Proven once, in run <code>run-20261010-201255Z</code>.</p>
+        </div>
+      </div>
+      <div class="thumbs">
+        <figure class="thumb"><a href="shots/dashboard-budget.png"><span class="tag">A1</span><img src="shots/dashboard-budget.png" alt="Tally dashboard for the real run: one cent spent of a one dollar cap, neatlogs and cfo.ai on" width="1360" height="640" loading="lazy"></a><figcaption>Dashboard of the PR #18 run: $0.01 of a $1.00 cap</figcaption></figure>
+        <figure class="thumb"><a href="shots/dashboard-decision.png"><span class="tag">A2</span><img src="shots/dashboard-decision.png" alt="The ledger entry for issue 17 with the routing decision in a sentence and the code graph" width="1360" height="740" loading="lazy"></a><figcaption>The decision in one sentence, and the code graph</figcaption></figure>
+        <figure class="thumb"><a href="shots/dashboard-attempt.png"><span class="tag">A3</span><img src="shots/dashboard-attempt.png" alt="The attempt row: model, tokens, cost, ceiling, result, pull request and trace ids" width="1360" height="330" loading="lazy"></a><figcaption>The attempt row: tokens, cost, ceiling, traces</figcaption></figure>
+      </div>
+      <details><summary>Show details</summary>
+        <ul class="plain">
+          <li>Run ids: <code>run-20261011-092229Z</code>, <code>run-20261011-123546Z</code>, <code>run-20261011-123814Z</code>, <code>run-20261011-130259Z</code>.</li>
+          <li>Tally verifies each change by running the repository's test command itself, then opens the pull request. It never merges.</li>
+          <li>665 automated tests pass on the branch this page was built from.</li>
+          <li>Not proven in a real run yet: parallel workers, and escalation on the direct runner. The <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack#real-run-evidence">README keeps the list</a>.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="criterion" id="j-tools">
+      <header><p class="weight">25%</p><div><h3>Use of neatlogs, Entire and cfo.ai</h3><p class="quote">“How effectively you used neatlogs, Entire and cfo.ai to build, improve and plan a business around the agent.”</p></div></header>
+      <div class="evidence three reveal">
+        <div class="ev"><h4>neatlogs</h4><p>Every ledger row carries a decision trace and a worker trace, read back from neatlogs after the run.</p><p class="ids">decision <code>0d5826efa109e27125df7ce43b766572</code><br>worker <code>028d92600350d1be5cc76b4cc35d10be</code></p><p class="note">From the PR #18 run. Trace pages need a neatlogs login.</p></div>
+        <div class="ev"><h4>Entire</h4><p><b class="figure">137 of 297</b> commits on <code>main</code> carry an Entire checkpoint. The stop-and-escalate run handed the stopped attempt to the next model through an Entire handoff.</p><p class="note">Counted from <code>git log</code> at commit <code>0e2226d</code>.</p></div>
+        <div class="ev"><h4>cfo.ai</h4><p>The monthly budget, $40.00, was read live from cfo.ai at the start of the run. Spend was written back after it and matched the ledger to the cent on each run.</p><p class="slot"><span>Not here yet</span>A business plan in cfo.ai: pricing, costs, revenue and runway.</p></div>
+      </div>
+    </article>
+
+    <article class="criterion" id="j-video">
+      <header><p class="weight">20%</p><div><h3>Demo video</h3><p class="quote">“How clearly the demo video explains the agent and your use of neatlogs, Entire and cfo.ai.”</p></div></header>
+      <p class="slot"><span>Not here yet</span>The demo video has not been recorded. It will appear in the frame near the top of this page.</p>
+    </article>
+
+    <article class="criterion" id="j-public">
+      <header><p class="weight">15%</p><div><h3>Building in public</h3><p class="quote">“How you shared your project with other people while you built it.”</p></div></header>
+      <div class="evidence two reveal">
+        <div class="ev"><h4>The repository, in the open from the first commit</h4><p><b class="figure">297</b> commits and <b class="figure">115</b> merged pull requests on <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a>, the first on 10 October 2026 at 13:57 IST. <code>tally-agents</code> 0.1.0 is on <a href="https://www.npmjs.com/package/tally-agents">npm</a>.</p></div>
+        <div class="ev"><p class="slot"><span>Not here yet</span>Links to the posts tagged #neatHack.</p></div>
+      </div>
+    </article>
+
+    <article class="criterion" id="j-useful">
+      <header><p class="weight">10%</p><div><h3>Usefulness and originality</h3><p class="quote">“Whether the agent solves a problem that people have, in a new way.”</p></div></header>
+      <div class="evidence two reveal">
+        <div class="ev"><h4>A spending limit per task, not per person</h4><p>Each task gets its own ceiling before it starts, a cheaper model is tried first only when that is the lower expected cost, and an agent that crosses its ceiling is stopped. The ledger ties every attempt to its tokens, its cost and its pull request.</p></div>
+        <div class="ev"><p class="slot"><span>Not here yet</span>A measured saving against a baseline where every task goes to the strongest model.</p></div>
+      </div>
+    </article>
   </div>
 </section>
 
