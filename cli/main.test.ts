@@ -195,6 +195,12 @@ describe('parseCli', () => {
     expect(parseCli(['market', '--limit', '0'])).toMatchObject({ kind: 'error' });
   });
 
+  it('accepts an opt-in parallel count and rejects invalid counts', () => {
+    expect(parseCli(['run', '--parallel', '3'])).toMatchObject({ kind: 'command', options: { parallel: 3 } });
+    for (const value of ['0', '-1', '1.5', 'Infinity', 'NaN']) expect(parseCli(['run', '--parallel', value])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['run'])).toMatchObject({ kind: 'command' });
+  });
+
   it('rejects unknown commands and unknown flags', () => {
     expect(parseCli(['deploy'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['run', '--nope'])).toMatchObject({ kind: 'error' });

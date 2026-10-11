@@ -266,6 +266,7 @@ export interface TallyConfig {
       serverUrl?: string;
     };
   };
+  /** AO worker slots; absent means 1. Direct runners always execute sequentially. */
   concurrency?: number;
   entire?: {
     /** Off by default: generation may export session content to Entire's summary provider. */

@@ -33,6 +33,7 @@ export interface CliOptions {
   baseline: boolean;
   /** Overrides the budget in tally.yaml. */
   budgetUsd: number | undefined;
+  parallel?: number;
   /** Run a single task by id or issue number. */
   only: string | undefined;
   /** Start the local dashboard server before execution. */
@@ -107,6 +108,7 @@ Options:
   --dry-run         Simulate workers; spends nothing
   --budget <usd>    Override the budget for this run
   --only <task>     Run a single task
+  --parallel <N>    Opt into up to N AO workers (default: 1; direct is sequential)
   --baseline        Send every task to the strongest tier
   --dashboard       Serve the dashboard before run/demo; keep serving until Ctrl+C
   --open            Also open the dashboard in the browser
@@ -149,6 +151,7 @@ export function parseCli(argv: string[]): ParsedCli {
         baseline: { type: 'boolean', default: false },
         budget: { type: 'string' },
         only: { type: 'string' },
+        parallel: { type: 'string' },
         dashboard: { type: 'boolean', default: false },
         open: { type: 'boolean', default: false },
         port: { type: 'string' },
@@ -221,6 +224,8 @@ export function parseCli(argv: string[]): ParsedCli {
     }
   }
   let port: number | undefined;
+  const parallel = values.parallel === undefined ? undefined : Number(values.parallel);
+  if (parallel !== undefined && (!Number.isInteger(parallel) || parallel < 1)) return { kind: 'error', message: '--parallel must be a positive integer' };
   if (values.port !== undefined) {
     port = Number(values.port);
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -249,6 +254,7 @@ export function parseCli(argv: string[]): ParsedCli {
       dryRun: values['dry-run'],
       baseline: values.baseline,
       budgetUsd,
+      ...(parallel === undefined ? {} : { parallel }),
       only: values.only,
       dashboard: values.dashboard || values.open,
       ...(values.open ? { open: true } : {}),
@@ -285,6 +291,8 @@ type Handler = (options: CliOptions, io: CliIO) => Promise<number>;
 
 async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
   let dashboard: DashboardServer | undefined;
+  let interrupted: string | null = null;
+  const interrupt = () => { interrupted = 'interrupted by user; workers stopped'; };
   try {
     if (options.plan) {
       const config = loadConfig(options.config);
@@ -315,12 +323,16 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
       return 0;
     }
     if (options.dashboard) dashboard = await launchDashboard(options, io);
+    process.on('SIGINT', interrupt);
+    process.on('SIGTERM', interrupt);
     const result = await runTally({
       configPath: options.config,
       dryRun: options.dryRun,
       baseline: options.baseline,
       budgetUsd: options.budgetUsd,
       only: options.only,
+      parallel: options.parallel,
+      stopRequested: () => interrupted,
       onEvent: progressPrinter(io),
     });
     io.stdout(`wrote ${result.runStatePath}`);
@@ -334,11 +346,17 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
     }
     printIntegrations(result, io);
     printRunSummary(result, io, dashboard?.url);
+    process.off('SIGINT', interrupt);
+    process.off('SIGTERM', interrupt);
+    if (interrupted) { await dashboard?.close(); return 130; }
     if (dashboard) await waitForDashboard(dashboard);
     return 0;
   } catch (e) {
     await dashboard?.close();
     return reportError('tally run', e, io);
+  } finally {
+    process.off('SIGINT', interrupt);
+    process.off('SIGTERM', interrupt);
   }
 }
 

@@ -9,6 +9,18 @@ import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 import { runUninstall } from './uninstall.js';
 
 describe('runInit', () => {
+  it('sets parallel AO slots only after opting in, and never offers parallel direct workers', async () => {
+    for (const runner of ['ao', 'direct'] as const) {
+      const repo = mkdtempSync(join(tmpdir(), 'tally-init-slots-'));
+      const questions: string[] = [];
+      const result = await runInit({ cwd: repo, command: detectedAgents(repo, ['codex']), runner, harnessChoice: 'codex',
+        testCommand: 'true', setupCommand: '', budgetUsd: 1, issueLabel: 'tally',
+        integrations: { neatlogs: false, entire: false, cfoai: false }, doctor: async () => [], onboarding: async () => undefined, print: () => {},
+        readLine: async (question, fallback) => { questions.push(question); return question.startsWith('Maximum concurrent') ? '3' : question.startsWith('Run tasks') || question.startsWith('Apply these') ? 'y' : fallback ?? ''; } });
+      expect(parseYaml(readFileSync(result.configPath, 'utf8')).concurrency).toBe(runner === 'ao' ? 3 : 1);
+      expect(questions.some(question => question.startsWith('Run tasks'))).toBe(runner === 'ao');
+    }
+  });
   it('requires Claude consent for mixed AO before integration connection or settings writes', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-mixed-gate-'));
     const onboarding = vi.fn(async () => undefined);
@@ -309,7 +321,7 @@ describe('runInit', () => {
       throw new Error(`unexpected command: ${joined}`);
     };
     let prompt = 0;
-    const answers = ['bug', 'y', 'y', 'n', '12.5', 'y'];
+    const answers = ['bug', 'y', 'y', 'n', 'n', '12.5', 'y'];
 
     const result = await runInit({
       cwd: repo,
@@ -326,6 +338,7 @@ describe('runInit', () => {
     expect(config.test).toMatchObject({ setupCommand: 'make setup', command: 'make test', timeoutSec: 900 });
     expect(config.backlog).toMatchObject({ source: 'github-issues', issueLabel: 'bug' });
     expect(config.budget).toMatchObject({ source: 'config', usd: 12.5 });
+    expect(config.concurrency).toBe(1);
     expect(config.integrations).toMatchObject({ neatlogs: true, entire: true, cfoai: false, slack: false });
     expect(config.tiers.map((tier: { harness: string; sessionMode: string }) => `${tier.harness}:${tier.sessionMode}`)).toEqual(['codex:tui', 'codex:tui', 'codex:tui']);
     expect(config.tiers.map((tier: { price: unknown }) => tier.price)).toEqual([

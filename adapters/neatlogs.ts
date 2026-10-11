@@ -47,6 +47,7 @@ export class NeatlogsTraceAdapter implements TracePort {
   private initStarted: Promise<void> | null = null;
   private offReason: string | null = null;
   private lastTraceIdValue: string | null = null;
+  private decisionIds = new Map<string, string | null>();
 
   constructor(options: NeatlogsTraceOptions = {}) {
     const env = options.env ?? loadEnv();
@@ -62,7 +63,8 @@ export class NeatlogsTraceAdapter implements TracePort {
     return this.offReason ? { status: 'missing', detail: this.offReason } : { status: 'ok', detail: this.lastTraceIdValue };
   }
 
-  lastTraceId(): string | null {
+  lastTraceId(runId?: string, taskId?: string, attempt?: number): string | null {
+    if (runId && taskId && attempt) return this.decisionIds.get(JSON.stringify([runId, taskId, attempt])) ?? null;
     return this.lastTraceIdValue;
   }
 
@@ -86,6 +88,7 @@ export class NeatlogsTraceAdapter implements TracePort {
       const carrier: Record<string, string> = {};
       sdk.injectTraceContext?.(carrier);
       this.lastTraceIdValue = traceIdFromCarrier(carrier);
+      if (decision && sessionId) this.decisionIds.set(JSON.stringify([sessionId, attributes.taskId, attributes.attempt]), this.lastTraceIdValue);
       return fn(span);
     });
   }

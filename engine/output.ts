@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Ledger, RunState } from '../schema/index.js';
 
@@ -12,7 +12,9 @@ export interface WrittenRunFiles {
 }
 
 function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
+  renameSync(temporary, path);
 }
 
 export function writeRunFiles(outputDir: string, runState: RunState, ledger: Ledger, latestRunDir = DEFAULT_LATEST_RUN_DIR): WrittenRunFiles {

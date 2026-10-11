@@ -6,6 +6,7 @@ import { stringify as stringifyYaml } from 'yaml';
 import { execFileSync } from 'node:child_process';
 import { loadConfig } from './config.js';
 import { CODEX_LIST_PRICES } from './pricing.js';
+import { PriceHistory } from '../agent/history.js';
 import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
 import { usdToNanos, validateLedger, validateRunState, type TaskImpact, type TokenUsage } from '../schema/index.js';
 import type { BacklogIntakePort } from '../adapters/github.js';
@@ -290,6 +291,224 @@ class FakeRecall implements CheckpointRecallPort {
 }
 
 describe('runRealTally', () => {
+  it('keeps absent concurrency byte-for-byte identical to explicit 1', async () => {
+    const { dir, configPath } = fixture();
+    const config = loadConfig(configPath);
+    const run = async (name: string, concurrency?: number) => {
+      writeFileSync(configPath, stringifyYaml({ ...config, ...(concurrency === undefined ? {} : { concurrency }) }));
+      const worker = new FakeWorker();
+      return runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, name), latestRunDir: join(dir, 'latest'), now: fixedNow,
+        ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, history: new PriceHistory(), verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+    };
+    const absent = await run('absent');
+    const explicit = await run('explicit', 1);
+    expect(readFileSync(absent.runStatePath, 'utf8')).toBe(readFileSync(explicit.runStatePath, 'utf8'));
+    expect(readFileSync(absent.ledgerPath, 'utf8')).toBe(readFileSync(explicit.ledgerPath, 'utf8'));
+  });
+
+  it('isolates a worker error and still verifies, publishes and closes healthy workers', async () => {
+    const { dir, configPath } = fixture();
+    const task = (await intake.tasks(loadConfig(configPath), configPath))[0]!;
+    class ErrorWorker extends FakeWorker {
+      override async wait(id: string) { if (this.starts[Number(id.split('-')[1]) - 1]?.task.taskId === 'T1') throw new Error('AO connection failed for T1'); return super.wait(id); }
+    }
+    const worker = new ErrorWorker();
+    const result = await runRealTally({ configPath, parallel: 2, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: { tasks: async () => [task, { ...task, taskId: 'T2' }] }, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+    expect(result.ledger.find(row => row.taskId === 'T1')?.result).toBe('error');
+    expect(result.ledger.find(row => row.taskId === 'T2')?.result).toBe('passed');
+    expect(worker.published.map(item => item.taskId)).toEqual(['T2']);
+    expect(worker.stopped.sort()).toEqual(['session-1', 'session-2']);
+  });
+
+  it('interrupts every live worker and never verifies or publishes interrupted work', async () => {
+    const { dir, configPath } = fixture();
+    const task = (await intake.tasks(loadConfig(configPath), configPath))[0]!;
+    class WaitingWorker extends FakeWorker {
+      pending = new Map<string, (result: WorkerResult) => void>();
+      override async wait(id: string): Promise<WorkerResult> { return new Promise(resolve => this.pending.set(id, resolve)); }
+      override async stop(id: string) { await super.stop(id); this.pending.get(id)?.(await super.wait(id)); }
+    }
+    const worker = new WaitingWorker();
+    let interrupted = false;
+    const result = await runRealTally({ configPath, parallel: 2, dryRun: true, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      stopRequested: () => interrupted ? 'interrupted by user' : null,
+      onEvent: event => { if (event.type === 'worker' && worker.starts.length === 2) interrupted = true; },
+      ports: { intake: { tasks: async () => [task, { ...task, taskId: 'T2' }, { ...task, taskId: 'T3' }] }, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: { verify: async () => { throw new Error('must not verify interrupted work'); } } } });
+    expect(worker.starts).toHaveLength(2);
+    expect(new Set(worker.stopped)).toEqual(new Set(['session-1', 'session-2']));
+    expect(worker.published).toHaveLength(0);
+    expect(result.runState.status).toBe('interrupted');
+    expect(result.runState.tasks[2]?.status).toBe('skipped');
+  }, 5000);
+
+  it('keeps a ceiling-stopped task escalation on its branch while another task passes', async () => {
+    const { dir, configPath } = fixture();
+    const task = (await intake.tasks(loadConfig(configPath), configPath))[0]!;
+    class StoppedWorker extends FakeWorker {
+      pending?: (result: WorkerResult) => void;
+      override async wait(id: string): Promise<WorkerResult> {
+        if (id === 'session-1') return new Promise(resolve => { this.pending = resolve; });
+        return super.wait(id);
+      }
+      override async stop(id: string) { await super.stop(id); if (id === 'session-1') this.pending?.(await super.wait(id)); }
+      override async usageFor(id?: string) {
+        return id === 'session-1' ? { tokens: { uncachedInput: 0, cachedInput: 0, output: 41_000, total: 41_000 }, estimatedCostNanos: 1 } : super.usageFor();
+      }
+      override async settledUsageFor(id?: string) { return this.usageFor(id); }
+    }
+    const worker = new StoppedWorker();
+    const result = await runRealTally({ configPath, parallel: 2, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: { tasks: async () => [task, { ...task, taskId: 'T2' }] }, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        worktrees: { checkoutPathFor: async () => '/tmp/fake', commitWorkInProgress: async () => 'wip-sha' },
+        verifier: new SequenceVerifier([{ passed: true, reason: null }, { passed: true, reason: null }]) } });
+    const first = result.ledger.find(row => row.taskId === 'T1' && row.attempt === 1)!;
+    expect(first.result).toBe('stopped');
+    expect(first.resultReason).toContain('wip-sha');
+    expect(worker.starts.find(start => start.task.taskId === 'T1' && start.attempt === 2)?.continueBranch).toBe(first.branch);
+    expect(result.runState.tasks.every(task => task.status === 'passed')).toBe(true);
+  }, 5000);
+
+  for (const width of [2, 3]) {
+    it(`overlaps ${width} AO workers, persists valid interleaved JSON and serializes accounting`, async () => {
+      const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+      const backlog = (await intake.tasks(loadConfig(configPath), configPath))[0]!;
+      const tasks = Array.from({ length: width * 2 }, (_, i) => ({ ...backlog, taskId: `T${i + 1}` }));
+      class OverlapWorker extends FakeWorker {
+        active = 0;
+        peak = 0;
+        pending: Array<() => void> = [];
+        override async start(input: WorkerStartInput) {
+          this.peak = Math.max(this.peak, ++this.active);
+          return super.start(input);
+        }
+        override async wait(id: string) {
+          await new Promise<void>(resolve => {
+            this.pending.push(resolve);
+            if (this.pending.length === width) for (const done of this.pending.splice(0)) done();
+          });
+          return super.wait(id);
+        }
+        override async stop(id: string) { this.active--; await super.stop(id); }
+      }
+      const worker = new OverlapWorker();
+      let writing = 0;
+      let maxWriting = 0;
+      const actuals: number[] = [];
+      const cfoai: CfoaiBudgetPort = {
+        budgetLimitNanos: async () => usdToNanos(40), currentSpendNanos: async () => 0, remainingNanos: async () => usdToNanos(40),
+        status: () => ({ status: 'ok', detail: 'fake' }),
+        async writeCumulativeActualSpend(cost) {
+          maxWriting = Math.max(maxWriting, ++writing);
+          await Promise.resolve(); actuals.push(cost); writing--;
+        },
+      };
+      let snapshots = 0;
+      const result = await runRealTally({ configPath, parallel: width, dryRun: false, baseline: false,
+        outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+        onEvent: () => {
+          for (const root of ['out', 'latest']) {
+            expect(validateRunState(JSON.parse(readFileSync(join(dir, root, 'run.json'), 'utf8'))).ok).toBe(true);
+            expect(validateLedger(JSON.parse(readFileSync(join(dir, root, 'ledger.json'), 'utf8'))).ok).toBe(true);
+          }
+          snapshots++;
+        },
+        ports: { intake: { tasks: async () => tasks }, signals, worker, usage: worker, sessions: worker, publisher: worker,
+          verifier: new SequenceVerifier(tasks.map(() => ({ passed: true, reason: null }))), cfoai },
+      });
+      expect(worker.peak).toBe(width);
+      expect(worker.active).toBe(0);
+      expect(result.ledger).toHaveLength(tasks.length);
+      expect(new Set(result.ledger.map(row => row.sessionId)).size).toBe(tasks.length);
+      expect(new Set(result.ledger.map(row => row.branch)).size).toBe(tasks.length);
+      expect(result.runState.tasks.every(task => task.status === 'passed')).toBe(true);
+      expect(maxWriting).toBe(1);
+      expect(actuals.at(-1)).toBe(result.runState.budget.spentNanos);
+      expect(snapshots).toBeGreaterThan(tasks.length * 3);
+    }, 5000);
+  }
+
+  it('holds funds for escalation and admits a waiting task only after unused funds are released', async () => {
+    const { dir, configPath } = fixture();
+    const task = (await intake.tasks(loadConfig(configPath), configPath))[0]!;
+    const worker = new FakeWorker();
+    const events: string[] = [];
+    const result = await runRealTally({ configPath, parallel: 2, budgetUsd: 0.9, dryRun: false, baseline: false,
+      outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      onEvent: event => { if (event.type === 'worker' || event.type === 'result') events.push(`${event.type}:${event.type === 'result' ? event.row.taskId : event.taskId}`); },
+      ports: { intake: { tasks: async () => [task, { ...task, taskId: 'T2' }] }, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }, { passed: true, reason: null }]) },
+    });
+    expect(events).toEqual(['worker:T1', 'result:T1', 'worker:T2', 'result:T2']);
+    expect(result.runState.tasks.every(task => task.status === 'passed')).toBe(true);
+  }, 5000);
+
+  it('cannot reserve an escalation beyond the CLI cap or the live monthly remainder', async () => {
+    for (const monthly of [false, true]) {
+      const { dir, configPath } = fixture(`neatlogs: false, entire: false, cfoai: ${monthly}, slack: false`);
+      const worker = new FakeWorker();
+      const result = await runRealTally({ configPath, parallel: 3, budgetUsd: monthly ? 2 : 0.6, dryRun: false, baseline: false,
+        outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+        ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+          ...(monthly ? { cfoai: { budgetLimitNanos: async () => usdToNanos(40), currentSpendNanos: async () => usdToNanos(39.4),
+            remainingNanos: async () => usdToNanos(0.6), writeCumulativeActualSpend: async () => {}, status: () => ({ status: 'ok' as const, detail: 'fake' }) } } : {}) },
+      });
+      expect(worker.starts).toHaveLength(0);
+      expect(result.runState.tasks[0]?.status).toBe('skipped');
+      expect(result.runState.tasks[0]?.statusReason).toContain('reservation');
+    }
+  });
+
+  it('fails closed before spawning parallel workers if the live monthly budget cannot be read', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    const worker = new FakeWorker();
+    await expect(runRealTally({ configPath, parallel: 3, dryRun: false, baseline: false,
+      outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'),
+      ports: { worker, usage: worker, sessions: worker, cfoai: {
+        budgetLimitNanos: async () => { throw new Error('budget unavailable'); }, remainingNanos: async () => 0,
+        writeCumulativeActualSpend: async () => {}, status: () => ({ status: 'missing', detail: 'unavailable' }),
+      } } })).rejects.toThrow('cannot reserve the monthly budget');
+    expect(worker.starts).toHaveLength(0);
+  });
+
+  it('stops the pool when delayed usage reveals the shared cap is exhausted', async () => {
+    const { dir, configPath } = fixture();
+    const task = (await intake.tasks(loadConfig(configPath), configPath))[0]!;
+    let releaseUsage!: () => void;
+    const bothStarted = new Promise<void>(resolve => { releaseUsage = resolve; });
+    class DelayedUsageWorker extends FakeWorker {
+      pending = new Map<string, (result: WorkerResult) => void>();
+      override async start(input: WorkerStartInput) { const result = await super.start(input); if (this.starts.length === 2) releaseUsage(); return result; }
+      override async wait(id: string): Promise<WorkerResult> { return new Promise(resolve => this.pending.set(id, resolve)); }
+      override async usageFor() { await bothStarted; return { tokens: { uncachedInput: 0, cachedInput: 0, output: 160_000, total: 160_000 }, estimatedCostNanos: 0 }; }
+      override async stop(id: string) { await super.stop(id); this.pending.get(id)?.(await super.wait(id)); }
+    }
+    const worker = new DelayedUsageWorker();
+    const result = await runRealTally({ configPath, parallel: 2, budgetUsd: 1.5, dryRun: true, baseline: false,
+      outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake: { tasks: async () => [task, { ...task, taskId: 'T2' }, { ...task, taskId: 'T3' }] }, signals, worker, usage: worker, sessions: worker, publisher: worker } });
+    expect(worker.starts).toHaveLength(2);
+    expect(new Set(worker.stopped)).toEqual(new Set(['session-1', 'session-2']));
+    expect(result.runState.status).toBe('interrupted');
+    expect(result.runState.tasks[2]?.status).toBe('skipped');
+    expect(result.ledger.every(row => row.resultReason?.includes('shared run cap'))).toBe(true);
+    // A delayed meter can report an overshoot; retain the actual cost, never clamp it.
+    expect(result.runState.budget.spentNanos).toBe(usdToNanos(1.6));
+  }, 5000);
+
+  it('keeps configured direct workers sequential and rejects a parallel CLI override', async () => {
+    const { dir, configPath } = fixture();
+    const config = loadConfig(configPath);
+    writeFileSync(configPath, stringifyYaml({ ...config, runner: 'direct', concurrency: 3 }));
+    const worker = new FakeWorker();
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+    expect(result.ledger[0]?.result).toBe('passed');
+    await expect(runRealTally({ configPath, parallel: 2, dryRun: false, baseline: false })).rejects.toThrow('direct remains sequential');
+  });
+
   it('uses real repository sizing with Entire off and fake worker/verifier ports', async () => {
     const { dir, configPath } = fixture();
     writeFileSync(join(dir, 'index.html'), '<main>Static site</main>');
