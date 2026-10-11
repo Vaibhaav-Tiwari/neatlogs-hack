@@ -21,6 +21,7 @@ class FakeClient implements CfoaiMcpClient {
   orgs = [{ org_id: '42', name: 'Workspace one' }];
   scenarios = [{ display_name: 'Main Scenario' }];
   failure?: string;
+  refusal?: string;
   receipt = 'applied';
   textOnly = false;
   close = vi.fn(async () => undefined);
@@ -39,6 +40,7 @@ class FakeClient implements CfoaiMcpClient {
       values: { [args.read.rows[0]]: { [args.read.columns[0]]: args.read.rows[0] === 'Agent budget' ? 40 : 7 } },
     };
     else if (name === 'edit_table_blocks') {
+      if (this.refusal) return { isError: true, structuredContent: { error: { message: this.refusal }, state_changed: 'no' } };
       const create = args.create;
       if (this.receipt === 'applied') this.blocks.push(block(create.name, create.rows.map((r: Obj) => r.variable)));
       data = { status: this.receipt };
@@ -138,9 +140,11 @@ describe('cfo.ai onboarding', () => {
     const edits = client.calls.filter(c => c.name === 'edit_table_blocks');
     expect(edits).toHaveLength(2);
     expect(edits[0]!.args.create).toMatchObject({ name: 'Tally agent budget', page: 'Tally', columns: [{ time: 'MONTH' }],
-      rows: [{ variable: 'Agent budget', new: true }, { variable: 'Agent spend', new: true },
-        { variable: 'Budget remaining', new: true, formula: '`Agent budget` - `Agent spend`' }],
+      rows: [{ variable: 'Agent budget', new: true, format: { numberFormat: 'CURRENCY', decimalPlaces: 2 } },
+        { variable: 'Agent spend', new: true, format: { numberFormat: 'CURRENCY', decimalPlaces: 2 } },
+        { variable: 'Budget remaining', new: true, formula: '`Agent budget` - `Agent spend`', format: { numberFormat: 'CURRENCY', decimalPlaces: 2 } }],
       values: { columns: ['2026-10'], rows: [['Agent budget', 40], ['Agent spend', 0]] } });
+    expect(edits[0]!.args.create).not.toHaveProperty('variables');
     expect(JSON.stringify(edits[0]!.args.create.values)).not.toContain('Budget remaining');
     expect(vi.mocked(ctx.ui.print).mock.calls.join(' ')).toContain('Agent budget = $40');
     // Repeating onboarding reads the tables and preserves spend; no second login or creation.
@@ -188,6 +192,19 @@ describe('cfo.ai onboarding', () => {
     client.listTools = async () => ({ tools: tools.map(name => ({ name, inputSchema: { type: 'object', maxProperties: 0 } })) });
     expect((await module.configure(context([true]))).enabled).toBe(false);
     expect(client.calls.some(c => c.name.startsWith('edit'))).toBe(false);
+  });
+
+  it('shows a sanitized cfo.ai create failure and keeps local budgeting', async () => {
+    const { module, client } = setup();
+    client.blocks = [];
+    client.refusal = 'shared property target "Agent budget" was unavailable; Authorization: Bearer cfoai-secret-value';
+    const ctx = context([true]);
+    const result = await module.configure(ctx);
+
+    expect(result).toMatchObject({ enabled: false, state: { status: 'off' }, budget: { source: 'config' } });
+    expect(vi.mocked(ctx.ui.print).mock.calls.join(' ')).toContain('shared property target "Agent budget" was unavailable');
+    expect(JSON.stringify(vi.mocked(ctx.ui.print).mock.calls)).not.toContain('cfoai-secret-value');
+    expect(JSON.stringify(result)).not.toContain('cfoai-secret-value');
   });
 
   it.each(['missing rows', 'bad monthly axis', 'untrusted URL', 'duplicate table'])('does not propose a broken configuration for %s', async problem => {

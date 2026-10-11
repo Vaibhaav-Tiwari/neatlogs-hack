@@ -19,16 +19,38 @@ const https = (value: unknown): string | undefined => {
 
 function payload(result: unknown): ObjectValue {
   const r = object(result);
-  if (r.isError === true) throw new Error('cfo.ai refused the operation');
-  if (r.structuredContent) return object(r.structuredContent);
+  let parsed = r.structuredContent ? object(r.structuredContent) : undefined;
+  let plainText: string | undefined;
   const blocks = Array.isArray(r.content) ? r.content : [];
-  for (const block of blocks) {
-    const b = object(block);
-    if (b.type === 'text' && typeof b.text === 'string') {
-      try { return object(JSON.parse(b.text)); } catch { /* Try the next content block. */ }
+  if (!parsed) {
+    for (const block of blocks) {
+      const b = object(block);
+      if (b.type === 'text' && typeof b.text === 'string') {
+        try { parsed = object(JSON.parse(b.text)); break; } catch { plainText ??= b.text; }
+      }
     }
   }
+  if (r.isError === true) {
+    const error = object(parsed?.error);
+    const detail = text(error.message) ?? text(parsed?.message) ?? text(parsed?.error) ?? text(plainText);
+    throw new Error(detail ? `cfo.ai refused the operation: ${detail}` : 'cfo.ai refused the operation');
+  }
+  if (parsed) return parsed;
   throw new Error('cfo.ai returned an unreadable response');
+}
+
+function safeFailureReason(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const safe = raw
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+    .replace(/\b(access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|authorization|password)(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1$2[redacted]')
+    .replace(/([?&](?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|client[_-]?secret|signature|code|password)=)[^&#\s]+/gi, '$1[redacted]')
+    .replace(/(https?:\/\/)[^@\s/]+:[^@\s/]+@/gi, '$1[redacted]@')
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{16,})\b/g, '[redacted]')
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (safe || 'the server returned an unspecified error').slice(0, 240);
 }
 
 async function choose(context: OnboardingContext, question: string, values: ObjectValue[], name: (v: ObjectValue) => string): Promise<ObjectValue | null> {
@@ -92,7 +114,10 @@ export class CfoaiOnboarding implements IntegrationOnboarding {
         if (name.startsWith('edit_') && !tool.inputSchema) throw new Error('Missing edit schema');
         if (tool.inputSchema) {
           const validator = new Ajv2020({ strict: false, allErrors: true }).compile(tool.inputSchema);
-          if (!validator(args)) throw new Error(`Incompatible ${name} schema`);
+          if (!validator(args)) {
+            const issues = validator.errors?.slice(0, 3).map(error => `${error.instancePath || '/'} ${error.message ?? 'is invalid'}`).join('; ');
+            throw new Error(`Incompatible ${name} schema${issues ? `: ${issues}` : ''}`);
+          }
         }
         return payload(await client.callTool(name, args));
       };
@@ -145,17 +170,18 @@ export class CfoaiOnboarding implements IntegrationOnboarding {
         const end = `${now.getUTCFullYear() + 1}-12-31`;
         for (const name of missing) {
           const rows = name === table ? budgetRows : detailRows;
+          const currencyFormat = () => ({ numberFormat: 'CURRENCY', decimalPlaces: 2 });
           const create: ObjectValue = {
             name, page: 'Tally', columns: [{ time: 'MONTH' }],
-            rows: rows.map(variable => ({ variable, new: true })),
-            variables: rows.map(target => ({ target, currency: 'USD', format: 'CURRENCY' })),
+            rows: rows.map(variable => ({ variable, new: true, format: currencyFormat() })),
             window: { start: `${month}-01`, end, granularity: 'MONTH' },
           };
           // Inputs apply only to the new table's current month; never reset an existing table.
           create.values = { columns: [month], rows: rows.filter(row => row !== remainingRow).map(row => [row, row === budgetRow ? context.config.budget.usd : 0]) };
           if (name === table) create.rows = [
-            { variable: budgetRow, new: true }, { variable: spendRow, new: true },
-            { variable: remainingRow, new: true, formula: `\`${budgetRow}\` - \`${spendRow}\`` },
+            { variable: budgetRow, new: true, format: currencyFormat() },
+            { variable: spendRow, new: true, format: currencyFormat() },
+            { variable: remainingRow, new: true, formula: `\`${budgetRow}\` - \`${spendRow}\``, format: currencyFormat() },
           ];
           const receipt = await call('edit_table_blocks', { ...scope, create });
           if (receipt.status !== 'applied') throw new Error('Creation not applied');
@@ -185,9 +211,10 @@ export class CfoaiOnboarding implements IntegrationOnboarding {
       try { await adapter.remainingNanos(); } finally { await budgetClient.close(); }
       return { enabled: true, state: { status: 'ok', detail: `cfo.ai configured for ${workspace.name}, ${scenario}.` },
         budget: { source: 'cfoai', usd: context.config.budget.usd, cfoai } };
-    } catch {
-      context.ui.print('cfo.ai setup could not be verified; using the local budget. You can rerun onboarding to retry; existing model data was not reset.');
-      return off('cfo.ai setup incomplete; local budget selected.');
+    } catch (error) {
+      const reason = safeFailureReason(error);
+      context.ui.print(`cfo.ai setup could not be verified: ${reason}. Using the local budget; rerun onboarding to retry. Existing model data was not reset.`);
+      return off(`cfo.ai setup incomplete: ${reason}; local budget selected.`);
     } finally { await client.close().catch(() => undefined); }
   }
 }
