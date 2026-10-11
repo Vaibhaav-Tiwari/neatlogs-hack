@@ -26,6 +26,14 @@ async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 describe('parseCli', () => {
+  it('parses scripted init flags and rejects invalid product opt-ins', () => {
+    expect(parseCli(['init', '--yes', '--test-command', 'node --check app.js', '--setup-command', '', '--budget', '5', '--issue-label', 'tally', '--neatlogs', 'yes', '--entire', 'no', '--cfoai', 'yes', '--verbose'])).toMatchObject({ kind: 'command', options: {
+      testCommand: 'node --check app.js', setupCommand: '', budgetUsd: 5, issueLabel: 'tally', verbose: true,
+      integrations: { neatlogs: true, entire: false, cfoai: true },
+    } });
+    expect(parseCli(['init', '--neatlogs', 'maybe'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['init', '--test-command', ''])).toMatchObject({ kind: 'error' });
+  });
   it('explains an empty GitHub intake with the repo, label and labeling command without a stack', async () => {
     const state = JSON.parse(readFileSync(new URL('../schema/fixtures/finished-run/run.json', import.meta.url), 'utf8')) as RunState;
     state.tasks = [];

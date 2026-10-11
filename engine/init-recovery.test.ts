@@ -106,7 +106,7 @@ describe('transactional init prerequisites and recovery', () => {
     const result = await runInit({ cwd: f.cwd, command: f.command, yes: true, print: () => {}, doctor: async () => [] });
     expect(result.applied).toBe(true);
     expect(f.mutations.filter((value) => value === 'add')).toHaveLength(1);
-    expect(f.project()).toEqual({ worker: { agentConfig: { effort: 'high' } }, postCreate: ['echo existing', 'make setup'] });
+    expect(f.project()).toEqual({ worker: { agentConfig: { effort: 'high', permissions: 'auto' } }, postCreate: ['echo existing', 'make setup'] });
     expect(existsSync(pendingInitPath(path))).toBe(false);
     expect(JSON.parse(readFileSync(installRecordPath(path), 'utf8')).projectCreated).toBe(true);
   });

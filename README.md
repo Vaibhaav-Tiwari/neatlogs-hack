@@ -111,7 +111,7 @@ repository you want Tally to work on:
    The last command is the query Tally makes. If it prints nothing, Tally has
    no tasks to work on.
 2. **`tally init`** asks for a budget and the issue label, shows the
-   `tally.yaml` it proposes and the AO changes it would make, and applies
+   short configuration summary and the AO changes it would make, and applies
    nothing until you confirm. Type the label exactly as it is on GitHub.
 3. **`tally doctor`** prints one line per integration: connected, missing or
    broken, with the fix.
@@ -125,18 +125,36 @@ repository you want Tally to work on:
    local URL showing the run as it happens.
 
 More on `tally init`: neatlogs, Entire and cfo.ai are separate opt-in prompts,
-defaulting to No. It displays the proposed `tally.yaml`, install record in
+defaulting to No. It displays a compact proposal (full YAML with `--verbose`), install record in
 `.tally/`, AO project registration/configuration and setup hook, then asks for
 final confirmation (default No) before applying changes. Use `tally init
 --dry-run` to preview without applying, or `--yes` only when you consent to
 applying detected defaults without prompts. Review model tiers, prices, tests
 and ceilings before starting workers. Scoped worker allow-list enforcement is
 not yet installed; init does not change global coding-agent settings.
+The final summary explicitly includes automatic safety review for this AO
+project's workers only. Uninstall restores that owned setting; it never
+enables bypass-permissions.
+
+Interactive init requires a terminal. Piped input exits with a plain message
+instead of waiting for answers. For scripted onboarding, pass values explicitly:
+
+```sh
+tally init --yes --test-command "node --check js/app.js" \
+  --setup-command "" --budget 5 --issue-label tally \
+  --neatlogs yes --entire no --cfoai yes
+```
+
+An empty setup flag means no setup. Product flags select integrations, not
+optional browser login, SDK probes, global hooks or remote table writes.
+Existing credentials and cfo.ai tables can be discovered read-only; absent
+prerequisites are reported. Declining optional neatlogs probes/read access/hooks
+keeps tracing enabled when a project key is already configured.
 
 Init detects test/setup commands from repository evidence and proposes tiers
 only for installed Codex or Claude Code agents. When no test command is found,
 it asks for a shell command: Tally cannot verify work without one. Blank input
-or `--yes` with no detected test command fails without writing configuration
+or `--yes` without either a detected command or `--test-command` fails without writing configuration
 or changing AO settings. An undetected setup command is optional and never
 guessed.
 

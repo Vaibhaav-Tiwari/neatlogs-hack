@@ -60,11 +60,12 @@ const nullSignals: SizingSignalsPort = {
 export async function readPlanBudget(config: TallyConfig, options: Pick<PlanOptions, 'budgetUsd'>): Promise<PlanBudgetInfo> {
   if (options.budgetUsd !== undefined) return { source: 'config', limitNanos: usdToNanos(options.budgetUsd) };
   if (config.budget.source === 'cfoai') {
+    const adapter = new CfoaiBudgetAdapter({ config: config.budget.cfoai });
     try {
-      return { source: 'cfoai', limitNanos: await new CfoaiBudgetAdapter({ config: config.budget.cfoai }).budgetLimitNanos() };
+      return { source: 'cfoai', limitNanos: await adapter.budgetLimitNanos() };
     } catch {
       return { source: 'config', limitNanos: usdToNanos(config.budget.usd) };
-    }
+    } finally { await adapter.close(); }
   }
   return { source: 'config', limitNanos: usdToNanos(config.budget.usd) };
 }

@@ -9,6 +9,7 @@ import { tierPriceNote } from './pricing.js';
 import { CommandError, resolveAoBinary, runCommand } from '../adapters/command.js';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadEnv } from './env.js';
+import { withWorkerAutoMode, workerPermissionMode } from './preflight.js';
 import { configureIntegrations } from '../onboarding/index.js';
 import { loadConfig } from './config.js';
 import { applyReinit, finishReinit, prepareReinit, readReinit, reinitPath } from './reinit.js';
@@ -35,6 +36,12 @@ export interface InitOptions {
   env?: Record<string, string>;
   cfoaiCheck?: typeof checkCfoaiConnection;
   onboarding?: typeof configureIntegrations;
+  testCommand?: string;
+  setupCommand?: string;
+  budgetUsd?: number;
+  issueLabel?: string;
+  integrations?: Partial<Record<'neatlogs' | 'entire' | 'cfoai', boolean>>;
+  verbose?: boolean;
 }
 
 export interface InitResult {
@@ -86,12 +93,17 @@ async function projectOrNull(command: InitCommandRunner, projectId: string, cwd:
 }
 
 export async function defaultReadLine(question: string, defaultValue = ''): Promise<string> {
+  if (!process.stdin.isTTY) throw new InitError('Interactive init needs a terminal; use --yes with explicit init flags for scripted input.');
   const { createInterface } = await import('node:readline/promises');
   const readline = createInterface({ input: process.stdin, output: process.stdout });
+  const controller = new AbortController();
+  readline.once('close', () => controller.abort());
   try {
     const suffix = defaultValue ? ` [${defaultValue}]` : '';
-    const answer = await readline.question(`${question}${suffix}: `);
+    const answer = await readline.question(`${question}${suffix}: `, { signal: controller.signal });
     return answer.trim() || defaultValue;
+  } catch {
+    throw new InitError('Init input closed; rerun in a terminal or use --yes with explicit init flags.');
   } finally {
     readline.close();
   }
@@ -165,7 +177,18 @@ function parseYes(value: string): boolean {
 
 function parseBudget(value: string): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 40;
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new InitError('Budget must be a positive number of USD; nothing was changed.');
+  return parsed;
+}
+
+function printSummary(config: TallyConfig, print: (line: string) => void): void {
+  print(`Repository: ${config.repo.slug ?? config.repo.path} (base: ${config.repo.baseBranch})`);
+  print(`Test: ${config.test.command}`);
+  print(`Setup: ${config.test.setupCommand ?? 'none'}`);
+  print(`Issue label: ${config.backlog.issueLabel ?? 'none'}`);
+  print(config.budget.source === 'cfoai' ? `Budget: cfo.ai live account budget (local fallback: $${config.budget.usd})` : `Budget: $${config.budget.usd} from config`);
+  for (const tier of config.tiers) print(`Tier ${tier.name}: ${tier.harness}/${tier.model} (${tier.sessionMode})`);
+  print(`Products: ${(['neatlogs', 'entire', 'cfoai'] as const).map(name => `${name} ${config.integrations[name] ? 'on' : 'off'}`).join(', ')}`);
 }
 
 function parseAoAgents(output: string | null): Set<string> {
@@ -250,9 +273,17 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
   if (!pending) {
     for (const name of ['neatlogs', 'entire', 'cfoai'] as const) {
       const label = name === 'cfoai' ? 'cfo.ai' : name === 'entire' ? 'Entire' : name;
-      config.integrations[name] = parseYes(await readLine(`Enable ${label} integration? y/N`, before.integrations[name] ? 'y' : 'N'));
+      config.integrations[name] = options.integrations?.[name] ?? parseYes(await readLine(`Enable ${label} integration? y/N`, before.integrations[name] ? 'y' : 'N'));
     }
   }
+  if (!pending) {
+    if (options.testCommand !== undefined) config.test.command = options.testCommand;
+    if (options.setupCommand !== undefined) { delete config.test.setupCommand; if (options.setupCommand.trim()) config.test.setupCommand = options.setupCommand; }
+    if (options.budgetUsd !== undefined) config.budget.usd = parseBudget(String(options.budgetUsd));
+    if (options.issueLabel !== undefined) config.backlog.issueLabel = options.issueLabel;
+  }
+  const validation = validateConfig(config);
+  if (!validation.ok) throw new InitError(`Proposed configuration is invalid: ${validation.errors.join('; ')}; nothing was changed.`);
   const result = { configPath, projectId: config.repo.aoProject ?? '', testCommand: config.test.command, setupCommand: config.test.setupCommand ?? null, baseBranch: config.repo.baseBranch, tiers: config.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
   if (!pending && configHash(config) === configHash(before)) {
     print('No changes proposed; existing configuration and installation ownership are unchanged.');
@@ -263,10 +294,11 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
   await initPrerequisites(config, command, targetRepo, options);
   const plan = pending ?? prepareReinit(configPath, stringifyYaml(config));
   print(`Tally re-init proposed diff for ${configPath}:`);
+  printSummary(config, print);
   for (const key of Object.keys(config) as (keyof TallyConfig)[]) {
     if (configHash(before[key]) !== configHash(config[key])) {
-      print(`- ${key}: ${JSON.stringify(before[key])}`);
-      print(`+ ${key}: ${JSON.stringify(config[key])}`);
+      print(options.verbose || key === 'integrations' ? `- ${key}: ${JSON.stringify(before[key])}` : `- ${key}: existing setting`);
+      print(options.verbose || key === 'integrations' ? `+ ${key}: ${JSON.stringify(config[key])}` : `+ ${key}: proposed setting shown above`);
     }
   }
   print(`Preserve all other settings; ${plan.beforeRecord === null ? 'no installation ownership record will be created' : 'preserve installation ownership and update only its config hash'}. AO project, setup hooks and worker permissions will not change.`);
@@ -298,7 +330,9 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     const resumeCommand: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: saved.repo.aoBin ? resolve(dirname(configPath), saved.repo.aoBin) : undefined }));
     try { await initPrerequisites(saved, resumeCommand, repoRoot, options); }
     catch (error) { throw new InitError(`Incomplete init remains at ${pendingInitPath(configPath)}; ${configPath} ${existsSync(configPath) ? 'exists' : 'was not written'}, ${recordPath} ${existsSync(recordPath) ? 'exists' : 'was not written'}; no additional changes made: ${error instanceof Error ? error.message : 'prerequisites failed'}; fix the prerequisite and rerun tally init --config ${JSON.stringify(configPath)}.`); }
-    print(`Resume incomplete init from ${pendingInitPath(configPath)}; preserve matching files and existing AO settings.\n${pending.configText}`);
+    print(`Resume incomplete init from ${pendingInitPath(configPath)}; preserve matching files and existing AO settings.`);
+    printSummary(saved, print);
+    if (options.verbose) print(pending.configText);
     print(`AO project ${pending.record.projectId}; setup entry: ${pending.record.addedSetupCommand ?? 'none'}; worker allow-list: not installed; no global harness settings changed.`);
     const result = { configPath, projectId: pending.record.projectId, testCommand: saved.test.command, setupCommand: saved.test.setupCommand ?? null, baseBranch: saved.repo.baseBranch, tiers: saved.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
     if (options.dryRun || (!options.yes && !parseYes(await readLine('Resume these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
@@ -308,7 +342,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   if (existsSync(recordPath)) throw new InitError(`An install record exists without ${configPath}; preserve it and use tally uninstall --config ${JSON.stringify(configPath)} to remove the owned partial installation before retrying.`);
   const baseBranch = (await commandOrNull(command, 'git', ['branch', '--show-current'], repoRoot)) || 'main';
   const remote = await commandOrNull(command, 'git', ['remote', 'get-url', 'origin'], repoRoot);
-  let testCommand = detectTestCommand(repoRoot);
+  let testCommand = options.testCommand?.trim() || detectTestCommand(repoRoot);
   if (!testCommand) {
     const explanation = 'No test command found. Tally cannot verify work without a test command; provide a shell command that checks the work. No configuration or AO settings have been changed.';
     print(explanation);
@@ -316,16 +350,16 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     testCommand = (await readLine('Test command (shell command)', '')).trim();
     if (!testCommand) throw new InitError(explanation);
   }
-  let setupCommand = detectSetupCommand(repoRoot);
-  if (!setupCommand) {
+  let setupCommand = options.setupCommand === undefined ? detectSetupCommand(repoRoot) : options.setupCommand.trim() || null;
+  if (!setupCommand && options.setupCommand === undefined) {
     print('No setup command found. Leave it blank if no environment setup is needed; Tally will not invent an install command.');
     if (!options.yes && !options.dryRun) setupCommand = (await readLine('Setup command (shell command; optional)', '')).trim() || null;
   }
-  const budgetUsd = parseBudget(await readLine('Monthly budget in USD', '40'));
-  const issueLabel = await readLine('GitHub issue label for Tally tasks', 'tally');
-  const neatlogs = parseYes(await readLine('Enable neatlogs traces? y/N', 'N'));
-  const entire = parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
-  const cfoai = parseYes(await readLine('Enable cfo.ai budget integration? y/N', 'N'));
+  const budgetUsd = parseBudget(options.budgetUsd === undefined ? await readLine('Monthly budget in USD', '40') : String(options.budgetUsd));
+  const issueLabel = options.issueLabel ?? await readLine('GitHub issue label for Tally tasks', 'tally');
+  const neatlogs = options.integrations?.neatlogs ?? parseYes(await readLine('Enable neatlogs traces? y/N', 'N'));
+  const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
+  const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Enable cfo.ai budget integration? y/N', 'N'));
   const agentOutput = await commandOrNull(command, 'ao', ['agent', 'ls', '--refresh', '--json'], cwd);
   const agents = parseAoAgents(agentOutput);
   const tiers = tiersFor(agents);
@@ -378,12 +412,14 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const existingProjectPath = existingProject ? (JSON.parse(existingProject) as { project?: { path?: string } }).project?.path : undefined;
   if (existingProjectPath && resolve(existingProjectPath) !== resolve(repoRoot)) throw new InitError(`AO project ${projectId} belongs to ${existingProjectPath}, not ${repoRoot}; choose a distinct project id before init; nothing was changed.`);
   const currentProjectConfig = existingProject ? (parseYaml(existingProject) as { project?: { config?: unknown } })?.project?.config ?? {} : {};
-  const nextProjectConfig = withPostCreate(currentProjectConfig, setupCommand);
+  const nextProjectConfig = withWorkerAutoMode(withPostCreate(currentProjectConfig, setupCommand));
   print('Tally init proposed changes:');
-  print(`Create ${configPath}:\n${stringifyYaml(config)}`);
+  printSummary(config, print);
+  print(`Create ${configPath}: repository configuration${options.verbose ? `\n${stringifyYaml(config)}` : ' (use --verbose for full YAML)'}.`);
   print(`Create ${recordPath}: installation ownership record for uninstall.`);
   print(`${existingProject ? 'Update' : 'Register'} AO project ${projectId} at ${repoRoot}; preserve all existing config fields.`);
   print(`AO post-create entries: ${JSON.stringify(nextProjectConfig.postCreate ?? [])}`);
+  print('AO worker permission mode: auto, only for this project\'s workers; harness sandbox and automatic safety review remain active. No bypass-permissions or global settings changes. Uninstall restores the owned setting.');
   print('Worker allow-list: not installed; scoped enforcement is not available through the current AO worker launch API.');
   print('Requested worker rules (not yet enforced):');
   print('- Edit files in the worker\'s own worktree.');
@@ -401,7 +437,12 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const record: InstallRecord = { version: 1, configPath, configHash: contentHash(configText), projectId,
     projectCreated: !existingProject, projectConfigHash: configHash(nextProjectConfig),
     postCreateExisted: Array.isArray(before.postCreate), postCreateAfterHash: configHash(nextProjectConfig.postCreate ?? []),
-    addedSetupCommand: setupCommand && !postCreateBefore.includes(setupCommand) ? setupCommand : null };
+    addedSetupCommand: setupCommand && !postCreateBefore.includes(setupCommand) ? setupCommand : null,
+    ...(workerPermissionMode(before) === 'auto' ? {} : {
+      workerExisted: Object.hasOwn(before, 'worker'), workerBefore: before.worker ?? null,
+      workerAfterHash: configHash(nextProjectConfig.worker),
+    }),
+  };
   const doctor = await finishInit(options, { version: 1, repoRoot, configPath, configText, beforeProjectConfigHash: configHash(currentProjectConfig), record }, command, recordPath);
   return { ...result, applied: true, doctor };
 }

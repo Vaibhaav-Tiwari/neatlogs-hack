@@ -11,6 +11,9 @@ export interface InstallRecord {
   postCreateExisted: boolean;
   postCreateAfterHash: string;
   addedSetupCommand: string | null;
+  workerExisted?: boolean;
+  workerBefore?: unknown;
+  workerAfterHash?: string;
 }
 
 export function installRecordPath(configPath: string): string {

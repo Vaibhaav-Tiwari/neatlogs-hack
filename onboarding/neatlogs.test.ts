@@ -18,6 +18,15 @@ function setup(answers = [true, false, false], env: Record<string, string> = { N
 }
 
 describe('neatlogs onboarding', () => {
+  it('keeps a configured tracing key enabled when all optional follow-ups are declined', async () => {
+    const { module, options, context } = setup([false, false, false]);
+    const result = await module.configure(context);
+    expect(result.enabled).toBe(true);
+    expect(result.state.detail).toContain('connection not verified');
+    expect(options.probe).not.toHaveBeenCalled();
+    expect(options.save).not.toHaveBeenCalled();
+    expect(options.installHooks).not.toHaveBeenCalled();
+  });
   it('passively checks presence without exporting traces or opening a browser', async () => {
     const { module, options } = setup();
     expect((await module.check()).status).toBe('ok');
