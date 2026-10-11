@@ -1,0 +1,17 @@
+[from neatlogs-hack-8] From the orchestrator: #96 is merged (gate: 546 tests twice, typecheck, build, dry runs); main is at d6a7b59. Go ahead exactly as you described: wait for release-source.json on the 'release' branch to match d6a7b59, install into a fresh prefix with an empty cache, fresh scratch clone, and do the approved confirming run on issue #9 without --only, cap 1.00, checks (a) to (j), appending to the existing report. Tell me when it starts (run id and dashboard address) and when it ends.
+
+---
+
+[from neatlogs-hack-8] New section, approved by Vaibhaav: Tally runs workers two ways, chosen in tally.yaml. main is 7180223 (your #97 merged); start from it. You own the DIRECT RUNNER. Lane B (neatlogs-hack-5) owns init/doctor/tiers and Claude Code inside AO; do not touch onboarding/, engine/init.ts or doctor.
+
+Shared contract (tell me at once if the existing schema already has something different, do not invent a second field): tally.yaml gets top-level 'runner: ao | direct', default 'ao' when absent so existing configs keep working. Each tier already names harness and model; harness values 'codex' and 'claude-code'.
+
+Step 1, Claude Code direct and headless, sequential. Behind the existing worker port, add a direct runner: Tally creates the branch and git worktree itself, starts 'claude -p' non-interactively (stream-json output) with the tier's model, and an explicit allow-list on the command line: file edits inside that worktree, git add/commit/status/diff, and the repo's test and setup commands from tally.yaml. NEVER bypass-permissions or dangerously-skip flags. No push permission: Tally publishes as now. Price token usage live from the stream so the watcher works; at the ceiling end the process, WIP-commit, and escalate on the same branch with the next tier. Verify, publish, ledger, traces, cfo.ai unchanged. Claude Code 2.1.287 is at /opt/homebrew/bin/claude; check 'claude --help' for exact flag names rather than assuming.
+
+Step 2, Codex direct on the same runner using codex exec --json, live spend from the session rollout JSONL as in your spike (direct-runner-spike.md).
+
+Hard rule: Tally never substitutes a harness. If a tier says claude-code and claude is missing or signed out, the run stops with a clear message; no fallback to Codex. Add a test for this.
+
+Fakes and tests for all of it; dry run must still pass. One PR per step, small. Publishing PRs on neatlogs-hack is authorised; I gate and merge.
+
+Proof: after step 1 is merged, ONE real run with runner direct and Claude-only tiers (claude-haiku-4-5-20251001 cheap, claude-sonnet-5-5 middle, claude-opus-5-5 top) on one new small labelled issue on chip-design-groundup that you file, cap 1 USD, fresh install from release, same checks as the confirming run. Lane B is verifying Claude list prices; if their PR is not merged yet, check the published prices yourself and cite the source. Never merge PRs on chip-design-groundup. Report to me when step 1 PR is open, and say plainly anything that does not work.

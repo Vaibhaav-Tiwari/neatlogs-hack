@@ -1,0 +1,60 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N6K0HX3745A515VBEH7S87",
+  "session_id": "01a125af-3ac6-7c02-a43b-a467b6fc3d3a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T10:02:05.361624Z",
+  "branch": "ao/neatlogs-hack-2/claude-direct-runner",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "adapters/direct.test.ts",
+    "adapters/direct.ts",
+    "engine/direct.test.ts",
+    "engine/preflight.test.ts",
+    "engine/preflight.ts",
+    "engine/real.ts",
+    "schema/ledger-row.schema.json",
+    "schema/money.ts",
+    "schema/schema.test.ts",
+    "schema/tally-config.schema.json",
+    "schema/types.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "be79622492e5",
+  "checkpoint_transcript_start": 15192,
+  "transcript_lines_at_start": 15192,
+  "compact_transcript_start": 1759,
+  "token_usage": {
+    "input_tokens": 162446,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3969152,
+    "output_tokens": 23715,
+    "api_call_count": 32
+  },
+  "session_metrics": {
+    "turn_count": 23
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T10:02:04.508213Z",
+    "agent_lines": 553,
+    "agent_removed": 21,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 553,
+    "total_lines_changed": 574,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
