@@ -319,7 +319,9 @@ npm test
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
 | `tally login cfoai` | Sign in to cfo.ai; tokens are cached outside the repository. |
 | `tally traces drain --run <id>` | Recover only that finished run's worker traces, verify readable spans, then update saved status and worker trace ids. Use `--output <run-dir>` for a run stored elsewhere. |
-| `tally market --limit 5` | Search CrustData for companies adopting coding agents; requires its credentials. |
+| `tally market --limit 5 --max-credits 4` | Find and qualify likely pilot companies with CrustData; checks account pricing before a bounded search. |
+| `tally market --plan --limit 10` | Free account-pricing check; prints a conservative maximum credit estimate without searching. |
+| `tally market --replay .tally/market/latest/query.json --output /tmp/tally-market-replay` | Render the saved snapshot again with no API calls or credentials. |
 | `tally publish --out site` | Static dashboard export with a sensitive-content scan. No deployment. |
 
 `run --dashboard` starts serving before the first task and prints the URL
@@ -331,6 +333,38 @@ replacement for the monthly budget: plan and summary show both, including the
 monthly source. When cfo.ai supplies the monthly budget, init asks only for a
 local fallback after connecting it. Worker trace IDs require correlated trace
 read-back; unverified delivery is shown as missing rather than success.
+
+### Pilot Discovery
+
+`tally market` finds and qualifies likely pilot companies, not adoption or market
+size. The default hypothesis is Software Development companies with 20-500
+employees. It does not infer coding-agent seats or use from headcount. An optional
+`--keyword` filters an exact phrase in the company description, which can also
+match vendors and does not prove adoption.
+
+Live searches require `CRUSTDATA_API_KEY` in `~/.tally/.env`. Before each single
+batch Tally checks free account pricing and prints a conservative maximum estimate
+including premium filters and returned fields. `--max-credits` (default 10)
+refuses an estimated over-cap search; it is a per-call estimate, not a server-side
+hard billing limit. No pagination, enrichment or retries occur. Use `--plan` to
+check pricing without a paid search. `--dry-run` requires cached `--replay`.
+
+The output directory contains the exact `query.json`, `companies.json`, CSV and
+`report.md`: API version, query hash, retrieval timestamp, returned versus API
+match count, reported credits, and record-update dates when available. These
+dates are not publication dates. Cached replay preserves provenance and calls
+no API, even without credentials; it does not rerun the search for fresh data.
+Legacy snapshots without matching provenance must be recaptured rather than
+silently treated as new evidence.
+
+Review a saved snapshot with `--replay <query.json> --review <reviews.json>`.
+Reviews are an array of `{ id, label, reason, sourceUrl, sourceDate, excerpt? }`;
+labels are `candidate`, `vendor`, `hiring intent`, `verified use`, or `rejected`.
+Use `null` for unknown source dates. Intent/use labels require a sourced excerpt;
+Tally checks the structure, not the truth of manual judgements. Without a review,
+every returned row remains an unverified candidate. JSON/CSV retain all rows;
+the short Markdown report shows at most ten. No deduplication or extrapolation
+is applied.
 
 ## Layout
 

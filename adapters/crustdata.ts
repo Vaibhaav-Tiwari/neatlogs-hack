@@ -1,5 +1,7 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { estimateMarketCredits, writeMarketReport, applyMarketReviews, type MarketReview } from './market-report.js';
 import { loadEnv } from '../engine/env.js';
 
 const ENDPOINT = 'https://api.crustdata.com/company/search';
@@ -12,6 +14,11 @@ export interface MarketSearchOptions {
   minHeadcount?: number;
   env?: Record<string, string>;
   fetch?: typeof fetch;
+  maxCredits?: number;
+  replay?: string;
+  review?: string;
+  plan?: boolean;
+  onEstimate?: (credits: number) => void;
 }
 
 export interface MarketCompany {
@@ -22,6 +29,10 @@ export interface MarketCompany {
   headcount: number | null;
   industry: string | null;
   evidenceTerms: string[];
+  sourceUrl: string | null;
+  sourceDate: string | null;
+  label: 'candidate' | 'vendor' | 'hiring intent' | 'verified use' | 'rejected';
+  review: MarketReview | null;
 }
 
 export interface MarketSearchResult {
@@ -32,6 +43,12 @@ export interface MarketSearchResult {
   nextCursor: boolean;
   companies: MarketCompany[];
   creditCost: string | null;
+  estimatedMaxCredits: number;
+  retrievedAt: string;
+  queryHash: string;
+  replayed: boolean;
+  csvPath: string;
+  reportPath: string;
 }
 
 export class CrustDataError extends Error {
@@ -56,25 +73,32 @@ function recordValue(value: unknown): Record<string, unknown> {
 }
 
 export function buildCodingAgentsMarketQuery(options: Pick<MarketSearchOptions, 'keyword' | 'limit' | 'minHeadcount'> = {}): Record<string, unknown> {
-  const keyword = options.keyword ?? 'AI coding';
+  const limit = options.limit ?? 10;
+  const min = options.minHeadcount ?? 20;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new CrustDataError('Market limit must be 1 to 100');
+  if (!Number.isInteger(min) || min < 1 || min > 500) throw new CrustDataError('Minimum headcount must be 1 to 500');
+  if (options.keyword !== undefined && !options.keyword.trim()) throw new CrustDataError('Market keyword cannot be empty');
   return {
     filters: {
       op: 'and',
       conditions: [
-        { field: 'basic_info.description', type: 'contains', value: keyword },
-        { field: 'headcount.total', type: '=>', value: options.minHeadcount ?? 10 },
+        { field: 'headcount.total', type: '=>', value: min },
+        { field: 'headcount.total', type: '=<', value: 500 },
+        { field: 'taxonomy.professional_network_industry', type: '=', value: 'Software Development' },
+        ...(options.keyword ? [{ field: 'basic_info.description', type: '[.]', value: options.keyword }] : []),
       ],
     },
     fields: [
+      'crustdata_company_id',
       'basic_info.name',
       'basic_info.primary_domain',
       'basic_info.description',
       'headcount.total',
-      'hiring.openings_count',
-      'hiring.by_function_6m_pct.engineering',
+      'basic_info.professional_network_url',
       'taxonomy.professional_network_industry',
+      'metadata.updated_at',
     ],
-    limit: options.limit ?? 10,
+    limit,
   };
 }
 
@@ -97,16 +121,40 @@ function summarizeCompany(company: unknown): MarketCompany {
     headcount: numberValue(headcount.total),
     industry: stringValue(taxonomy.professional_network_industry),
     evidenceTerms: evidenceTerms(record),
+    sourceUrl: stringValue(basic.professional_network_url),
+    sourceDate: stringValue(recordValue(record.metadata).updated_at),
+    label: 'candidate',
+    review: null,
   };
 }
 
 export async function runCrustDataMarketSearch(options: MarketSearchOptions = {}): Promise<MarketSearchResult> {
+  if (options.replay) return replayMarket(options);
+  if (options.review) throw new CrustDataError('Apply reviews to a cached snapshot with --replay');
+  const payload = buildCodingAgentsMarketQuery(options);
+  const maxCredits = options.maxCredits ?? 10;
+  if (!Number.isFinite(maxCredits) || maxCredits <= 0) throw new CrustDataError('Maximum credits must be positive');
   const env = options.env ?? loadEnv();
   const apiKey = env.CRUSTDATA_API_KEY;
   if (!apiKey) throw new CrustDataError('CRUSTDATA_API_KEY is missing from ~/.tally/.env');
 
-  const payload = buildCodingAgentsMarketQuery(options);
-  const response = await (options.fetch ?? fetch)(ENDPOINT, {
+  const request = options.fetch ?? fetch;
+  const pricing = await request('https://api.crustdata.com/account/endpoints?path=/company/search', {
+    headers: { authorization: `Bearer ${apiKey}`, 'x-api-version': API_VERSION },
+  });
+  if (!pricing.ok) throw new CrustDataError(`Cannot check account pricing: HTTP ${pricing.status}`);
+  const endpoints = recordValue(await pricing.json()).endpoints;
+  const endpoint = Array.isArray(endpoints) ? endpoints.find(e => recordValue(e).path === '/company/search') : undefined;
+  const estimatedMaxCredits = estimateMarketCredits(payload, recordValue(endpoint));
+  options.onEstimate?.(estimatedMaxCredits);
+  if (estimatedMaxCredits > maxCredits) throw new CrustDataError(`Estimated maximum ${estimatedMaxCredits} credits exceeds cap ${maxCredits}; lower --limit`);
+  const retrievedAt = new Date().toISOString();
+  const queryHash = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  const outputDir = resolve(options.outputDir ?? '.tally/market/latest');
+  const paths = { outputDir, queryPath: resolve(outputDir, 'query.json'), companiesPath: resolve(outputDir, 'companies.json'),
+    csvPath: resolve(outputDir, 'companies.csv'), reportPath: resolve(outputDir, 'report.md') };
+  if (options.plan) return { ...paths, retrievedAt, queryHash, estimatedMaxCredits, replayed: false, companies: [], totalCount: null, nextCursor: false, creditCost: '0' };
+  const response = await request(ENDPOINT, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -115,16 +163,14 @@ export async function runCrustDataMarketSearch(options: MarketSearchOptions = {}
     },
     body: JSON.stringify(payload),
   });
-  const body = await response.json().catch(async () => ({ text: await response.text() }));
+  const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = recordValue(body).error;
-    const message = stringValue(recordValue(error).message) ?? `HTTP ${response.status}`;
-    throw new CrustDataError(`CrustData company search failed: ${message}`);
+    throw new CrustDataError(`CrustData company search failed: HTTP ${response.status}; credits: ${response.headers.get('x-credits-used') ?? response.headers.get('x-credit-cost') ?? 'unknown'}`);
   }
 
   const bodyRecord = recordValue(body);
-  const companies = Array.isArray(bodyRecord.companies) ? bodyRecord.companies.map(summarizeCompany) : [];
-  const outputDir = resolve(options.outputDir ?? '.tally/market/latest');
+  if (!Array.isArray(bodyRecord.companies)) throw new CrustDataError('Company Search returned no companies array');
+  const companies = bodyRecord.companies.map(summarizeCompany);
   mkdirSync(outputDir, { recursive: true });
   const queryPath = resolve(outputDir, 'query.json');
   const companiesPath = resolve(outputDir, 'companies.json');
@@ -137,7 +183,11 @@ export async function runCrustDataMarketSearch(options: MarketSearchOptions = {}
         endpoint: ENDPOINT,
         method: 'POST',
         apiVersion: API_VERSION,
+        queryHash,
         payload,
+        maxCredits,
+        estimatedMaxCredits,
+        pricing: { baseCredits: recordValue(endpoint).base_credits, premiumFilters: recordValue(endpoint).premium_filters, premiumFields: recordValue(endpoint).premium_fields },
       },
       null,
       2,
@@ -150,6 +200,11 @@ export async function runCrustDataMarketSearch(options: MarketSearchOptions = {}
         totalCount: numberValue(bodyRecord.total_count),
         nextCursor: Boolean(bodyRecord.next_cursor),
         creditCost,
+        apiVersion: API_VERSION,
+        retrievedAt,
+        queryHash,
+        returnedCount: companies.length,
+        estimatedMaxCredits,
         companies,
       },
       null,
@@ -157,7 +212,7 @@ export async function runCrustDataMarketSearch(options: MarketSearchOptions = {}
     )}\n`,
   );
 
-  return {
+  const result: MarketSearchResult = {
     outputDir,
     queryPath,
     companiesPath,
@@ -165,5 +220,40 @@ export async function runCrustDataMarketSearch(options: MarketSearchOptions = {}
     nextCursor: Boolean(bodyRecord.next_cursor),
     companies,
     creditCost,
+    csvPath: paths.csvPath,
+    reportPath: paths.reportPath,
+    estimatedMaxCredits,
+    retrievedAt,
+    queryHash,
+    replayed: false,
   };
+  writeMarketReport(result);
+  return result;
+}
+
+function replayMarket(options: MarketSearchOptions): MarketSearchResult {
+  if (options.limit !== undefined || options.keyword !== undefined || options.plan) throw new CrustDataError('Replay uses the saved query; omit limit, keyword and plan');
+  let query: Record<string, unknown>, saved: Record<string, unknown>;
+  try {
+    query = recordValue(JSON.parse(readFileSync(options.replay!, 'utf8')));
+    saved = recordValue(JSON.parse(readFileSync(resolve(dirname(options.replay!), 'companies.json'), 'utf8')));
+  } catch { throw new CrustDataError('Cannot read saved query and companies.json'); }
+  const queryHash = createHash('sha256').update(JSON.stringify(query.payload) ?? '').digest('hex');
+  if (query.endpoint !== ENDPOINT || query.method !== 'POST' || query.apiVersion !== API_VERSION || query.queryHash !== queryHash || saved.queryHash !== queryHash || saved.apiVersion !== API_VERSION ||
+    !Array.isArray(saved.companies) || typeof saved.retrievedAt !== 'string' || !Number.isFinite(Date.parse(saved.retrievedAt)) ||
+    typeof saved.estimatedMaxCredits !== 'number' || !Number.isFinite(saved.estimatedMaxCredits) || saved.estimatedMaxCredits < 0 || saved.returnedCount !== saved.companies.length) {
+    throw new CrustDataError('Saved query and snapshot are invalid or do not match');
+  }
+  const outputDir = resolve(options.outputDir ?? '.tally/market/latest');
+  const result: MarketSearchResult = { outputDir, queryPath: resolve(outputDir, 'query.json'), companiesPath: resolve(outputDir, 'companies.json'),
+    csvPath: resolve(outputDir, 'companies.csv'), reportPath: resolve(outputDir, 'report.md'),
+    companies: saved.companies as MarketCompany[], totalCount: numberValue(saved.totalCount), nextCursor: Boolean(saved.nextCursor),
+    creditCost: stringValue(saved.creditCost), estimatedMaxCredits: saved.estimatedMaxCredits,
+    retrievedAt: saved.retrievedAt, queryHash, replayed: true };
+  applyMarketReviews(result.companies, options.review);
+  mkdirSync(outputDir, { recursive: true });
+  writeFileSync(result.queryPath, `${JSON.stringify(query, null, 2)}\n`);
+  writeFileSync(result.companiesPath, `${JSON.stringify({ ...saved, companies: result.companies, replayed: true }, null, 2)}\n`);
+  writeMarketReport(result);
+  return result;
 }
