@@ -4,6 +4,18 @@
 const still = window.matchMedia('(prefers-reduced-motion: reduce)');
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
+// ---------- phone menu ----------
+
+const head = document.querySelector('.site-head');
+const menuButton = document.querySelector('.menu-button');
+if (head && menuButton) {
+  menuButton.hidden = false;
+  const setOpen = (open) => { head.classList.toggle('open', open); menuButton.setAttribute('aria-expanded', String(open)); menuButton.textContent = open ? 'Close' : 'Menu'; };
+  menuButton.addEventListener('click', () => setOpen(!head.classList.contains('open')));
+  head.querySelector('nav').addEventListener('click', (event) => { if (event.target.closest('a')) setOpen(false); });
+  addEventListener('keydown', (event) => { if (event.key === 'Escape') setOpen(false); });
+}
+
 // ---------- scroll reveals ----------
 
 const reveals = document.querySelectorAll('.reveal');

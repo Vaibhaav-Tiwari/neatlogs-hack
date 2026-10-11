@@ -53,6 +53,7 @@ h3 { font: 600 18px/1.35 var(--sans); }
 .site-head nav { display: flex; gap: clamp(14px, 2.4vw, 30px); font: 500 14.5px/1 var(--sans); }
 .site-head nav a { color: var(--muted); text-decoration: none; padding: 6px 0; white-space: nowrap; }
 .site-head nav a:hover { color: var(--text); }
+.menu-button { display: none; padding: 8px 14px; font: 500 14px/1 var(--sans); color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
 
 /* ---------- the pixel mark, generated from the CLI's frames ---------- */
 
@@ -239,7 +240,6 @@ h3 { font: 600 18px/1.35 var(--sans); }
 .slot span { display: block; margin-bottom: 4px; font: 500 11.5px/1.2 var(--mono); color: #a23c12; }
 .criterion > .slot { margin-top: clamp(22px, 3vw, 34px); max-width: 62ch; }
 .ev > .slot { margin-top: 14px; }
-.ev > .slot:only-child { margin-top: 0; border: 0; padding: 0; }
 .criterion details { margin-top: 18px; }
 .criterion summary { display: inline-block; padding: 9px 16px; border-radius: 999px; border: 1px solid rgba(27, 30, 39, .2); font: 500 14px/1 var(--sans); cursor: pointer; list-style: none; }
 .criterion summary::-webkit-details-marker { display: none; }
@@ -265,7 +265,13 @@ h3 { font: 600 18px/1.35 var(--sans); }
   .steps li:first-child { border-top: 0; }
   .steps li + li { padding-left: 0; border-left: 0; }
   .steps li::before { grid-row: span 2; margin: 3px 0 0; }
-  .site-head nav a:not(:nth-child(4)) { display: none; }
+  /* phones: the whole nav sits behind a Menu button; without scripts it simply wraps under the brand */
+  .site-head { flex-wrap: wrap; }
+  .site-head nav { flex-basis: 100%; flex-wrap: wrap; gap: 4px 18px; }
+  .js .menu-button { display: block; }
+  .js .site-head nav { display: none; flex-direction: column; gap: 0; padding: 6px 0 4px; }
+  .js .site-head.open nav { display: flex; }
+  .js .site-head nav a { padding: 13px 0; font-size: 16px; border-top: 1px solid var(--line); }
 }
 @media (max-width: 480px) {
   body { font-size: 16.5px; }
