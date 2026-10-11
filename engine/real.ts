@@ -76,6 +76,8 @@ export interface WorkerPort {
   /** Optional scripted evidence, read only once this attempt has settled. */
   changedFilesFor?(sessionId: string): Promise<string[] | null>;
   release?(sessionId: string): Promise<void>;
+  /** Host commits uncommitted task edits after normal direct-worker completion. */
+  commitChanges?(sessionId: string): Promise<string | null>;
 }
 
 export interface FinalUsagePort extends LiveUsagePort {
@@ -171,7 +173,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
   const runner = config.runner === 'direct'
-    ? new DirectRunner({ repoPath, baseBranch: config.repo.baseBranch, test: config.test, requiredBaseCommit, approvedRules: config.claudeCode?.allow })
+    ? new DirectRunner({ repoPath, baseBranch: config.repo.baseBranch, configPath: resolve(configPath), test: config.test, requiredBaseCommit, approvedRules: config.claudeCode?.allow })
     : new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, aoBin: config.repo.aoBin ? resolve(configDir, config.repo.aoBin) : undefined });
   const localHistory = hasPort(overrides, 'history') ? null : new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
   const trace = hasPort(overrides, 'trace') ? overrides.trace : config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
@@ -286,7 +288,9 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
         `The environment has already been set up before you started. Do not run setup (${config.test.setupCommand}), install dependencies, or use the network.`,
       ]
     : ['Do not install dependencies or use the network unless the task explicitly requires it.'];
-  const publishInstruction = config.repo.workerPublishesPr
+  const publishInstruction = config.runner === 'direct'
+    ? 'You do not need to commit; Tally commits your work. Do not push or open a pull request; Tally verifies and publishes your changes.'
+    : config.repo.workerPublishesPr
     ? 'Commit your changes on your current branch, push that branch, open a pull request against the default branch, and do not merge it.'
     : 'Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.';
   return [
@@ -500,6 +504,7 @@ async function runSingleAttempt(input: {
   let checkpointId: string | null = null;
   let checkpointUrl: string | null = null;
   let scopeWarnings: string[] = [];
+  let tallyCommit: string | null = null;
   let entireSessionId: string | null = null;
   let workerTraceId: string | null = null;
   let resolvedCheckoutPath: string | null = null;
@@ -545,6 +550,9 @@ async function runSingleAttempt(input: {
         checkoutPath = await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch);
       }
       resolvedCheckoutPath = checkoutPath;
+      if (!input.dryRun && input.config.runner === 'direct' && workerResult.status === 'idle' && checkoutPath && branch) {
+        tallyCommit = await input.ports.worker.commitChanges?.(started.sessionId) ?? null;
+      }
       if (!input.dryRun && (!checkoutPath || !branch)) {
         result = 'error';
         resultReason = 'could not locate worker checkout';
@@ -667,6 +675,7 @@ async function runSingleAttempt(input: {
   if (workerResult?.permissionWarnings?.length && (result === 'passed' || result === 'failed')) {
     resultReason = `${resultReason ? `${resultReason}; ` : ''}warning: ${workerResult.permissionWarnings.join('; ')}`;
   }
+  if (tallyCommit) resultReason = `${resultReason ? `${resultReason}; ` : ''}Tally committed task changes as ${tallyCommit}`;
   return {
     schemaVersion: SCHEMA_VERSION,
     attemptId: attemptId(input.runId, input.task.taskId, input.attempt) + (input.retrySuffix ?? ''),
@@ -693,6 +702,7 @@ async function runSingleAttempt(input: {
     resultReason,
     scopeWarnings,
     ...(workerResult?.permissionWarnings?.length ? { permissionWarnings: workerResult.permissionWarnings } : {}),
+    ...(tallyCommit ? { tallyCommit } : {}),
     escalatedFrom: input.escalatedFrom,
     handoff: input.handoff,
     handoffText: input.handoffSummary,

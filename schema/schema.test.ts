@@ -29,6 +29,11 @@ it('accepts optional permission warnings on ledger rows without changing legacy 
   expect(validateLedgerRow({ ...ledger[0], permissionWarnings: [42] }).ok).toBe(false);
 });
 
+it('records the host-created task commit as an optional SHA', () => {
+  expect(validateLedgerRow({ ...ledger[0], tallyCommit: 'a'.repeat(40) }).ok).toBe(true);
+  expect(validateLedgerRow({ ...ledger[0], tallyCommit: 'not-a-commit' }).ok).toBe(false);
+});
+
 it('accepts the one runner switch and preserves configs without it', () => {
   expect(validateConfig(config).ok).toBe(true);
   expect(validateConfig({ ...config, runner: 'ao' }).ok).toBe(true);

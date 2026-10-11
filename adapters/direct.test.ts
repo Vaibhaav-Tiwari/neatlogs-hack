@@ -46,6 +46,37 @@ describe('Claude live usage', () => {
 });
 
 describe('direct Claude worker', () => {
+  it('host-commits only nonignored task edits on the original worker branch using literal paths', async () => {
+    const fake = processFake();
+    let branch = '';
+    let dirty = true;
+    const command = vi.fn(async (file: string, args: string[]) => {
+      if (file === 'claude') return { stdout: '{"loggedIn":true}', stderr: '' };
+      if (args[0] === 'worktree' && args[1] === 'add') branch = args[3]!;
+      if (args.includes('commit')) dirty = false;
+      const stdout = args[0] === 'branch' ? branch
+        : args[0] === 'diff' ? dirty ? 'calc.js\0removed.txt\0tally.yaml\0config/custom.yaml\0.tally/run.json\0ignored.txt\0.claude/settings.local.json\0' : ''
+        : args[0] === 'ls-files' && args.includes('--others') ? dirty ? 'new file.txt\0:(glob)*\0' : ''
+        : args[0] === 'ls-files' ? 'ignored.txt\0'
+        : args[0] === 'rev-parse' ? 'a'.repeat(40) : '';
+      return { stdout, stderr: '' };
+    });
+    const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', configPath: '/tmp/repo/config/custom.yaml', test: { command: 'true' }, approvedRules, command, launch: fake.launch });
+    const started = await runner.start(input);
+    await expect(runner.commitChanges(started.sessionId)).rejects.toThrow('active');
+    fake.emit({ type: 'result', is_error: false, usage: { input_tokens: 1 } });
+    fake.child.emit('close', 0, null);
+    expect(await runner.commitChanges(started.sessionId)).toBe('a'.repeat(40));
+    const calls = command.mock.calls.map(call => call[1]);
+    const files = ['calc.js', 'removed.txt', 'new file.txt', ':(glob)*'];
+    expect(calls).toContainEqual(['--literal-pathspecs', 'add', '-A', '--', ...files]);
+    expect(calls).toContainEqual(['--literal-pathspecs', 'commit', '--only', '-m', 'tally: commit completed task edits', '--', ...files]);
+    expect(await runner.commitChanges(started.sessionId)).toBe(null);
+    expect(command.mock.calls.filter(call => call[1].includes('commit'))).toHaveLength(1);
+    branch = 'main';
+    await expect(runner.commitChanges(started.sessionId)).rejects.toThrow('branch changed');
+    await runner.release(started.sessionId);
+  });
   it('requires explicit consent before any command or worktree mutation', async () => {
     const command = vi.fn();
     const runner = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'make test' }, command });

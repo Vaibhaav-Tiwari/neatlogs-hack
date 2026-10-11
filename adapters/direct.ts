@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { LiveUsage, LiveUsagePort, SessionControlPort } from '../agent/ports.js';
 import type { WorkerPort, WorkerResult, WorkerStartInput } from '../engine/real.js';
@@ -87,6 +87,7 @@ export interface DirectRunnerOptions {
   requiredBaseCommit?: string;
   test: TallyConfig['test'];
   approvedRules?: string[];
+  configPath?: string;
   command?: CommandRunner;
   launch?: (file: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; stdio: 'pipe' }) => ChildProcessWithoutNullStreams;
   signal?: (pid: number, signal: NodeJS.Signals) => void;
@@ -246,6 +247,24 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
       timer = setTimeout(() => { try { send('SIGKILL'); } catch (error) { session.stopped = false; reject(error); } }, this.options.stopGraceMs ?? 5000);
     });
     try { await Promise.race([session.completion, failedKill]); } finally { if (timer) clearTimeout(timer); }
+  }
+  async commitChanges(id: string): Promise<string | null> {
+    const session = this.session(id);
+    if (!session.closed || session.error || session.stopped) throw new Error('Cannot commit edits from an active, stopped or errored direct worker');
+    const options = { cwd: session.checkoutPath };
+    const headBranch = (await this.command('git', ['branch', '--show-current'], options)).stdout.trim();
+    if (headBranch !== session.branch) throw new Error(`Direct worker branch changed: expected ${session.branch}, got ${headBranch}`);
+    const changed = (await this.command('git', ['diff', '--name-only', '-z', 'HEAD', '--'], options)).stdout;
+    const added = (await this.command('git', ['ls-files', '--others', '--exclude-standard', '-z'], options)).stdout;
+    const ignored = new Set((await this.command('git', ['ls-files', '--cached', '--ignored', '--exclude-standard', '-z'], options)).stdout.split('\0').filter(Boolean));
+    const configFile = this.options.configPath ? relative(resolve(this.options.repoPath), resolve(this.options.configPath)).replace(/\\/g, '/') : 'tally.yaml';
+    const files = [...new Set((changed + added).split('\0').filter(Boolean))].filter(path =>
+      !ignored.has(path) && path !== 'tally.yaml' && path !== configFile && path !== '.tally' && !path.startsWith('.tally/') && path !== '.claude/settings.local.json');
+    if (!files.length) return null;
+    await this.command('git', ['--literal-pathspecs', 'add', '-A', '--', ...files], options);
+    // Commit only these paths, even if the worker pre-staged ignored or Tally-owned files.
+    await this.command('git', ['--literal-pathspecs', 'commit', '--only', '-m', 'tally: commit completed task edits', '--', ...files], options);
+    return (await this.command('git', ['rev-parse', 'HEAD'], options)).stdout.trim();
   }
   /** Called only after verification, publishing and capture have read the checkout. Stopped branches remain for continuation. */
   async release(id: string): Promise<void> {
