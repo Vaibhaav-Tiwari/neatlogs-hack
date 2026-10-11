@@ -170,7 +170,8 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
           meter.consume(event);
           if (event.type === 'result') {
             if (event.is_error) session.error = typeof event.result === 'string' ? event.result.slice(0, 2000) : 'Claude reported an error';
-            if (Array.isArray(event.permission_denials) && event.permission_denials.length) { session.denied = true; session.error = `worker asked for input: permission denied for ${event.permission_denials.map((d: unknown) => record(d).tool_name ?? 'tool').join(', ')}`; }
+            // Successful results may include earlier denials the worker recovered from.
+            if (event.is_error && Array.isArray(event.permission_denials) && event.permission_denials.length) { session.denied = true; session.error = `worker asked for input: permission denied for ${event.permission_denials.map((d: unknown) => record(d).tool_name ?? 'tool').join(', ')}`; }
           }
         } catch { session.error = 'Invalid JSON in Claude stream; live usage cannot be trusted'; void this.stop(sessionId, session.error).catch(() => {}); }
       };

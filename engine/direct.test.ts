@@ -15,7 +15,7 @@ import { runRealTally } from './real.js';
 import { claudeAllowList } from './harness.js';
 
 describe('direct runner through the real loop', () => {
-  it('stops, WIP commits, escalates on the same branch, verifies, publishes and cleans up', async () => {
+  it.each([true, false])('independently verifies recovered denials after same-branch escalation (tests pass: %s)', async testsPass => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-direct-loop-'));
     const git = (args: string[], cwd = dir) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
     git(['init', '-b', 'main']);
@@ -53,7 +53,7 @@ describe('direct runner through the real loop', () => {
             writeFileSync(join(options.cwd, 'calc.js'), readFileSync(join(options.cwd, 'calc.js'), 'utf8') + '// continued from the first attempt\n');
             git(['add', 'calc.js'], options.cwd);
             git(['-c', 'user.name=Tally Test', '-c', 'user.email=tally-test@example.invalid', 'commit', '-m', 'fix add'], options.cwd);
-            child.stdout.write(JSON.stringify({ type: 'result', usage: { input_tokens: 200, output_tokens: 10 } }) + '\n');
+            child.stdout.write(JSON.stringify({ type: 'result', is_error: false, permission_denials: [{ tool_name: 'Bash' }], usage: { input_tokens: 200, output_tokens: 10 } }) + '\n');
             queueMicrotask(() => child.emit('close', 0, null));
           }
         });
@@ -72,15 +72,21 @@ describe('direct runner through the real loop', () => {
             commitWorkInProgress: async () => { git(['add', '-A'], paths[0]); git(['-c', 'user.name=Tally Test', '-c', 'user.email=tally-test@example.invalid', 'commit', '-m', 'wip: preserve Tally ceiling-stopped task edits'], paths[0]); return git(['rev-parse', 'HEAD'], paths[0]); } },
           publisher: { commitsAhead: input => publisher.commitsAhead(input), changedFiles: input => publisher.changedFiles(input),
             publishPr: async input => { publishedBranch = input.branch; expect(git(['rev-list', '--count', `${base}..HEAD`], input.checkoutPath)).toBe('2'); return 'https://github.com/acme/calc/pull/1'; } },
-          verifier: { verify: async input => { await runCommand('node', ['--check', 'calc.js'], { cwd: input.checkoutPath! }); return { passed: true, reason: 'syntax passed' }; } },
+          verifier: { verify: async input => { await runCommand('node', ['--check', 'calc.js'], { cwd: input.checkoutPath! }); return { passed: testsPass, reason: testsPass ? 'syntax passed' : 'verification failed' }; } },
         },
       });
-      expect(result.ledger.map(row => row.result)).toEqual(['stopped', 'passed']);
+      expect(result.ledger.map(row => row.result)).toEqual(['stopped', testsPass ? 'passed' : 'failed']);
       expect(result.ledger[0]?.resultReason).toContain('work in progress committed');
-      expect(result.ledger[1]?.prUrl).toBe('https://github.com/acme/calc/pull/1');
-      expect(paths[0]).toBe(paths[1]); expect(branches[0]).toBe(branches[1]); expect(publishedBranch).toBe(branches[0]);
+      expect(result.ledger[1]?.prUrl).toBe(testsPass ? 'https://github.com/acme/calc/pull/1' : null);
+      expect(paths[0]).toBe(paths[1]); expect(branches[0]).toBe(branches[1]); expect(publishedBranch).toBe(testsPass ? branches[0] : undefined);
       expect(result.ledger.every(row => row.estimatedCostNanos > 0)).toBe(true);
-      expect(existsSync(paths[0]!)).toBe(false);
-    } finally { rmSync(dir, { recursive: true, force: true }); }
+      expect(existsSync(paths[0]!)).toBe(!testsPass);
+    } finally {
+      for (const path of new Set(paths)) if (existsSync(path)) {
+        git(['worktree', 'remove', '--force', path]);
+        rmSync(join(path, '..'), { recursive: true, force: true });
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
   }, 15000);
 });
