@@ -49,10 +49,14 @@
   <div class="wrap narrow">
     <p class="eyebrow">Walkthrough</p>
     <h2 id="video-title">Watch a <em>first run</em></h2>
-    <!-- To show the real video, set data-video to a file path (onboarding.mp4) or an https embed address. Nothing else changes. -->
-    <div class="frame video-frame" data-video="">
+    <div class="frame video-frame has-video">
       <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>onboarding</span></div>
-      <div class="screen"><p class="pending"><b>Video coming</b><span>The walkthrough has not been recorded yet.</span></p></div>
+      <div class="screen">
+        <video controls playsinline preload="metadata" poster="onboarding-poster.jpg" aria-label="Tally first-run walkthrough">
+          <source src="onboarding.mp4" type="video/mp4">
+          <a href="onboarding.mp4">Watch the Tally walkthrough</a>.
+        </video>
+      </div>
     </div>
   </div>
 </section>
@@ -243,7 +247,7 @@
 
     <article class="criterion" id="j-video">
       <header><p class="weight">20%</p><div><h3>Demo video</h3><p class="quote">“How clearly the demo video explains the agent and your use of neatlogs, Entire and cfo.ai.”</p></div></header>
-      <p class="slot"><span>Not here yet</span>The demo video has not been recorded. It will appear in the frame near the top of this page.</p>
+      <p><a href="#video">Watch the walkthrough</a> in the video frame near the top of this page.</p>
     </article>
 
     <article class="criterion" id="j-public">
