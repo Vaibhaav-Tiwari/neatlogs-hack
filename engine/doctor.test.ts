@@ -10,7 +10,7 @@ import { claudeAllowList } from './harness.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 describe('runDoctor', () => {
-  it('reports mixed AO as not supported yet without proposing a harness substitution', async () => {
+  it('reports mixed AO per-harness permission selection without substituting a harness', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-mixed-'));
     const configPath = join(dir, 'tally.yaml');
     const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
@@ -23,8 +23,8 @@ describe('runDoctor', () => {
       stdout: file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT'
         : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'default' } } } } }), stderr: '' }) });
     expect(lines.find(line => line.product === 'AO worker auto mode')).toMatchObject({
-      status: 'broken', detail: expect.stringContaining('Mixed AO harnesses are not supported yet'),
-      fix: 'use Claude-only or Codex-only AO tiers, or runner: direct',
+      status: 'connected', detail: expect.stringContaining('immediately before each spawn under a project lock'),
+      fix: null,
     });
   });
   it('reports disabled products as off, without checking credentials or optional CLIs', async () => {

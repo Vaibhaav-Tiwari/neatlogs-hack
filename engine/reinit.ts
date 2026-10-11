@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { CommandError } from '../adapters/command.js';
 import { contentHash, installRecordPath, type InstallRecord } from './install-record.js';
+import { parse } from 'yaml';
+import { AO_HARNESS_PERMISSIONS } from './harness.js';
+import type { TallyConfig } from '../schema/types.js';
 
 export interface ReinitPlan {
   version: 1;
@@ -38,7 +41,10 @@ export function prepareReinit(configPath: string, afterConfig: string): ReinitPl
     if (!record || record.version !== 1 || record.configPath !== configPath || typeof record.projectId !== 'string') {
       throw new CommandError(`Invalid installation ownership record at ${path}; no changes made.`);
     }
-    afterRecord = JSON.stringify({ ...record, configHash: contentHash(afterConfig) }, null, 2);
+    const config = parse(afterConfig) as TallyConfig;
+    afterRecord = JSON.stringify({ ...record, configHash: contentHash(afterConfig),
+      ...(record.aoHarnessPermissions ? { aoHarnessPermissions: { ...record.aoHarnessPermissions,
+        ...Object.fromEntries(config.tiers.map(tier => [tier.harness, AO_HARNESS_PERMISSIONS[tier.harness]])) } } : {}) }, null, 2);
   }
   return { version: 1, configPath, beforeConfig: readFileSync(configPath, 'utf8'), afterConfig, beforeRecord, afterRecord };
 }

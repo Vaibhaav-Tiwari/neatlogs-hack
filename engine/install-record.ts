@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
+import type { AoHarnessPermissionModes } from './harness.js';
 
 export interface InstallRecord {
   version: 1;
@@ -16,6 +17,7 @@ export interface InstallRecord {
   workerBefore?: unknown;
   workerAfterHash?: string;
   workerPermissionMode?: 'auto' | 'default';
+  aoHarnessPermissions?: AoHarnessPermissionModes;
 }
 
 export function installRecordPath(configPath: string): string {

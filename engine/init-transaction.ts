@@ -4,6 +4,7 @@ import { CommandError } from '../adapters/command.js';
 import { configHash, contentHash, type InstallRecord } from './install-record.js';
 import type { InitCommandRunner } from './init.js';
 import { withWorkerPermissionMode } from './preflight.js';
+import { AO_HARNESS_PERMISSIONS } from './harness.js';
 
 export interface InitTransaction {
   version: 1;
@@ -33,6 +34,8 @@ export function readPendingInit(configPath: string): InitTransaction | null {
     throw new CommandError(`Invalid init recovery record at ${path}; preserve it and inspect it before retrying.`);
   }
   if (value.record.workerPermissionMode !== undefined && !['auto', 'default'].includes(value.record.workerPermissionMode)) throw new CommandError('Invalid init recovery worker permission mode.');
+  if (value.record.aoHarnessPermissions && (typeof value.record.aoHarnessPermissions !== 'object' || Array.isArray(value.record.aoHarnessPermissions)
+    || !Object.keys(value.record.aoHarnessPermissions).length || Object.entries(value.record.aoHarnessPermissions).some(([harness, mode]) => AO_HARNESS_PERMISSIONS[harness as keyof typeof AO_HARNESS_PERMISSIONS] !== mode))) throw new CommandError('Invalid init recovery harness permission modes.');
   return value;
 }
 
