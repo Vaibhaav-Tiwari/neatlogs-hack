@@ -6,16 +6,21 @@ import { loadConfig } from './config.js';
 import { loadEnv } from './env.js';
 import { checkClaudePostCreate, checkConfiguredWorkerMode, checkSetupPostCreate } from './preflight.js';
 import { checkHarness, claudeAllowList } from './harness.js';
+import { configuredModelAccessNotice } from './model-access.js';
 import { configHash } from './install-record.js';
 import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
 
-export type DoctorStatus = 'connected' | 'missing' | 'broken' | 'off';
+export type DoctorStatus = 'connected' | 'missing' | 'broken' | 'off' | 'unverified';
 
 export interface DoctorLine {
   product: string;
   status: DoctorStatus;
   detail: string;
   fix: string | null;
+}
+
+export function doctorHasFailures(lines: DoctorLine[]): boolean {
+  return lines.some((line) => !['connected', 'off', 'unverified'].includes(line.status));
 }
 
 export type DoctorRunner = (file: string, args: string[], options?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }>;
@@ -129,6 +134,12 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
       const status = await checkHarness(harness, runner, cwd);
       lines.push({ product: harness === 'claude-code' ? 'Claude Code' : 'Codex', status: !status.installed ? 'missing' : status.signedIn ? 'connected' : 'broken', detail: status.detail, fix: status.installed && status.signedIn ? null : status.fix });
     }
+    lines.push({
+      product: 'Configured model access',
+      status: 'unverified',
+      detail: configuredModelAccessNotice(config.tiers),
+      fix: 'Check the configured models with the same active accounts/providers; edit tiers[].model in tally.yaml for any model they reject.',
+    });
     if (config.tiers.some(tier => tier.harness === 'claude-code')) {
       const approved = config.claudeCode && configHash(config.claudeCode.allow) === configHash(claudeAllowList(config.test));
       lines.push({ product: 'Claude Code allow-list consent', status: approved ? 'connected' : 'missing', detail: approved ? 'Repository consent matches current test/setup commands; worker-local enforcement is a separate check' : 'Claude Code worker allow-list has not been approved for these test/setup commands', fix: approved ? null : 'tally init' });

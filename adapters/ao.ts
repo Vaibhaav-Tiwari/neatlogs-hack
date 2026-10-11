@@ -103,6 +103,14 @@ function needsInputReason(session: AoSessionJson['session']): string {
   return detail ? `worker asked for input: ${detail}` : `worker asked for input: AO session entered ${state}`;
 }
 
+function terminalDetail(session: AoSessionJson['session']): string | null {
+  const details = [session?.reason, session?.message, session?.detail,
+    session?.activity?.reason, session?.activity?.message, session?.activity?.detail]
+    .map(textValue)
+    .filter((detail): detail is string => detail !== null);
+  return [...new Set(details)].join('; ').slice(0, 2000) || null;
+}
+
 function progressFingerprint(session: AoSessionJson['session'], usage: LiveUsage | null): string {
   return JSON.stringify({
     updatedAt: session?.updatedAt ?? null,
@@ -285,7 +293,8 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
       usedTokens ||= (usage?.tokens.total ?? 0) > 0;
       if (!usedTokens && (state?.isTerminated || status === 'terminated' || (status === 'idle' && now() >= startupDeadline))) {
         await this.stop(sessionId, 'worker never started');
-        return this.resultFrom(state, 'never_started', 'worker never started');
+        const detail = terminalDetail(state);
+        return this.resultFrom(state, 'never_started', detail ? `worker never started: ${detail}` : 'worker never started');
       }
       if (deadline !== null && now() >= deadline) {
         const reason = `worker exceeded wall-clock limit of ${Math.round(timeoutMs! / 1000)}s`;

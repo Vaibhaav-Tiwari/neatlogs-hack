@@ -4,12 +4,28 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { stringify } from 'yaml';
 import { loadConfig } from './config.js';
-import { runDoctor, type DoctorRunner } from './doctor.js';
+import { doctorHasFailures, runDoctor, type DoctorRunner } from './doctor.js';
 import { CommandError } from '../adapters/command.js';
 import { claudeAllowList } from './harness.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 describe('runDoctor', () => {
+  it('shows configured model access as unverified without failing the doctor command', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-models-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'direct';
+    config.integrations = { entire: false, neatlogs: false, cfoai: false, slack: false };
+    config.budget.source = 'config';
+    writeFileSync(configPath, stringify(config));
+    const lines = await runDoctor({ configPath, env: {}, runner: async file => ({
+      stdout: file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT' : 'ok', stderr: '',
+    }) });
+    const access = lines.find(line => line.product === 'Configured model access');
+    expect(access).toMatchObject({ status: 'unverified', detail: expect.stringContaining('does not send a model request as a preflight probe'), fix: expect.stringContaining('same active accounts/providers') });
+    expect(access && doctorHasFailures([access])).toBe(false);
+    expect(doctorHasFailures([{ product: 'Codex', status: 'broken', detail: 'signed out', fix: 'codex login' }])).toBe(true);
+  });
   it('reports checkpoint recall unavailable even when Graph and capture are connected', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-recall-'));
     const configPath = join(dir, 'tally.yaml');
