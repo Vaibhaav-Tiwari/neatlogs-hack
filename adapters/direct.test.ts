@@ -140,11 +140,14 @@ describe('direct Claude worker', () => {
   });
   it('does not call a nonzero process exit successful and keeps permission denials visible', async () => {
     const fake = processFake();
-    const worker = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, command: async (_file, args) => ({ stdout: args.includes('auth') ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch, signal: vi.fn() });
+    const signal = vi.fn();
+    const worker = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, command: async (_file, args) => ({ stdout: args.includes('auth') ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch, signal });
     const started = await worker.start(input);
     fake.emit({ type: 'result', is_error: true, result: 'permission denied', permission_denials: [{ tool_name: 'Bash' }], usage: { input_tokens: 1 } });
     fake.child.emit('close', 1, null);
     expect(await worker.wait(started.sessionId)).toMatchObject({ status: 'needs_input', resultReason: expect.stringContaining('permission denied') });
+    await worker.stop(started.sessionId, 'already finished');
+    expect(signal).not.toHaveBeenCalled();
     await worker.release(started.sessionId);
   });
 });

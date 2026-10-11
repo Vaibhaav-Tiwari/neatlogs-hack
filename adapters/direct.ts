@@ -207,13 +207,18 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
   }
   async stop(id: string, _reason: string): Promise<void> {
     const session = this.session(id);
+    if (session.closed) return;
     if (session.stopped) return session.completion;
-    session.stopped = true;
     const signal = this.options.signal ?? process.kill;
     const send = (kind: NodeJS.Signals) => { if (session.child.pid) try { signal(-session.child.pid, kind); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; } };
-    send('SIGTERM');
-    const timer = setTimeout(() => send('SIGKILL'), this.options.stopGraceMs ?? 5000);
-    try { await session.completion; } finally { clearTimeout(timer); }
+    session.stopped = true;
+    try { send('SIGTERM'); }
+    catch (error) { session.stopped = false; throw error; }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const failedKill = new Promise<void>((_resolve, reject) => {
+      timer = setTimeout(() => { try { send('SIGKILL'); } catch (error) { session.stopped = false; reject(error); } }, this.options.stopGraceMs ?? 5000);
+    });
+    try { await Promise.race([session.completion, failedKill]); } finally { if (timer) clearTimeout(timer); }
   }
   /** Called only after verification, publishing and capture have read the checkout. Stopped branches remain for continuation. */
   async release(id: string): Promise<void> {
