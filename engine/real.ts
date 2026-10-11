@@ -283,12 +283,16 @@ function initialTaskState(task: BacklogTask): TaskState {
 }
 
 function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSummary: string | null, runId: string, attempt: number): string {
+  const direct = config.runner === 'direct';
+  const directCodex = direct && tier.harness === 'codex';
   const setup = config.test.setupCommand
     ? [
         `The environment has already been set up before you started. Do not run setup (${config.test.setupCommand}), install dependencies, or use the network.`,
       ]
     : ['Do not install dependencies or use the network unless the task explicitly requires it.'];
-  const publishInstruction = config.runner === 'direct'
+  const publishInstruction = directCodex
+    ? 'Leave your finished changes uncommitted in the working tree; Tally stages and commits them. Do not run git add, git commit or any command that writes git metadata: your sandbox cannot write it. Do not push or open a pull request; Tally verifies and publishes your changes.'
+    : direct
     ? 'You do not need to commit; Tally commits your work. Do not push or open a pull request; Tally verifies and publishes your changes.'
     : config.repo.workerPublishesPr
     ? 'Commit your changes on your current branch, push that branch, open a pull request against the default branch, and do not merge it.'
@@ -298,24 +302,24 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
     `Neatlogs correlation: runId=${runId} taskId=${task.taskId} attempt=${attempt}.`,
     '',
     config.runner === 'direct' ? 'You are already inside your own git worktree for the target repo. Work only in the current working directory.' : 'You are already inside your own AO git worktree for the target repo. Work only in the current working directory.',
-    config.runner === 'direct' && tier.harness === 'claude-code'
+    direct
       ? 'Never read or write any other checkout or path outside this worktree. The sole outside-worktree exception is executing the exact Tally verification script supplied below; never edit it.'
       : 'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
     publishInstruction,
     'Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.',
-    ...(config.runner === 'direct' && tier.harness === 'claude-code'
+    ...(direct
       ? ['Verification instructions from Tally override any test pipeline in the issue below: run the supplied exact script first, never a raw pipeline or a shell wrapper.'] : []),
     '',
     task.body || '(No issue body was provided.)',
     '',
     `Target repo: ${repoName(config)}`,
     ...setup,
-    config.runner === 'direct' && tier.harness === 'claude-code'
+    direct
       ? 'Run the exact Tally verification script path supplied below before claiming success. Do not run the raw test command.'
       : `Run this verification command before claiming success: ${config.test.command}`,
     `You are running on tier ${tier.name} (${tier.harness}/${tier.model}).`,
     handoffSummary ? `\nHandoff from the previous attempt:\n${handoffSummary}` : '',
-    handoffSummary ? 'Preserve all inherited commits, including Tally work-in-progress commits. Add a new commit for your changes; do not amend, squash, reset, or rebase the inherited history.' : '',
+    handoffSummary ? `Preserve all inherited commits, including Tally work-in-progress commits. ${direct ? 'Leave your changes for Tally to commit;' : 'Add a new commit for your changes;'} do not amend, squash, reset, or rebase the inherited history.` : '',
   ].join('\n');
 }
 
