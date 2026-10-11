@@ -7,7 +7,7 @@ ends with a ledger tying spend to each attempt, its test result and any opened P
 
 Status: early build, available from GitHub. The npm package `tally-agents`
 has not been released yet. The seven-task demo uses simulated workers; real
-runs use Agent Orchestrator by default, or the headless Claude direct runner,
+runs use Agent Orchestrator by default, or the direct runner (Claude Code or Codex),
 and record their attempts and evidence separately.
 
 ## Install
@@ -23,9 +23,10 @@ Orchestrator account, coding-agent login or GitHub credentials.
 A real run on your own repository also needs, today:
 
 - **Agent Orchestrator (AO), installed and running**, for the default `runner: ao`.
-  Alternatively, set `runner: direct` in `tally.yaml` with Claude-only tiers;
-  Tally creates worktrees and starts `claude -p` itself, without an AO daemon.
-  Codex direct is not supported yet; Tally never substitutes a harness.
+  Alternatively, set `runner: direct` in `tally.yaml`; Tally creates worktrees
+  and starts `claude -p` or `codex exec` itself, by each tier's harness, without
+  an AO daemon. A missing or signed-out harness stops the run; Tally never
+  substitutes one for another.
 - At least one coding agent that AO can start, installed and signed in: Codex
   or Claude Code. `tally init` proposes model tiers only for the agents it
   finds installed.
@@ -42,6 +43,24 @@ searches in tracked repository files. It counts explicit new files and nearby
 tests without claiming graph dependencies. Specific target evidence increases
 confidence; ambiguous or truncated searches remain cautious. `run --plan`
 prints the size, confidence, route and ceiling without starting a worker.
+
+### Direct Codex Runner
+
+With `runner: direct`, a tier with `harness: codex` runs `codex exec --json` in
+the task's worktree. It needs Codex on PATH and signed in with `codex login`.
+The worker runs in Codex's `workspace-write` sandbox with approvals off and the
+network off; it can write only in its worktree and one scratch directory, and
+Tally never passes a bypass or full-access flag. That sandbox cannot write git
+metadata, so the worker leaves its edits in the working tree and Tally commits
+them. The repository's test command reaches the worker as a Tally-written
+script outside the worktree; a test that needs the network fails inside the
+worker, and Tally's own verification afterwards is what decides the result.
+
+Live spend is read from that session's own Codex rollout file and priced at the
+tier's list price. Counts arrive at model-call boundaries, so a ceiling stop
+can overshoot by one call. If the rollout file is missing or unreadable the
+worker is stopped rather than left unmetered. The rollout is an internal Codex
+format and may change between Codex versions.
 
 ### Headless Claude Runner
 
