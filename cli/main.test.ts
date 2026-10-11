@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import * as initModule from '../engine/init.js';
 import * as runModule from '../engine/run.js';
+import * as doctorModule from '../engine/doctor.js';
 import type { RunState } from '../schema/types.js';
 import { CommandError } from '../adapters/command.js';
 import { COMMANDS, main, parseCli } from './main.js';
@@ -200,6 +201,14 @@ describe('parseCli', () => {
 });
 
 describe('main', () => {
+  it('does not fail doctor for an explicitly disabled product', async () => {
+    const spy = vi.spyOn(doctorModule, 'runDoctor').mockResolvedValueOnce([{ product: 'neatlogs key', status: 'off', detail: 'disabled in tally.yaml; not required', fix: null }]);
+    try {
+      const c = capture();
+      expect(await main(['doctor'], c.io)).toBe(0);
+      expect(c.out.join('\n')).toContain('neatlogs key: off');
+    } finally { spy.mockRestore(); }
+  });
   it('never starts an experiment for an unsupported --plan request', async () => {
     const c = capture();
     expect(await main(['experiment', '--plan'], c.io)).toBe(2);

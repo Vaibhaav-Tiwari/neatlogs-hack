@@ -1,11 +1,29 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { stringify } from 'yaml';
+import { loadConfig } from './config.js';
 import { runDoctor, type DoctorRunner } from './doctor.js';
 import { CommandError } from '../adapters/command.js';
 
 describe('runDoctor', () => {
+  it('reports disabled products as off, without checking credentials or optional CLIs', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-off-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.repo.aoProject = 'scratch';
+    config.integrations = { neatlogs: false, entire: false, cfoai: false, slack: false };
+    config.budget.source = 'config';
+    writeFileSync(configPath, stringify(config));
+    const runner = vi.fn(async (_file: string) => ({ stdout: JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'auto' } } } } }), stderr: '' }));
+    const check = vi.fn(async () => ({ status: 'missing' as const, detail: 'no token' }));
+    const lines = await runDoctor({ runner, configPath, env: {}, cfoaiCheck: check });
+    expect(lines.filter(line => ['neatlogs key', 'Entire CLI', 'Entire graph plugin', 'cfo.ai'].includes(line.product)).every(line => line.status === 'off' && line.fix === null)).toBe(true);
+    expect(check).not.toHaveBeenCalled();
+    expect(runner.mock.calls.some(call => call[0] === 'entire')).toBe(false);
+    expect(lines.some(line => line.status === 'missing' || line.status === 'broken')).toBe(false);
+  });
   it('reports a missing AO executable honestly instead of daemon-only connectivity', async () => {
     const detail = 'Agent Orchestrator (AO) is required; looked in PATH and app bundles; set TALLY_AO_BIN to its executable path.';
     const lines = await runDoctor({ runner: async (file) => {

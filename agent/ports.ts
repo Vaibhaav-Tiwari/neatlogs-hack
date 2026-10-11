@@ -29,6 +29,8 @@ export interface SizingSignals {
   testsPresent: boolean;
   source: SignalSource;
   impact?: TaskImpact;
+  /** Repository-only evidence: new targets are not mistaken for missing measurements. */
+  scope?: { existingFiles: string[]; newFiles: string[]; createOnly: boolean; namedTargets: number; truncated: boolean };
 }
 
 export interface SizingSignalsPort {

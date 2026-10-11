@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { capImpact } from '../agent/impact.js';
 import type { SizingSignals, SizingSignalsPort, TaskInput } from '../agent/ports.js';
 import type { IntegrationState, TaskImpact } from '../schema/types.js';
+import { RepositorySizingAdapter, looksLikeTest } from './repository-sizing.js';
 
 const execFileAsync = runCommand;
 
@@ -18,6 +19,7 @@ export interface EntireSizingOptions {
   repoPath: string;
   runner?: CommandRunner;
   topSymbols?: number;
+  fallback?: SizingSignalsPort;
 }
 
 export class ShellCommandRunner implements CommandRunner {
@@ -74,20 +76,11 @@ function entries(value: Json, group: string): Array<Record<string, Json>> {
   return objects(record(record(value)[group] ?? null).entries ?? []);
 }
 
-function looksLikeTest(path: string): boolean {
-  return /(^|[/\\])(__tests__|tests?|spec)([/\\])|[._-](test|spec)\.[cm]?[jt]sx?$|test_.*\.py$/i.test(path);
-}
-
-function words(text: string): string[] {
-  const explicit = [...text.matchAll(/`([^`]+)`/g)].map((match) => match[1]!).filter(Boolean);
-  const plain = text.match(/[A-Za-z][A-Za-z0-9_-]{3,}/g) ?? [];
-  return [...new Set([...explicit, ...plain].map((word) => word.replace(/[^\w./-]/g, '')).filter((word) => word.length >= 4))].slice(0, 8);
-}
-
 export class EntireSizingAdapter implements SizingSignalsPort {
   private readonly repoPath: string;
   private readonly runner: CommandRunner;
   private readonly topSymbols: number;
+  private readonly fallback: SizingSignalsPort;
   private graphStatus: IntegrationState = {
     status: 'missing',
     detail: 'Entire graph has not succeeded yet. Falling back to code search. Fix: run `entire enable` in this repository.',
@@ -97,6 +90,9 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     this.repoPath = options.repoPath;
     this.runner = options.runner ?? new ShellCommandRunner();
     this.topSymbols = options.topSymbols ?? 3;
+    this.fallback = options.fallback ?? new RepositorySizingAdapter({ repoPath: options.repoPath,
+      listFiles: async () => (await this.runner.run('git', ['ls-files', '-z'], { cwd: this.repoPath })).stdout.split('\0'),
+    });
   }
 
   async signalsFor(task: TaskInput): Promise<SizingSignals | null> {
@@ -111,7 +107,7 @@ export class EntireSizingAdapter implements SizingSignalsPort {
         status: 'missing',
         detail: `Entire graph is unavailable (${(e as Error).message}). Falling back to code search. Fix: run \`entire enable\` in this repository.`,
       };
-      return this.codeSearchSignals(query);
+      return this.fallback.signalsFor(task);
     }
   }
 
@@ -197,27 +193,4 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     return normalized && !normalized.startsWith('/') && !/^[A-Za-z]:/.test(normalized) && !normalized.split('/').includes('..') ? normalized : null;
   }
 
-  private async codeSearchSignals(query: string): Promise<SizingSignals | null> {
-    const terms = words(query);
-    if (terms.length === 0) return null;
-    const files = new Set<string>();
-    for (const term of terms) {
-      try {
-        const result = await this.runner.run('rg', ['-l', '--fixed-strings', term, this.repoPath]);
-        for (const file of result.stdout.split(/\r?\n/)) {
-          const path = this.repoRelative(file.trim());
-          if (path) files.add(path);
-        }
-      } catch {
-        // Some terms will not match; keep trying the rest.
-      }
-    }
-    if (files.size === 0) return null;
-    const totals = { filesTouched: files.size, dependents: 0, testsPresent: [...files].some(looksLikeTest), nodes: files.size, edges: 0 };
-    return {
-      filesTouched: totals.filesTouched, dependents: totals.dependents, testsPresent: totals.testsPresent,
-      source: 'code-search',
-      impact: capImpact({ source: 'code-search', query, nodes: [...files].map((id) => ({ id, kind: 'target', weight: 1 })), edges: [], totals, truncated: false }),
-    };
-  }
 }

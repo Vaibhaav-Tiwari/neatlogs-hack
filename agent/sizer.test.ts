@@ -23,6 +23,17 @@ describe('specificity', () => {
 });
 
 describe('sizeFromSignals', () => {
+  it('credits exact creation-only scope without claiming tests, and graph evidence stays more confident', () => {
+    const input = task({ body: 'Add README.md documenting the project. Do not change any existing file. Keep it under 80 lines.' });
+    const evidence = signals({ source: 'code-search', testsPresent: false,
+      scope: { existingFiles: [], newFiles: ['README.md'], createOnly: true, namedTargets: 1, truncated: false } });
+    const search = sizeFromSignals(input, evidence);
+    const graph = sizeFromSignals(input, { ...evidence, source: 'entire-graph' });
+    expect(search.size).toBe('small');
+    expect(search.confidence).toBeGreaterThan(0.6);
+    expect(search.confidence).toBeLessThan(graph.confidence);
+    expect(search.summary).toContain('no tests');
+  });
   it('labels a one-file change with no dependents small', () => {
     expect(sizeFromSignals(task(), signals()).size).toBe('small');
   });

@@ -22,6 +22,7 @@ import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
 import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
+import { RepositorySizingAdapter } from '../adapters/repository-sizing.js';
 import { EntireCheckpointAdapter } from '../adapters/entire-checkpoints.js';
 import { NeatlogsWorkerSpoolAdapter, type WorkerTraceDrainPort } from '../adapters/neatlogs-worker-spool.js';
 import { NeatlogsWorkerTraceReader, type WorkerTraceReaderPort } from '../adapters/neatlogs-worker-traces.js';
@@ -158,12 +159,6 @@ class LedgerBudget implements BudgetPort {
   }
 }
 
-const nullSignals: SizingSignalsPort = {
-  async signalsFor() {
-    return null;
-  },
-};
-
 function hasPort<K extends keyof RealRunPorts>(ports: Partial<RealRunPorts>, key: K): ports is Partial<RealRunPorts> & Pick<RealRunPorts, K> {
   return Object.prototype.hasOwnProperty.call(ports, key);
 }
@@ -190,7 +185,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     ...(hasPort(overrides, 'workerTraceDrain') ? { workerTraceDrain: overrides.workerTraceDrain } : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? { workerTraceDrain: new NeatlogsWorkerSpoolAdapter() } : {}),
     ...(hasPort(overrides, 'workerTraceReader') ? { workerTraceReader: overrides.workerTraceReader } : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? { workerTraceReader: new NeatlogsWorkerTraceReader() } : {}),
     intake: overrides.intake ?? new ConfigBacklogIntake(),
-    signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : nullSignals),
+    signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : new RepositorySizingAdapter({ repoPath })),
     worker: overrides.worker ?? ao,
     verifier: overrides.verifier ?? (config.integrations.entire ? new EntireGraphVerifier() : new CommandVerifier()),
     usage: overrides.usage ?? ao,
