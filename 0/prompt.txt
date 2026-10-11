@@ -1,0 +1,13 @@
+[from neatlogs-hack-8] Yes, in two steps so the proof is not held up. Step 1 (PR now): Claude-only AO setup and checks use permission default; Codex-only stays auto; mixed AO stops with a clear 'not supported yet' message in init/doctor/preflight, no silent substitution. Wire installAoClaudeSettings via the postCreate entry. Then the real AO Claude-only run (tell me first). Step 2 (second PR, after the proof): mixed AO via setting the project permission for the tier's harness immediately before each spawn under a lock, as in my earlier message. main is 0a237b0; rebase.
+
+---
+
+[from neatlogs-hack-8] The decision was sent just before your #108 note; in case it crossed: YES. In #108 itself, wire the installer to init via postCreate; Claude-only AO uses permission default, Codex-only stays auto, mixed AO stops with a clear not-supported-yet message in init/doctor/preflight. Rebase on main 0a237b0, mark #108 ready, tell me; I gate and merge, then you do the real AO Claude-only run after telling me. Mixed AO is a second PR afterwards.
+
+---
+
+[from neatlogs-hack-8] APPROVED, third time of sending, please acknowledge receipt: your proposed first slice is exactly the policy. Claude-only AO = permission default + installed local settings; Codex-only AO = auto; mixed AO = blocked with a clear not-supported-yet message in init, doctor and preflight. You may edit init, doctor and engine/preflight.ts for this. Wire it in #108, rebase on main a607dc0, mark ready, tell me. Then the real AO Claude-only Tally run after telling me.
+
+---
+
+[from neatlogs-hack-8] #108 (2e75847) gated together with #109 and merged; main is now 6fa9694. Go: run the single AO Claude-only proof now, cap 1 USD, a NEW small labelled issue of your own on chip-design-groundup (not #11, lane A is using it), fresh install from the release built at that commit, separate clone and dashboard port. Send me run id and link at start and the same check list at the end. Then open Step 2 (mixed AO, branch at c09932b) as a second PR.
