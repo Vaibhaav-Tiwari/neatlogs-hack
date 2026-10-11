@@ -646,17 +646,17 @@ async function runSingleAttempt(input: {
     estimatedCostNanos = finalCheck.costNanos;
     costSource = input.dryRun ? 'simulated' : finalCheck.costSource;
   }
-  if (!input.dryRun && input.config.integrations.neatlogs && input.tier.harness === 'codex') {
-    const branch = workerResult?.branch ?? started.branch;
-    const checkoutPath = resolvedCheckoutPath ?? workerResult?.checkoutPath ?? started.checkoutPath ?? (branch
-      ? await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch).catch(() => null) : null);
-    await input.ports.workerTraceDrain?.drainWorker({ checkoutPath, entireSessionId }).catch(() => {});
+  if (!input.dryRun && input.config.integrations.neatlogs) {
+    if (input.tier.harness === 'codex') {
+      const branch = workerResult?.branch ?? started.branch;
+      const checkoutPath = resolvedCheckoutPath ?? workerResult?.checkoutPath ?? started.checkoutPath ?? (branch
+        ? await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch).catch(() => null) : null);
+      await input.ports.workerTraceDrain?.drainWorker({ checkoutPath, entireSessionId }).catch(() => {});
+    }
     workerTraceId = await input.ports.workerTraceReader?.verifyFor({
-      runId: input.runId, taskId: input.task.taskId, attempt: input.attempt, nativeSessionId: entireSessionId,
+      runId: input.runId, taskId: input.task.taskId, attempt: input.attempt,
+      nativeSessionId: input.config.runner === 'direct' ? started.sessionId : entireSessionId,
     }).catch(() => null) ?? null;
-  }
-  if (!input.dryRun && input.config.runner === 'direct' && input.config.integrations.neatlogs && input.tier.harness === 'claude-code') {
-    workerTraceId = await input.ports.workerTraceReader?.verifyFor({ runId: input.runId, taskId: input.task.taskId, attempt: input.attempt, nativeSessionId: started.sessionId }).catch(() => null) ?? null;
   }
 
   if (!input.dryRun && input.onChangedFiles) {
@@ -894,11 +894,12 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource }),
     };
     if (cfoaiWriteFailure) runState.integrations.cfoai = { status: 'error', detail: cfoaiWriteFailure };
-    if (!options.dryRun && config.integrations.neatlogs && ledger.some(row => row.harness === 'codex' || (config.runner === 'direct' && row.harness === 'claude-code')) && ledger.filter(row => row.harness === 'codex' || (config.runner === 'direct' && row.harness === 'claude-code')).every(row => row.workerTraceId)
+    const workerRows = ledger.filter(row => row.harness === 'codex' || row.harness === 'claude-code');
+    if (!options.dryRun && config.integrations.neatlogs && workerRows.length > 0 && workerRows.every(row => row.workerTraceId)
       && ports.workerTraceDrain?.status?.().detail?.startsWith('No queued worker trace found')) {
       runState.integrations.neatlogs = traceStatus(ports.trace);
     }
-    if (!options.dryRun && config.integrations.neatlogs && ledger.some(row => (row.harness === 'codex' || (config.runner === 'direct' && row.harness === 'claude-code')) && !row.workerTraceId) && runState.integrations.neatlogs.status === 'ok') {
+    if (!options.dryRun && config.integrations.neatlogs && workerRows.some(row => !row.workerTraceId) && runState.integrations.neatlogs.status === 'ok') {
       runState.integrations.neatlogs = { status: 'missing', detail: 'Decision traces sent; worker trace delivery is unverified or pending. Run tally traces drain --run ' + runId + ' to retry.' };
     }
     assertValid(runState, ledger);
