@@ -98,11 +98,11 @@ export async function installAoClaudeSettings(options: AoClaudeSettingsOptions):
     chmodSync(script.path, 0o500);
   }
   const paths = new Map(scripts.map(script => [script.rule, script.path]));
-  const allow = config.claudeCode!.allow.map(rule => paths.has(rule) ? `Bash(/bin/sh ${paths.get(rule)})` : rule);
+  const allow = config.claudeCode!.allow.map(rule => paths.has(rule) ? `Bash(${paths.get(rule)})` : rule);
   const deny = [...new Set([...(permissions.deny as string[] | undefined ?? []), 'Bash(git push *)', 'Bash(gh *)', 'WebFetch', 'WebSearch', 'Agent',
     `Edit(/${scriptDir}/**)`, `Write(/${scriptDir}/**)`, `Edit(/${settingsPath})`, `Write(/${settingsPath})`])];
   const next = { ...existing, permissions: { ...permissions, defaultMode: 'dontAsk', disableBypassPermissionsMode: 'disable', allow, deny } };
-  const block = `${BEGIN}\n# Tally worker commands\nUse the exact approved scripts below instead of executing their raw test/setup commands.\n${scripts.map(script => `- ${script.name}: \`/bin/sh ${script.path}\``).join('\n')}\nDo not edit these scripts or local permission settings. Tally handles publishing; do not push or create PRs.\n${END}`;
+  const block = `${BEGIN}\n# Tally worker commands\nUse the exact approved executable scripts below without extra arguments, instead of executing their raw test/setup commands.\n${scripts.map(script => `- ${script.name}: \`${script.path}\``).join('\n')}\nDo not edit these scripts or local permission settings. Tally handles publishing; do not push or create PRs.\n${END}`;
   const instructions = localText.includes(BEGIN)
     ? localText.slice(0, localText.indexOf(BEGIN)) + block + localText.slice(localText.indexOf(END) + END.length)
     : `${localText}${localText && !localText.endsWith('\n') ? '\n' : ''}${block}\n`;

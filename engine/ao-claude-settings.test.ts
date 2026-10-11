@@ -46,7 +46,7 @@ describe('AO Claude local settings', () => {
     expect(settings.env).toEqual({ KEEP: 'yes' });
     expect(settings.permissions.defaultMode).toBe('dontAsk');
     expect(settings.permissions.disableBypassPermissionsMode).toBe('disable');
-    expect(settings.permissions.allow).toContain(`Bash(/bin/sh ${result.testScript})`);
+    expect(settings.permissions.allow).toContain(`Bash(${result.testScript})`);
     expect(settings.permissions.allow).toContain('Bash(git commit *)');
     expect(settings.permissions.allow).not.toContain('Bash(*)');
     expect(settings.permissions.allow.join(' ')).not.toContain('{{tally.');
@@ -56,10 +56,11 @@ describe('AO Claude local settings', () => {
     expect(statSync(result.settingsPath!).mode & 0o777).toBe(0o600);
     const local = readFileSync(join(f.worktreePath, 'CLAUDE.local.md'), 'utf8');
     expect(local).toContain('# Existing local instructions');
-    expect(local).toContain(`/bin/sh ${result.testScript}`);
-    expect(local).toContain(`/bin/sh ${result.setupScript}`);
+    expect(local).toContain(`\`${result.testScript}\``);
+    expect(local).toContain(`\`${result.setupScript}\``);
+    expect(local).toContain('without extra arguments');
     // Real shell command, no paid harness: the pipeline is inside the trusted script.
-    execFileSync('/bin/sh', [result.testScript!], { cwd: f.worktreePath });
+    execFileSync(result.testScript!, [], { cwd: f.worktreePath });
     expect(readFileSync(join(f.worktreePath, 'proof.txt'), 'utf8')).toBe('test-ok');
   });
   it('is idempotent, retains local notes and exclusions, and rejects a changed script', async () => {
