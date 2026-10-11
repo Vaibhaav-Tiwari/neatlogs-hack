@@ -17,8 +17,9 @@ import { formatUsd } from '../schema/index.js';
 import { startDashboardServer, type DashboardServer } from './dashboard-server.js';
 import { openDashboardBrowser, waitForDashboard } from './dashboard-lifecycle.js';
 import { publishSite } from './publish.js';
+import { logoFrame, logoSeen, processTerminal, SETTLED, showLogo, type LogoIntent } from './logo.js';
 
-export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces', 'logo'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -93,6 +94,7 @@ Commands:
   market   Search CrustData for companies adopting coding agents
   publish  Write a static dashboard bundle (does not deploy)
   traces drain --run <id> Drain and read-back verify a finished run's worker traces
+  logo     Replay the Tally logo animation
 
 Options:
   --repeats <N>     Repeats per experiment mode (default: 2)
@@ -503,6 +505,11 @@ const handlers: Record<Command, Handler> = {
       return 2;
     }
   },
+  logo: async (_options, io) => {
+    // Reached only where it could not be drawn (a pipe, CI, a dumb terminal): print it as plain text.
+    for (const line of logoFrame(SETTLED, 'none')) io.stdout(line);
+    return 0;
+  },
   run: runCommand,
   demo: demoCommand,
   dashboard: dashboardCommand,
@@ -518,9 +525,37 @@ const consoleIO: CliIO = {
   stderr: (line) => console.error(line),
 };
 
+/** Plays or prints the logo on a real terminal. Tests and other callers that pass their own io never see it. */
+async function greet(argv: string[], parsed: ParsedCli): Promise<boolean> {
+  let intent: LogoIntent = 'other';
+  let interactive = true;
+  if (parsed.kind === 'help') intent = argv.length === 0 ? 'bare' : 'help';
+  else if (parsed.kind === 'command' && parsed.command === 'logo') intent = 'logo';
+  else if (parsed.kind === 'command' && parsed.command === 'init') {
+    intent = 'init';
+    interactive = Boolean(process.stdin.isTTY) && !parsed.options.yes && !parsed.options.dryRun;
+  }
+  if (intent === 'other') return false;
+  const plan = await showLogo(
+    {
+      intent,
+      interactive,
+      env: process.env,
+      isTTY: Boolean(process.stdout.isTTY),
+      columns: process.stdout.columns ?? 80,
+      colorDepth: process.stdout.isTTY ? process.stdout.getColorDepth() : 1,
+      seen: logoSeen(),
+    },
+    processTerminal(),
+  );
+  return plan.show !== 'none';
+}
+
 /** Returns the process exit code. */
 export async function main(argv: string[], io: CliIO = consoleIO): Promise<number> {
   const parsed = parseCli(argv);
+  const greeted = io === consoleIO && (await greet(argv, parsed));
+  if (greeted && parsed.kind === 'command' && parsed.command === 'logo') return 0;
   switch (parsed.kind) {
     case 'help':
       io.stdout(USAGE);
