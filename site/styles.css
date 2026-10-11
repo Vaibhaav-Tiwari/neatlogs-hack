@@ -205,6 +205,7 @@ h3 { font: 600 18px/1.35 var(--sans); }
 .criterion h3 { font: 400 clamp(24px, 2.6vw, 32px)/1.15 var(--serif); letter-spacing: -.01em; }
 .quote { margin-top: 8px; font: italic 400 17px/1.5 var(--serif); color: #4d5262; max-width: 62ch; }
 .evidence { display: grid; gap: 14px; margin-top: clamp(22px, 3vw, 34px); }
+.evidence + .evidence { margin-top: 14px; }
 .evidence.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .evidence.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ev { padding: 20px 22px 22px; border-radius: 12px; background: #fff; border: 1px solid rgba(27, 30, 39, .12); }

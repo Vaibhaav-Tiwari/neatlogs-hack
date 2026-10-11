@@ -8,7 +8,13 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="Meet Tally, the CFO for your agent fleet">
 <meta property="og:description" content="Routes GitHub issues to a cost-effective model, caps spend per task, escalates if needed, verifies the change and opens a pull request.">
-<meta name="twitter:card" content="summary">
+<meta property="og:url" content="https://tally-agents-pi.vercel.app/">
+<meta property="og:image" content="https://tally-agents-pi.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Tally pixel mark above the words: Coding agents, on a budget.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://tally-agents-pi.vercel.app/og.png">
 <meta name="twitter:site" content="@battarchicken">
 <meta name="theme-color" content="#1b1e27">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -180,10 +186,10 @@
 <section class="band" id="orchestrator" aria-labelledby="ao-title">
   <div class="wrap">
     <p class="eyebrow">Agent Orchestrator</p>
-    <h2 id="ao-title">With Agent Orchestrator, <em>or without</em></h2>
+    <h2 id="ao-title">In parallel through Agent Orchestrator, <em>or one at a time</em></h2>
     <div class="modes">
-      <div class="mode"><img src="ao-mascot.png" alt="Agent Orchestrator mascot" width="52" height="52" loading="lazy"><h3>With Agent Orchestrator</h3><p>Each agent runs in its own AO session and worktree; parallel runs are being proven now.</p></div>
-      <div class="mode"><h3>Without it</h3><p>Tally runs Claude Code or Codex directly, one task at a time.</p></div>
+      <div class="mode"><img src="ao-mascot.png" alt="Agent Orchestrator mascot" width="52" height="52" loading="lazy"><h3>With Agent Orchestrator</h3><p>Tally can run agents in parallel, each in its own AO session and worktree. It is opt-in (<code>tally run --parallel 3</code>) and stays inside one budget: each task's ceiling is reserved before it starts.</p></div>
+      <div class="mode"><h3>Without it</h3><p>Tally runs Claude Code or Codex directly, one task at a time. Parallel runs need Agent Orchestrator.</p></div>
     </div>
     <p class="aside small"><code>tally init</code> detects which you have. Mascot from <a href="https://github.com/OrchestratorInc/agent-orchestrator">OrchestratorInc/agent-orchestrator</a>, Apache-2.0.</p>
   </div>
@@ -221,6 +227,18 @@
           <p class="note">Proven once, in run <code>run-20261010-201255Z</code>.</p>
         </div>
       </div>
+      <div class="evidence reveal">
+        <div class="ev">
+          <h4>Three agents at once, inside one budget</h4>
+          <p>Run <code>run-20261011-190131Z</code> went through Agent Orchestrator with three Codex workers at once (<code>tally run --parallel 3</code>). Issues #19, #20 and #21 started within the same second, all passed on the cheap tier, and the three sessions overlapped for 70 seconds.</p>
+          <ul class="bars">
+            <li><span class="b-name">Issue #19</span><span class="b-track"><i style="width:100%"></i></span><span class="b-cost" data-count="0.0150">$0.0150</span><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/24">PR #24</a></li>
+            <li><span class="b-name">Issue #20</span><span class="b-track"><i style="width:90.7%"></i></span><span class="b-cost" data-count="0.0136">$0.0136</span><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/23">PR #23</a></li>
+            <li><span class="b-name">Issue #21</span><span class="b-track"><i style="width:84%"></i></span><span class="b-cost" data-count="0.0126">$0.0126</span><a href="https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/22">PR #22</a></li>
+          </ul>
+          <p class="note">Total $0.0411, estimated at list price, against a $2.00 cap. cfo.ai spend rose by exactly the ledger total. Tally merged none of them.</p>
+        </div>
+      </div>
       <div class="thumbs">
         <figure class="thumb"><a href="shots/dashboard-budget.png"><span class="tag">A1</span><img src="shots/dashboard-budget.png" alt="Tally dashboard for the real run: one cent spent of a one dollar cap, neatlogs and cfo.ai on" width="1360" height="640" loading="lazy"></a><figcaption>Dashboard of the PR #18 run: $0.01 of a $1.00 cap</figcaption></figure>
         <figure class="thumb"><a href="shots/dashboard-decision.png"><span class="tag">A2</span><img src="shots/dashboard-decision.png" alt="The ledger entry for issue 17 with the routing decision in a sentence and the code graph" width="1360" height="740" loading="lazy"></a><figcaption>The decision in one sentence, and the code graph</figcaption></figure>
@@ -230,8 +248,8 @@
         <ul class="plain">
           <li>Run ids: <code>run-20261011-092229Z</code>, <code>run-20261011-123546Z</code>, <code>run-20261011-123814Z</code>, <code>run-20261011-130259Z</code>.</li>
           <li>Tally verifies each change by running the repository's test command itself, then opens the pull request. It never merges.</li>
-          <li>687 automated tests pass on the branch this page was built from.</li>
-          <li>Not proven in a real run yet: parallel workers, and escalation on the direct runner. The <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack#real-run-evidence">README keeps the list</a>.</li>
+          <li>724 automated tests pass on the branch this page was built from.</li>
+          <li>Not proven in a real run yet: escalation on the direct runner. Parallel runs are through Agent Orchestrator only. The <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack#real-run-evidence">README keeps the list</a>.</li>
         </ul>
       </details>
     </article>
@@ -240,7 +258,7 @@
       <header><p class="weight">25%</p><div><h3>Use of neatlogs, Entire and cfo.ai</h3><p class="quote">“How effectively you used neatlogs, Entire and cfo.ai to build, improve and plan a business around the agent.”</p></div></header>
       <div class="evidence three reveal">
         <div class="ev"><h4>neatlogs</h4><p>Every ledger row carries a decision trace and a worker trace, read back from neatlogs after the run.</p><p class="ids">decision <code>0d5826efa109e27125df7ce43b766572</code><br>worker <code>028d92600350d1be5cc76b4cc35d10be</code></p><p class="note">From the PR #18 run. Trace pages need a neatlogs login.</p></div>
-        <div class="ev"><h4>Entire</h4><p><b class="figure">138 of 299</b> commits on <code>main</code> carry an Entire checkpoint. The stop-and-escalate run handed the stopped attempt to the next model through an Entire handoff.</p><p class="note">Counted from <code>git log</code> at commit <code>0b0cd3a</code>.</p></div>
+        <div class="ev"><h4>Entire</h4><p><b class="figure">153 of 322</b> commits on <code>main</code> carry an Entire checkpoint. The stop-and-escalate run handed the stopped attempt to the next model through an Entire handoff.</p><p class="note">Counted from <code>git log</code> at commit <code>4d42683</code>.</p></div>
         <div class="ev"><h4>cfo.ai</h4><p>The monthly budget, $40.00, was read live from cfo.ai at the start of the run. Spend was written back after it and matched the ledger to the cent on each run.</p><p>A page named “Tally business plan” now sits beside the budget in cfo.ai: share-of-savings pricing, unit economics, a funnel and a measured price gap, with every assumption labelled as one.</p><p class="slot"><span>Not here yet</span>A public link to that page.</p></div>
       </div>
     </article>
@@ -253,7 +271,7 @@
     <article class="criterion" id="j-public">
       <header><p class="weight">15%</p><div><h3>Building in public</h3><p class="quote">“How you shared your project with other people while you built it.”</p></div></header>
       <div class="evidence two reveal">
-        <div class="ev"><h4>The repository, in the open from the first commit</h4><p><b class="figure">299</b> commits and <b class="figure">116</b> merged pull requests on <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a>, the first on 10 October 2026 at 13:57 IST. <code>tally-agents</code> 0.1.0 is on <a href="https://www.npmjs.com/package/tally-agents">npm</a>.</p></div>
+        <div class="ev"><h4>The repository, in the open from the first commit</h4><p><b class="figure">322</b> commits and <b class="figure">123</b> merged pull requests on <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a>, the first on 10 October 2026 at 13:57 IST. <code>tally-agents</code> 0.1.0 is on <a href="https://www.npmjs.com/package/tally-agents">npm</a>.</p></div>
         <div class="ev"><p class="slot"><span>Not here yet</span>Links to the posts tagged #neatHack.</p></div>
       </div>
     </article>

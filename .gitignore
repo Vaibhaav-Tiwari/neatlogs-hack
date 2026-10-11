@@ -12,3 +12,6 @@ coverage/
 .tally/
 
 .DS_Store
+
+# Vercel project link for site/ (machine-local)
+.vercel/
