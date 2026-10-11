@@ -169,7 +169,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
   const runner = config.runner === 'direct'
-    ? new DirectRunner({ repoPath, baseBranch: config.repo.baseBranch, test: config.test, requiredBaseCommit })
+    ? new DirectRunner({ repoPath, baseBranch: config.repo.baseBranch, test: config.test, requiredBaseCommit, approvedRules: config.claudeCode?.allow })
     : new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, aoBin: config.repo.aoBin ? resolve(configDir, config.repo.aoBin) : undefined });
   const localHistory = hasPort(overrides, 'history') ? null : new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
   const trace = hasPort(overrides, 'trace') ? overrides.trace : config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;

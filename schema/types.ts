@@ -202,8 +202,6 @@ export interface Tier {
 }
 
 export interface TallyConfig {
-  /** Missing means AO, for backwards compatibility. */
-  runner?: 'ao' | 'direct';
   version: 1;
   /** Absent means AO for compatibility with existing configurations. */
   runner?: 'ao' | 'direct';

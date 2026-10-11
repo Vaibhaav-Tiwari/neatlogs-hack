@@ -9,6 +9,7 @@ import type { WorkerPort, WorkerResult, WorkerStartInput } from '../engine/real.
 import type { TallyConfig, TokenUsage } from '../schema/index.js';
 import { runCommand } from './command.js';
 import type { CommandRunner } from './ao.js';
+import { claudeAllowList } from '../engine/harness.js';
 
 type Json = Record<string, unknown>;
 function record(value: unknown): Json { return value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {}; }
@@ -70,9 +71,11 @@ export async function checkDirectHarness(harness: string, command: CommandRunner
   if (!loggedIn) throw new Error('Claude Code is signed out; run claude auth login before starting Tally. No harness will be substituted.');
 }
 
-export function claudeArguments(input: WorkerStartInput, checkoutPath: string, sessionId: string, test: TallyConfig['test']): string[] {
-  const allow = [`Read(/${checkoutPath}/**)`, `Edit(/${checkoutPath}/**)`, 'Bash(git status *)', 'Bash(git diff *)', 'Bash(git add *)', 'Bash(git commit *)', `Bash(${test.command})`];
-  if (test.setupCommand) allow.push(`Bash(${test.setupCommand})`);
+export function claudeArguments(input: WorkerStartInput, checkoutPath: string, sessionId: string, test: TallyConfig['test'], approvedRules?: string[]): string[] {
+  const supported = claudeAllowList(test);
+  const approved = new Set(approvedRules ?? supported);
+  const allow = [`Read(/${checkoutPath}/**)`, ...(approved.has('Edit(./**)') ? [`Edit(/${checkoutPath}/**)`] : []),
+    ...supported.filter(rule => rule.startsWith('Bash(') && approved.has(rule))];
   return ['-p', '--model', input.model, '--session-id', sessionId, '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--permission-mode', 'dontAsk', '--allowedTools', ...allow,
     '--disallowedTools', 'Bash(git push *)', 'Bash(gh *)', 'WebFetch', 'WebSearch', 'Agent',
@@ -84,6 +87,7 @@ export interface DirectRunnerOptions {
   baseBranch: string;
   requiredBaseCommit?: string;
   test: TallyConfig['test'];
+  approvedRules?: string[];
   command?: CommandRunner;
   launch?: (file: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; stdio: 'pipe' }) => ChildProcessWithoutNullStreams;
   signal?: (pid: number, signal: NodeJS.Signals) => void;
@@ -137,7 +141,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
       const env = { ...process.env };
       // Do not attribute the child to the AO session running Tally or trigger nested-Claude detection.
       for (const key of Object.keys(env)) if (key === 'CLAUDECODE' || key.startsWith('AO_') || key.startsWith('ORCA_')) delete env[key];
-      const child = (this.options.launch ?? ((file, args, options) => spawn(file, args, options)))('claude', claudeArguments(input, checkoutPath, sessionId, this.options.test), { cwd: checkoutPath, env, detached: true, stdio: 'pipe' });
+      const child = (this.options.launch ?? ((file, args, options) => spawn(file, args, options)))('claude', claudeArguments(input, checkoutPath, sessionId, this.options.test, this.options.approvedRules), { cwd: checkoutPath, env, detached: true, stdio: 'pipe' });
       const meter = new ClaudeUsageMeter();
       let complete!: () => void;
       const session: Session = { child, branch, checkoutPath, directory, meter, completion: new Promise(resolve => { complete = resolve; }), closed: false, stopped: false, error: null, denied: false };

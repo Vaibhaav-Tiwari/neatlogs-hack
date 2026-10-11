@@ -98,6 +98,11 @@ describe('direct Claude worker', () => {
     expect(args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools')).join(' ')).not.toContain('git push');
     expect(args).toContain('dontAsk');
   });
+  it('does not broaden the consented allow-list with new or arbitrary commands', () => {
+    const args = claudeArguments(input, '/tmp/work', 'session', { command: 'make test' }, ['Edit(./**)', 'Bash(make test)', 'Bash(*)']);
+    const allow = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools'));
+    expect(allow).toEqual(['Read(//tmp/work/**)', 'Edit(//tmp/work/**)', 'Bash(make test)']);
+  });
   it('fails clearly on missing or signed-out Claude without substituting a harness', async () => {
     await expect(checkDirectHarness('claude-code', async () => { throw new Error('ENOENT'); })).rejects.toThrow('Claude Code is required');
     await expect(checkDirectHarness('claude-code', async () => ({ stdout: '{"loggedIn":false}', stderr: '' }))).rejects.toThrow('claude auth login');
