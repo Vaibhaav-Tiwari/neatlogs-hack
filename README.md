@@ -7,7 +7,8 @@ ends with a ledger tying spend to each attempt, its test result and any opened P
 
 Status: early build, available from GitHub. The npm package `tally-agents`
 has not been released yet. The seven-task demo uses simulated workers; real
-runs use Agent Orchestrator and record their attempts and evidence separately.
+runs use Agent Orchestrator by default, or the headless Claude direct runner,
+and record their attempts and evidence separately.
 
 ## Install
 
@@ -21,9 +22,10 @@ Orchestrator account, coding-agent login or GitHub credentials.
 
 A real run on your own repository also needs, today:
 
-- **Agent Orchestrator (AO), installed and running.** Tally does not start
-  coding agents itself yet: every worker is an AO session. A runner that works
-  without AO is planned and has not landed, so without AO there is no real run.
+- **Agent Orchestrator (AO), installed and running**, for the default `runner: ao`.
+  Alternatively, set `runner: direct` in `tally.yaml` with Claude-only tiers;
+  Tally creates worktrees and starts `claude -p` itself, without an AO daemon.
+  Codex direct is not supported yet; Tally never substitutes a harness.
 - At least one coding agent that AO can start, installed and signed in: Codex
   or Claude Code. `tally init` proposes model tiers only for the agents it
   finds installed.
@@ -40,6 +42,29 @@ searches in tracked repository files. It counts explicit new files and nearby
 tests without claiming graph dependencies. Specific target evidence increases
 confidence; ambiguous or truncated searches remain cautious. `run --plan`
 prints the size, confidence, route and ceiling without starting a worker.
+
+### Headless Claude Runner
+
+`runner: direct` needs Claude Code installed on PATH and signed in with
+`claude auth login`. Keep each tier's `harness: claude-code` and explicit model;
+the usual test command, list prices, budgets and integrations still apply.
+Direct workers use scoped file-edit and git/test/setup allow rules with
+`--permission-mode dontAsk`, never bypass-permissions. Push and `gh` are denied
+to workers; Tally verifies and publishes. Setup runs in the new worktree before
+the agent starts and is recorded separately as `setupDurationMs`.
+
+The live meter reads [Claude's partial stream events](https://code.claude.com/docs/en/agent-sdk/streaming-output)
+and deduplicates API message ids; final JSON usage settles the same session,
+not an additional charge. Usage arrives at message boundaries, so a ceiling
+can overshoot during a long generation or between watcher polls. Prompt-cache
+writes use [Anthropic's 5-minute / 1-hour multipliers](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+of 1.25x / 2x the configured input price. Existing ledger costs are unchanged.
+Subagents and MCP tools are disabled so their unmetered work cannot escape the
+task ceiling. These are harness permission rules, not an OS isolation guarantee;
+configured commands and installed hooks must be trusted. Entire and neatlogs
+hooks are retained (no bare mode); their real headless capture is not yet proven.
+Published worktrees are removed; stopped/failed checkouts stay available for
+handoff or recovery. A live direct process cannot be reattached after Tally exits.
 
 Three ways in:
 

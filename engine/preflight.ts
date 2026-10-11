@@ -3,6 +3,7 @@ import { CommandError, runCommand } from '../adapters/command.js';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { TallyConfig } from '../schema/index.js';
 import { ConfigError } from './config.js';
+import { checkDirectHarness } from '../adapters/direct.js';
 
 export type PreflightRunner = (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 
@@ -142,6 +143,16 @@ function parseAoProject(stdout: string): AoProjectResponse {
 export async function validateRealRunConfig(config: TallyConfig, configPath: string, runner: PreflightRunner = defaultRunner): Promise<void> {
   if (runner === defaultRunner) runner = (file, args) => runCommand(file, args, { aoBin: config.repo.aoBin ? configRelative(configPath, config.repo.aoBin) : undefined });
   const problems: string[] = [];
+  if (config.runner === 'direct') {
+    const resolvedRepo = repoPath(config, configPath);
+    if (!existsSync(resolvedRepo)) problems.push(`repo.path does not exist: ${resolvedRepo}`);
+    const resolvedBacklog = backlogPath(config, configPath);
+    if (resolvedBacklog && !existsSync(resolvedBacklog)) problems.push(`backlog.file does not exist: ${resolvedBacklog}`);
+    if (config.repo.workerPublishesPr) problems.push('runner: direct requires repo.workerPublishesPr: false; Tally publishes the verified branch');
+    if (problems.length) throw new ConfigError(configPath, problems);
+    for (const harness of new Set(config.tiers.map(tier => tier.harness))) await checkDirectHarness(harness, runner);
+    return;
+  }
   if (!config.repo.aoProject) problems.push('repo.aoProject is required for real runs so AO knows where to spawn workers');
   const resolvedRepo = repoPath(config, configPath);
   if (!existsSync(resolvedRepo)) problems.push(`repo.path does not exist: ${resolvedRepo}`);

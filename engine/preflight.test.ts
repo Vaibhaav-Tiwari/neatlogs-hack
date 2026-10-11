@@ -37,6 +37,20 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 }
 
 describe('real run preflight', () => {
+  it('checks the configured direct harness without requiring an AO project or session mode', async () => {
+    const { configPath } = writeConfig();
+    const config = loadConfig(configPath);
+    config.runner = 'direct';
+    delete config.tiers[0]!.sessionMode;
+    const calls: string[] = [];
+    await validateRealRunConfig(config, configPath, async (file, args) => {
+      calls.push(`${file} ${args.join(' ')}`);
+      return { stdout: '{"loggedIn":true}', stderr: '' };
+    });
+    expect(calls).toEqual(['claude auth status']);
+    config.tiers[0]!.harness = 'codex';
+    await expect(validateRealRunConfig(config, configPath, async () => ({ stdout: '{}', stderr: '' }))).rejects.toThrow('no harness will be substituted');
+  });
   it('reports missing AO executable as a prerequisite error before any run output or worker', async () => {
     const { configPath } = writeConfig(', aoProject: "test-project"');
     await expect(runTally({ configPath, dryRun: false, baseline: false, preflightRunner: async () => {
