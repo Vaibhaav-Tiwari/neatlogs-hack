@@ -18,78 +18,48 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=IBM+Plex+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,900;1,500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&display=swap">
 <link rel="stylesheet" href="styles.css">
 <script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
 <a class="skip" href="#install">Skip to install</a>
 
-<svg class="defs" aria-hidden="true" focusable="false" width="0" height="0">
-  <defs>
-    <linearGradient id="chrome" x1="0" x2="1" y1="0" y2="0">
-      <stop offset="0" stop-color="#f4f8ff"/><stop offset=".07" stop-color="#8fa6e8"/><stop offset=".14" stop-color="#05050c"/>
-      <stop offset=".3" stop-color="#1c2252"/><stop offset=".4" stop-color="#05050c"/><stop offset=".8" stop-color="#090913"/><stop offset=".91" stop-color="#6f86d8"/><stop offset="1" stop-color="#eef4ff"/>
-    </linearGradient>
-    <linearGradient id="enamel" x1="0" x2="0" y1="0" y2="1">
-      <stop offset="0" stop-color="#ffb07a"/><stop offset=".28" stop-color="#ff6a2b"/><stop offset=".62" stop-color="#e2401a"/><stop offset="1" stop-color="#8e1a0c"/>
-    </linearGradient>
-    <radialGradient id="bead" cx=".36" cy=".3" r=".8">
-      <stop offset="0" stop-color="#ffffff"/><stop offset=".14" stop-color="#9db3ff"/><stop offset=".4" stop-color="#0a0a14"/><stop offset="1" stop-color="#000"/>
-    </radialGradient>
-    <radialGradient id="drop" cx=".35" cy=".28" r=".85">
-      <stop offset="0" stop-color="#ffffff" stop-opacity=".95"/><stop offset=".3" stop-color="#bfd4ff" stop-opacity=".55"/><stop offset=".75" stop-color="#5a6fd0" stop-opacity=".25"/><stop offset="1" stop-color="#0b0a24" stop-opacity=".6"/>
-    </radialGradient>
-    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>
-  </defs>
-</svg>
-
 <header class="hero" id="top">
-  <div class="backdrop" aria-hidden="true"><i class="burst"></i><i class="stars"></i></div>
-  <!-- Painted hero object (site/art/hero.avif, hero.jpg). The drawn mark develops into it once it has loaded. -->
-  <div class="art art-hero" role="img" aria-label="The Tally mark painted as a glossy black and chrome object with an orange slash, wet with droplets" data-art="art/hero.jpg"><i></i><i></i><i></i><i></i></div>
+  <div class="backdrop" aria-hidden="true"></div>
 
   <nav class="top" aria-label="Sections">
-    <a href="#install">Install</a><a href="#what">What it does</a><a href="#toggles">Toggles</a><a href="#proof">Proof</a><a href="#contact">Contact</a>
+    <a href="#install">Install</a><a href="#what">What it does</a><a href="#toggles">Switches</a><a href="#proof">Proof</a><a href="#contact">Contact</a>
   </nav>
 
   <div class="hero-stage">
-    <svg class="mark" viewBox="0 0 380 430" role="img" aria-labelledby="mark-title">
-      <title id="mark-title">The Tally mark: four upright strokes with two eyes, struck through by one orange slash</title>
-      <ellipse class="mark-shadow" cx="190" cy="418" rx="170" ry="11"/>
-      <g class="stroke s1" transform="rotate(-1.2 62 215)"><rect x="47" y="22" width="30" height="388" rx="15" fill="url(#chrome)"/><rect class="spec" x="54" y="34" width="4" height="362" rx="2"/></g>
-      <g class="stroke s2" transform="rotate(.7 147 207)"><rect x="132" y="6" width="30" height="402" rx="15" fill="url(#chrome)"/><rect class="spec" x="139" y="18" width="4" height="376" rx="2"/></g>
-      <g class="stroke s3" transform="rotate(-.5 222 220)"><rect x="207" y="32" width="30" height="378" rx="15" fill="url(#chrome)"/><rect class="spec" x="214" y="44" width="4" height="352" rx="2"/></g>
-      <g class="stroke s4" transform="rotate(1.3 302 211)"><rect x="287" y="14" width="30" height="392" rx="15" fill="url(#chrome)"/><rect class="spec" x="294" y="26" width="4" height="366" rx="2"/></g>
-      <g class="eyes"><circle class="eye" cx="184" cy="94" r="13.5" fill="url(#bead)" stroke="#aebfff" stroke-width="1.6"/><circle class="eye" cx="260" cy="94" r="13.5" fill="url(#bead)" stroke="#aebfff" stroke-width="1.6"/></g>
-      <g class="drops">
-        <ellipse class="drop" cx="68" cy="150" rx="5" ry="6.5" fill="url(#drop)"/><ellipse class="drop slide" cx="153" cy="236" rx="4.5" ry="7" fill="url(#drop)"/>
-        <ellipse class="drop" cx="228" cy="318" rx="4" ry="5" fill="url(#drop)"/><ellipse class="drop" cx="307" cy="92" rx="5.5" ry="7" fill="url(#drop)"/>
-        <ellipse class="drop" cx="296" cy="352" rx="3.5" ry="4.5" fill="url(#drop)"/>
-      </g>
-      <g class="slash">
-        <path d="M22 300 358 138" stroke="#2a0b05" stroke-width="30" stroke-linecap="round" opacity=".45" transform="translate(3 7)" filter="url(#soft)"/>
-        <path d="M22 300 358 138" stroke="url(#enamel)" stroke-width="27" stroke-linecap="round"/>
-        <path d="M30 289 350 135" stroke="#ffe3cf" stroke-width="3.5" stroke-linecap="round" opacity=".85"/>
-      </g>
-      <g transform="translate(360 137) scale(.66)"><path class="glint g1" d="M0-50C3-12 12-3 50 0 12 3 3 12 0 50-3 12-12 3-50 0-12-3-3-12 0-50Z"/></g>
-      <g transform="translate(147 6) scale(.44)"><path class="glint g2" d="M0-50C3-12 12-3 50 0 12 3 3 12 0 50-3 12-12 3-50 0-12-3-3-12 0-50Z"/></g>
-      <g transform="translate(60 408) scale(.34)"><path class="glint g3" d="M0-50C3-12 12-3 50 0 12 3 3 12 0 50-3 12-12 3-50 0-12-3-3-12 0-50Z"/></g>
-    </svg>
+    <div class="paper">
+      <svg class="mark" viewBox="0 0 380 430" role="img" aria-labelledby="mark-title">
+        <title id="mark-title">The Tally mark: four hand-drawn black strokes with two eyes, struck through by one orange-red slash</title>
+        <path class="stroke s1" pathLength="1" d="M61 34C58 118 66 232 60 322 59 352 63 380 62 402"/>
+        <path class="stroke s2" pathLength="1" d="M146 14C150 96 143 204 148 300 149 338 146 372 147 400"/>
+        <path class="stroke s3" pathLength="1" d="M224 44C219 130 226 236 221 318 220 350 223 378 222 403"/>
+        <path class="stroke s4" pathLength="1" d="M300 24C305 110 298 222 303 310 304 346 301 376 302 401"/>
+        <circle class="eye" cx="185" cy="98" r="12.5"/><circle class="eye" cx="261" cy="98" r="12.5"/>
+        <path class="slash" pathLength="1" d="M14 302C96 262 262 190 364 138"/>
+      </svg>
+    </div>
 
     <div class="hero-copy">
       <h1><span class="meet">Meet</span> <span class="tally">Tally</span></h1>
       <p class="tagline">the CFO for your agent fleet</p>
       <p class="pitch">Hand it your GitHub issues and a budget. It picks a cost-effective model for each one, stops any task at its spend ceiling, and opens a pull request only when your tests pass.</p>
-      <p class="hero-actions"><a class="button" href="#install">Install Tally</a><button class="ghost" type="button" data-replay-hero hidden>Play it again</button></p>
+      <p class="hero-actions"><a class="button" href="#install">Install Tally</a><button class="ghost" type="button" data-replay-hero hidden>Replay the drawing</button></p>
     </div>
   </div>
 </header>
 
+<figure class="airbrush" role="img" aria-label="The Tally mark painted as a glossy black object with an orange slash, wet with droplets" hidden></figure>
+
 <main>
 <section class="install" id="install" aria-labelledby="install-title">
   <div class="wrap">
-    <h2 id="install-title" class="reveal">One line and it is on your machine.</h2>
+    <h2 id="install-title" class="reveal">Install</h2>
     <div class="install-grid">
       <div class="install-left reveal">
         <div class="command" role="group" aria-label="Install command">
@@ -98,9 +68,8 @@
           <button class="copy" type="button" data-copy="npm install -g tally-agents" hidden><span data-copy-label>Copy</span></button>
         </div>
         <p class="copy-status" role="status" aria-live="polite"></p>
-        <p class="install-note">Needs Node 20 or later. The package is <code>tally-agents</code>; the command it installs is <code>tally</code>. Then, in an empty folder:</p>
-        <pre class="next"><code>tally demo        <span class="c"># seven simulated tasks, no accounts or keys</span>
-tally dashboard   <span class="c"># watch the ledger fill in</span></code></pre>
+        <p class="install-note">Needs Node 20 or later. The package is <code>tally-agents</code>; the command it installs is <code>tally</code>.</p>
+        <p class="install-actions"><a class="button" href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/blob/main/docs/GETTING_STARTED.md">Read the getting-started guide</a></p>
         <p class="links"><a href="https://www.npmjs.com/package/tally-agents">tally-agents on npm</a><a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Source on GitHub</a></p>
       </div>
 
