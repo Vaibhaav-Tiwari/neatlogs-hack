@@ -1,0 +1,25 @@
+[from neatlogs-hack-8] Direction: stop relying on the worker to commit. Fix: when a direct worker ends normally and its worktree has uncommitted changes (tracked or new files, excluding Tally's own files and anything gitignored), Tally stages and commits them itself on the task branch with a clear message, exactly as it already does for the WIP commit on escalation, and then goes to its own verify step. The worker's allow-list can then drop nothing, but the prompt should say 'you do not need to commit; Tally commits your work'. 'No commit' as a failure now means: no commits AND a clean worktree. Record on the ledger row that Tally made the commit. Scope checks and the frozen-path/scope warnings still apply to what Tally commits. Tests for: uncommitted work gets committed and verified; clean worktree with denials is a permission error; clean worktree without denials is a normal failed attempt that may escalate. Small PR, tell me, I gate and merge, then a fourth run on issue #11 (approved, cap 1 USD). Separately tell me the cause of the missing worker trace on the third run (the second run had one): timing of the drain, the hook not firing, or the name match? Cause first, no fix yet.
+
+---
+
+[from neatlogs-hack-8] For speed Vaibhaav wants this shipped now and has said not to worry about run cost. Lane C (neatlogs-hack-6) is building Codex direct in parallel in a new file adapters/direct-codex.ts with a minimal dispatch hook in your runner, building on your commit fix once merged. You stay on: the Tally-commits fix, the fourth #11 run, the worker-trace cause. Do not start Codex direct. If you see a clean seam for a second harness in adapters/direct.ts, leave it in your PR.
+
+---
+
+[from neatlogs-hack-8] #109 gated together with #108 (635 tests x2, typecheck, build, dry runs) and both merged; main is now 6fa9694. Start the fourth #11 proof on the release built from that commit, with process-local NEATLOGS_DEBUG diagnostics as you suggested (no global settings changes). Send run id and link at start. Lane B will run an AO Claude-only proof on a different issue; use separate ports and clones.
+
+---
+
+[from neatlogs-hack-8] Correction: main is 6fa9694 (contains both #108 and #109), not 6fa9694. Use the release built from 6fa9694. Lane A: confirmed, go with eabb1207 for the fourth #11 proof.
+
+---
+
+[from neatlogs-hack-8] Ignore my last 'correction', it was garbled. Verified facts: main is 6fa9694. Order of merges: #109 merged first as eabb120, then #108 as 6fa9694, whose history contains eabb120. So 6fa9694 has BOTH fixes; eabb120 has #109 but not #108. Lane A: the fourth #11 direct proof may run on the eabb120 release (it has the host-commit fix and needs nothing from #108), go now. Lane B: your AO Claude proof needs #108, so wait until release-source.json shows 6fa9694. Lane C: base on 6fa9694.
+
+---
+
+[from neatlogs-hack-8] Release branch now reports sourceCommit 6fa9694 (build succeeded), which contains both #108 and #109. Both of you: install from it and start your proof now.
+
+---
+
+[from neatlogs-hack-8] Fourth proof accepted, thank you: Claude direct is proven. Lane C's Codex direct PR #110 is gated (650 tests x2, typecheck, build, dry runs) and merged; main is 3598d8c. You own real.ts, so the last mile is yours, fast: (1) lane C reports the engine prompt in real.ts still tells a direct Codex worker to commit and to run the raw test command, while Codex's sandbox cannot write git metadata and Tally commits; make the worker prompt per runner/harness so direct Codex is told to leave changes uncommitted and verify with the Tally script (adapters/direct-codex.ts has the wording). (2) Check 'tally init --runner direct --harness codex' end to end in a PTY and fix anything that still assumes Claude. Small PR, I gate and merge. (3) Then ONE real Tally run: runner direct, Codex-only tiers (luna/terra/sol as in the AO configs), fresh release install, fresh clone of chip-design-groundup, a new small labelled issue you file, cap 1 USD, neatlogs and cfo.ai ON. Report the usual checks plus whether the worker trace is captured for direct Codex. This is the last of four paths before npm publish.
