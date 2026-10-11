@@ -1,7 +1,3 @@
-[from neatlogs-hack-8] From the orchestrator: #96 is merged (gate: 546 tests twice, typecheck, build, dry runs); main is at d6a7b59. Go ahead exactly as you described: wait for release-source.json on the 'release' branch to match d6a7b59, install into a fresh prefix with an empty cache, fresh scratch clone, and do the approved confirming run on issue #9 without --only, cap 1.00, checks (a) to (j), appending to the existing report. Tell me when it starts (run id and dashboard address) and when it ends.
-
----
-
 [from neatlogs-hack-8] New section, approved by Vaibhaav: Tally runs workers two ways, chosen in tally.yaml. main is 7180223 (your #97 merged); start from it. You own the DIRECT RUNNER. Lane B (neatlogs-hack-5) owns init/doctor/tiers and Claude Code inside AO; do not touch onboarding/, engine/init.ts or doctor.
 
 Shared contract (tell me at once if the existing schema already has something different, do not invent a second field): tally.yaml gets top-level 'runner: ao | direct', default 'ao' when absent so existing configs keep working. Each tier already names harness and model; harness values 'codex' and 'claude-code'.
