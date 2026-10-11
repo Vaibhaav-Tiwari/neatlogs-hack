@@ -46,6 +46,15 @@
       "required": ["source", "limitNanos", "spentNanos"],
       "properties": {
         "source": { "enum": ["config", "cfoai"] },
+        "monthly": {
+          "type": "object", "additionalProperties": false,
+          "required": ["source", "limitNanos", "spentBeforeRunNanos"],
+          "properties": {
+            "source": { "enum": ["config", "cfoai"] },
+            "limitNanos": { "type": "integer", "minimum": 0 },
+            "spentBeforeRunNanos": { "type": "integer", "minimum": 0 }
+          }
+        },
         "limitSource": { "enum": ["config", "cfoai", "cli"] },
         "systemOfRecord": { "enum": ["ledger", "cfoai"] },
         "cfoai": {

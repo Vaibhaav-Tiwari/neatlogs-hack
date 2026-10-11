@@ -233,6 +233,16 @@ npm test
 | `tally market --limit 5` | Search CrustData for companies adopting coding agents; requires its credentials. |
 | `tally publish --out site` | Static dashboard export with a sensitive-content scan. No deployment. |
 
+`run --dashboard` starts serving before the first task and prints the URL
+immediately. `--open` also opens that URL in the system browser. The server
+continues after the run for inspection, until Ctrl+C. Terminal output includes
+routes, worker session IDs, spend updates at most every ten seconds, attempt
+results, PR URLs and a final summary. `--budget` is a cap for this run, not a
+replacement for the monthly budget: plan and summary show both, including the
+monthly source. When cfo.ai supplies the monthly budget, init asks only for a
+local fallback after connecting it. Worker trace IDs require correlated trace
+read-back; unverified delivery is shown as missing rather than success.
+
 ## Layout
 
 Experiment summaries are atomically updated after each completed run at

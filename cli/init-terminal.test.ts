@@ -37,8 +37,6 @@ describe('init process lifecycle', () => {
         send -- "node --check app.js\\r"
         expect -exact "Setup command"
         send -- "\\r"
-        expect -exact "Monthly budget"
-        send -- "5\\r"
         expect -exact "GitHub issue label"
         send -- "tally\\r"
         expect -exact "Enable neatlogs"
@@ -47,6 +45,8 @@ describe('init process lifecycle', () => {
         send -- "n\\r"
         expect -exact "Enable cfo.ai"
         send -- "n\\r"
+        expect -exact "Monthly budget"
+        send -- "5\\r"
         expect -exact "Apply these changes?"
         if {$env(TALLY_TEST_MODE) == "cancel"} {send -- "n\\r"} else {send -- "y\\r"}
       }

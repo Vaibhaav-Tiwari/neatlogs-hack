@@ -19,6 +19,15 @@ function fixture() {
 }
 
 describe('recoverRunTraces', () => {
+  it('recovers run-correlated delivered traces without Entire evidence', async () => {
+    const { outputDir, ledger } = fixture();
+    ledger.forEach(row => { row.entireSessionId = null; });
+    writeFileSync(join(outputDir, 'ledger.json'), JSON.stringify(ledger));
+    const result = await recoverRunTraces({ runId: 'run-recovery', outputDir,
+      drain: { drainWorker: async () => { throw new Error('Cannot select queued batches without a native id'); } },
+      reader: { verifyFor: async context => { expect(context.nativeSessionId).toBeNull(); return 'a'.repeat(32); } } });
+    expect(result.after.status).toBe('ok');
+  });
   it('refreshes latest only when it points at the verified run', async () => {
     const { root, outputDir, run, ledger } = fixture();
     const latest = join(root, 'latest'); mkdirSync(latest);
@@ -46,11 +55,10 @@ describe('recoverRunTraces', () => {
     expect(readFileSync(join(outputDir, 'run.json.before-trace-recovery'), 'utf8')).toContain('missing');
   });
 
-  it.each(['readback', 'pending', 'dry', 'running', 'native'])('does not update saved evidence when %s verification fails', async failure => {
+  it.each(['readback', 'pending', 'dry', 'running'])('does not update saved evidence when %s verification fails', async failure => {
     const { outputDir, run, ledger } = fixture();
     if (failure === 'dry') run.dryRun = true;
     if (failure === 'running') run.status = 'running';
-    if (failure === 'native') ledger[0]!.entireSessionId = null;
     writeFileSync(join(outputDir, 'run.json'), JSON.stringify(run));
     writeFileSync(join(outputDir, 'ledger.json'), JSON.stringify(ledger));
     const beforeRun = readFileSync(join(outputDir, 'run.json'), 'utf8');

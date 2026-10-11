@@ -8,6 +8,13 @@ import { DEFAULT_LATEST_RUN_DIR } from './output.js';
 import { loadConfig } from './config.js';
 import { validateRealRunConfig, type PreflightRunner } from './preflight.js';
 
+export type RunProgress =
+  | { type: 'budget'; budget: RunState['budget'] }
+  | { type: 'route'; taskId: string; size: string; confidence: number; tier: string | null; harness: string | null; model: string | null; ceilingNanos: number | null; decision: string }
+  | { type: 'worker'; taskId: string; attempt: number; sessionId: string; tier: string }
+  | { type: 'spend'; taskId: string; attempt: number; costNanos: number }
+  | { type: 'result'; row: Ledger[number] };
+
 export interface RunOptions {
   configPath: string;
   dryRun: boolean;
@@ -23,6 +30,7 @@ export interface RunOptions {
   runId?: string;
   repeat?: number;
   stopRequested?: () => string | null;
+  onEvent?: (event: RunProgress) => void;
 }
 
 export interface RunResult {
@@ -58,7 +66,7 @@ function demoConfigPath(live = false): string {
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
 }
 
-export async function runDemo(options: Pick<RunOptions, 'outputDir' | 'latestRunDir' | 'now'> & { live?: boolean } = {}): Promise<RunResult> {
+export async function runDemo(options: Pick<RunOptions, 'outputDir' | 'latestRunDir' | 'now' | 'onEvent'> & { live?: boolean } = {}): Promise<RunResult> {
   return runTally({
     configPath: demoConfigPath(options.live),
     dryRun: true,
@@ -66,5 +74,6 @@ export async function runDemo(options: Pick<RunOptions, 'outputDir' | 'latestRun
     outputDir: options.outputDir,
     latestRunDir: options.latestRunDir ?? DEFAULT_LATEST_RUN_DIR,
     now: options.now,
+    onEvent: options.onEvent,
   });
 }

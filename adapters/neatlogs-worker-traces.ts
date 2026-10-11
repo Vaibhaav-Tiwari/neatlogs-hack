@@ -4,7 +4,7 @@ export interface WorkerTraceReadContext {
   runId: string;
   taskId: string;
   attempt: number;
-  nativeSessionId: string;
+  nativeSessionId?: string | null;
   traceId?: string | null;
 }
 
@@ -22,7 +22,7 @@ interface TraceRecord {
 function matches(trace: TraceRecord, context: WorkerTraceReadContext): boolean {
   const name = trace.workflowName ?? trace.traceName ?? '';
   const correlation = /Tally run ([^,]+), task ([^,]+), attempt (\d+)(?:[:\s]|$)/.exec(name);
-  return trace.sessionId === context.nativeSessionId && correlation?.[1] === context.runId
+  return Boolean(trace.sessionId && trace.sessionId !== context.runId) && (!context.nativeSessionId || trace.sessionId === context.nativeSessionId) && correlation?.[1] === context.runId
     && correlation[2] === context.taskId && Number(correlation[3]) === context.attempt;
 }
 

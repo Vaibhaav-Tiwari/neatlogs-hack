@@ -35,11 +35,14 @@ export interface PlanOptions {
   only?: string;
   signals?: SizingSignalsPort;
   preflightRunner?: PreflightRunner;
+  budgetInfo?: PlanBudgetInfo;
 }
 
 export interface PlanBudgetInfo {
   source: BudgetSource;
   limitNanos: number;
+  monthlyLimitNanos: number;
+  limitSource: BudgetSource | 'cli';
 }
 
 class PlanBudget implements BudgetPort {
@@ -54,16 +57,20 @@ class PlanBudget implements BudgetPort {
 }
 
 export async function readPlanBudget(config: TallyConfig, options: Pick<PlanOptions, 'budgetUsd'>): Promise<PlanBudgetInfo> {
-  if (options.budgetUsd !== undefined) return { source: 'config', limitNanos: usdToNanos(options.budgetUsd) };
-  if (config.budget.source === 'cfoai') {
+  let source: BudgetSource = 'config';
+  let monthlyLimitNanos = usdToNanos(config.budget.usd);
+  if (config.budget.source === 'cfoai' || config.integrations.cfoai) {
     const adapter = new CfoaiBudgetAdapter({ config: config.budget.cfoai });
     try {
-      return { source: 'cfoai', limitNanos: await adapter.budgetLimitNanos() };
+      monthlyLimitNanos = await adapter.budgetLimitNanos();
+      source = 'cfoai';
     } catch {
-      return { source: 'config', limitNanos: usdToNanos(config.budget.usd) };
+      // Keep the configured fallback explicit when the read fails.
     } finally { await adapter.close(); }
   }
-  return { source: 'config', limitNanos: usdToNanos(config.budget.usd) };
+  return { source, monthlyLimitNanos,
+    limitNanos: options.budgetUsd !== undefined ? usdToNanos(options.budgetUsd) : config.budget.source === 'cfoai' ? monthlyLimitNanos : usdToNanos(config.budget.usd),
+    limitSource: options.budgetUsd !== undefined ? 'cli' : config.budget.source === 'cfoai' ? source : 'config' };
 }
 
 export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
@@ -80,7 +87,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
     if (options.only === undefined) return true;
     return task.taskId === options.only || String(task.issueNumber) === options.only;
   });
-  const budgetInfo = await readPlanBudget(config, options);
+  const budgetInfo = options.budgetInfo ?? await readPlanBudget(config, options);
   const budget = new PlanBudget(budgetInfo.limitNanos);
   const history = new PriceHistory();
   const planned: PlannedTask[] = [];

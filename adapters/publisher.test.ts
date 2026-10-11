@@ -112,7 +112,7 @@ describe('GitHubPublisher', () => {
     expect(calls.map((call) => `${call.file} ${call.args.join(' ')}`)).toEqual([
       'git rev-list --count origin/main..HEAD',
       'git push -u origin HEAD:ao/task/root',
-      'gh pr create --repo acme/payments --head ao/task/root --base main --title T1: Fix math --body Tally run run-1, task T1, attempt 1.\n\nBody\n\n\nRefs #7',
+      'gh pr create --repo acme/payments --head ao/task/root --base main --title T1: Fix math --body Tally run run-1, task T1, attempt 1.\n\nBody\n\n\nCloses #7',
     ]);
   });
 });

@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import * as initModule from '../engine/init.js';
 import * as runModule from '../engine/run.js';
 import * as doctorModule from '../engine/doctor.js';
+import * as dashboardModule from './dashboard-server.js';
+import * as lifecycle from './dashboard-lifecycle.js';
 import type { RunState } from '../schema/types.js';
 import { CommandError } from '../adapters/command.js';
 import { COMMANDS, main, parseCli } from './main.js';
@@ -201,6 +203,38 @@ describe('parseCli', () => {
 });
 
 describe('main', () => {
+  it.each(['run', 'demo'])('starts and opens the dashboard before %s, reports progress, and waits after the summary', async command => {
+    await withTempCwd(async () => {
+      const c = capture();
+      const dashboard = { url: 'http://127.0.0.1:1234/', dataUrl: '/runs/latest/', server: {} as never, close: vi.fn(async () => {}) };
+      const start = vi.spyOn(dashboardModule, 'startDashboardServer').mockResolvedValue(dashboard);
+      const open = vi.spyOn(lifecycle, 'openDashboardBrowser').mockResolvedValue();
+      const wait = vi.spyOn(lifecycle, 'waitForDashboard').mockImplementation(async () => {
+        expect(c.out.join('\n')).toContain('summary:');
+        expect(c.out.join('\n')).toContain('run folder');
+        expect(c.out.join('\n')).toContain('serving until Ctrl+C');
+      });
+      const realDemo = runModule.runDemo;
+      const target = command === 'demo' ? 'runDemo' : 'runTally';
+      const run = vi.spyOn(runModule, target).mockImplementation(async (options: { onEvent?: runModule.RunOptions['onEvent'] }) => {
+        expect(start).toHaveBeenCalledOnce();
+        expect(open).toHaveBeenCalledWith(dashboard.url);
+        expect(c.out[0]).toBe(`dashboard ${dashboard.url}`);
+        const result = await realDemo({ onEvent: options.onEvent });
+        result.runState.tasks[0]!.prUrl = 'https://github.com/example/repo/pull/1';
+        return result;
+      });
+      try {
+        expect(await main([command, '--open', '--port', '0'], c.io)).toBe(0);
+        expect(wait).toHaveBeenCalledWith(dashboard);
+        expect(c.out.join('\n')).toContain('worker');
+        expect(c.out.join('\n')).toContain('spend');
+        expect(c.out.join('\n')).toContain('monthly budget:');
+        expect(c.out.join('\n')).toContain('run cap:');
+        expect(c.out.join('\n')).toContain('PR https://github.com/example/repo/pull/1');
+      } finally { run.mockRestore(); start.mockRestore(); open.mockRestore(); wait.mockRestore(); }
+    });
+  });
   it('does not fail doctor for an explicitly disabled product', async () => {
     const spy = vi.spyOn(doctorModule, 'runDoctor').mockResolvedValueOnce([{ product: 'neatlogs key', status: 'off', detail: 'disabled in tally.yaml; not required', fix: null }]);
     try {

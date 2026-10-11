@@ -36,7 +36,7 @@ function errorMessage(error: unknown): string {
 }
 
 function prBody(input: PublishPrInput): string {
-  const issue = input.task.issueNumber ? `\n\nRefs #${input.task.issueNumber}` : '';
+  const issue = input.task.issueUrl ? `\n\nCloses ${input.task.issueUrl}` : input.task.issueNumber ? `\n\nCloses #${input.task.issueNumber}` : '';
   const warning = input.scopeWarnings?.length ? `\n\nScope warning: out-of-scope changes: ${input.scopeWarnings.join(', ')}` : '';
   return [`Tally run ${input.runId}, task ${input.task.taskId}, attempt ${input.attempt}.`, '', input.task.body || '(No issue body was provided.)', issue, warning].filter((part, index) => index < 4 || part).join('\n');
 }
