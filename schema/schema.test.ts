@@ -24,6 +24,11 @@ const ledger = JSON.parse(fixture('finished-run/ledger.json')) as LedgerRow[];
 const run = JSON.parse(fixture('finished-run/run.json')) as RunState;
 const config = parseYaml(fixture('finished-run/tally.yaml')) as TallyConfig;
 
+it('accepts optional permission warnings on ledger rows without changing legacy rows', () => {
+  expect(validateLedgerRow({ ...ledger[0], permissionWarnings: ['permission denied for Bash: raw test pipeline'] }).ok).toBe(true);
+  expect(validateLedgerRow({ ...ledger[0], permissionWarnings: [42] }).ok).toBe(false);
+});
+
 it('accepts the one runner switch and preserves configs without it', () => {
   expect(validateConfig(config).ok).toBe(true);
   expect(validateConfig({ ...config, runner: 'ao' }).ok).toBe(true);

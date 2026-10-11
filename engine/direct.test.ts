@@ -44,7 +44,9 @@ describe('direct runner through the real loop', () => {
           const scriptPath = scriptRule.slice(5, -1);
           expect(scriptPath.startsWith(options.cwd + '/')).toBe(false);
           expect(readFileSync(scriptPath, 'utf8')).toBe('#!/bin/sh\nset -e\nnode --check calc.js\n');
-          expect(child.stdin.read().toString()).toContain(`run exactly ${scriptPath}`);
+          const prompt = child.stdin.read().toString();
+          expect(prompt).toContain(`run exactly ${scriptPath} first, before making edits`);
+          expect(prompt.indexOf(scriptPath)).toBeLessThan(prompt.indexOf('calc.js should return'));
           if (children.length === 1) {
             writeFileSync(join(options.cwd, 'calc.js'), 'export const add = (a, b) => a + b;\n');
             child.stdout.write(JSON.stringify({ type: 'assistant', message: { id: 'a', usage: { input_tokens: 1000, output_tokens: 10 } } }) + '\n');
@@ -53,7 +55,7 @@ describe('direct runner through the real loop', () => {
             writeFileSync(join(options.cwd, 'calc.js'), readFileSync(join(options.cwd, 'calc.js'), 'utf8') + '// continued from the first attempt\n');
             git(['add', 'calc.js'], options.cwd);
             git(['-c', 'user.name=Tally Test', '-c', 'user.email=tally-test@example.invalid', 'commit', '-m', 'fix add'], options.cwd);
-            child.stdout.write(JSON.stringify({ type: 'result', is_error: false, permission_denials: [{ tool_name: 'Bash' }], usage: { input_tokens: 200, output_tokens: 10 } }) + '\n');
+            child.stdout.write(JSON.stringify({ type: 'result', is_error: false, permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'raw test pipeline' } }], usage: { input_tokens: 200, output_tokens: 10 } }) + '\n');
             queueMicrotask(() => child.emit('close', 0, null));
           }
         });
@@ -78,6 +80,8 @@ describe('direct runner through the real loop', () => {
       expect(result.ledger.map(row => row.result)).toEqual(['stopped', testsPass ? 'passed' : 'failed']);
       expect(result.ledger[0]?.resultReason).toContain('work in progress committed');
       expect(result.ledger[1]?.prUrl).toBe(testsPass ? 'https://github.com/acme/calc/pull/1' : null);
+      expect(result.ledger[1]?.permissionWarnings).toEqual(['permission denied for Bash: raw test pipeline']);
+      expect(result.ledger[1]?.resultReason).toContain('warning: permission denied for Bash: raw test pipeline');
       expect(paths[0]).toBe(paths[1]); expect(branches[0]).toBe(branches[1]); expect(publishedBranch).toBe(testsPass ? branches[0] : undefined);
       expect(result.ledger.every(row => row.estimatedCostNanos > 0)).toBe(true);
       expect(existsSync(paths[0]!)).toBe(!testsPass);

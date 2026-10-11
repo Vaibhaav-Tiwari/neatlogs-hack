@@ -180,10 +180,10 @@ describe('direct Claude worker', () => {
     const worker = new DirectRunner({ repoPath: '/tmp/repo', baseBranch: 'main', test: { command: 'true' }, approvedRules,
       command: async (file) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : 'base', stderr: '' }), launch: fake.launch });
     const started = await worker.start(input);
-    fake.emit({ type: 'result', is_error: false, result: 'Recovered using the approved script', permission_denials: [{ tool_name: 'Bash' }], usage: { input_tokens: 1 } });
+    fake.emit({ type: 'result', is_error: false, result: 'Recovered using the approved script', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'raw test pipeline' } }], usage: { input_tokens: 1 } });
     fake.child.emit('close', code, null);
     expect(await worker.wait(started.sessionId)).toMatchObject({ status: code === 0 ? 'idle' : 'error',
-      resultReason: code === 0 ? null : expect.stringContaining('exited 1') });
+      resultReason: code === 0 ? null : expect.stringContaining('exited 1'), permissionWarnings: ['permission denied for Bash: raw test pipeline'] });
     expect((await worker.settledUsageFor(started.sessionId))?.tokens.total).toBe(1);
     await worker.release(started.sessionId);
   });
