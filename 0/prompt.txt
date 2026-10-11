@@ -93,3 +93,7 @@ what issue should we raise in the main tally repo for this? one is neatlogs page
 ---
 
 raise the issues. but also explain how the entire project thing is gonna work? i can see the entire checkpoint explain locally but i am guessing its not on my entire account online? how do i check and set that up because we wanna share the results afterall. also the cfo tables and neatlogs too. right? also the onboarding doesnt handle this stuff?
+
+---
+
+Okay, so here is what you're gonna do. let's just pull the latest repository and work on it. I want you to choose PR for the first issue, and because that is the most important issue right so just do that raise a PR has to be a tom make don't make shit ton of changes just the necessary ones and then test it and get back to me
