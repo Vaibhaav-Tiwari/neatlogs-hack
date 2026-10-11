@@ -7,6 +7,7 @@ import * as runModule from '../engine/run.js';
 import * as doctorModule from '../engine/doctor.js';
 import * as dashboardModule from './dashboard-server.js';
 import * as lifecycle from './dashboard-lifecycle.js';
+import * as logoModule from './logo.js';
 import type { RunState } from '../schema/types.js';
 import { CommandError } from '../adapters/command.js';
 import { COMMANDS, main, parseCli } from './main.js';
@@ -29,6 +30,17 @@ async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 describe('parseCli', () => {
+  it('accepts logo replay without adding presentation to captured or command output', async () => {
+    const spy = vi.spyOn(logoModule, 'presentLogo');
+    try {
+      expect(parseCli(['logo'])).toMatchObject({ kind: 'command', command: 'logo' });
+      const c = capture();
+      expect(await main(['logo'], c.io)).toBe(0);
+      expect(await main(['--help'], c.io)).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+      expect(c.out.join('\n')).not.toContain('\x1b');
+    } finally { spy.mockRestore(); }
+  });
   it('parses scripted init flags and rejects invalid product opt-ins', () => {
     expect(parseCli(['init', '--runner', 'direct', '--harness', 'mixed', '--allow-claude'])).toMatchObject({ kind: 'command', options: { runner: 'direct', harnessChoice: 'mixed', allowClaude: true } });
     expect(parseCli(['init', '--runner', 'other'])).toMatchObject({ kind: 'error' });

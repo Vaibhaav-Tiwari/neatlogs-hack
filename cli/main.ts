@@ -17,8 +17,9 @@ import { formatUsd } from '../schema/index.js';
 import { startDashboardServer, type DashboardServer } from './dashboard-server.js';
 import { openDashboardBrowser, waitForDashboard } from './dashboard-lifecycle.js';
 import { publishSite } from './publish.js';
+import { logoTarget, PLAIN_LOGO, presentLogo } from './logo.js';
 
-export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces'] as const;
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces', 'logo'] as const;
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.1.0';
@@ -82,6 +83,7 @@ const USAGE = `tally: a CFO for a fleet of coding agents
 Usage: tally <command> [options]
 
 Commands:
+  logo     Replay the Tally welcome mark
   experiment Run baseline and Tally repeats with a shared safety budget
   run      Run the backlog against the budget in tally.yaml
   demo     Run the full loop with simulated workers on a sample backlog
@@ -511,6 +513,10 @@ const handlers: Record<Command, Handler> = {
   doctor: doctorCommand,
   login: loginCommand,
   market: marketCommand,
+  logo: async (_options, io) => {
+    if (io !== consoleIO && process.stdout.isTTY) io.stdout(PLAIN_LOGO);
+    return 0;
+  },
 };
 
 const consoleIO: CliIO = {
@@ -521,6 +527,11 @@ const consoleIO: CliIO = {
 /** Returns the process exit code. */
 export async function main(argv: string[], io: CliIO = consoleIO): Promise<number> {
   const parsed = parseCli(argv);
+  const target = logoTarget(argv);
+  if (io === consoleIO && target && parsed.kind !== 'error' && parsed.kind !== 'version') {
+    const code = await presentLogo(target);
+    if (code) return code;
+  }
   switch (parsed.kind) {
     case 'help':
       io.stdout(USAGE);
