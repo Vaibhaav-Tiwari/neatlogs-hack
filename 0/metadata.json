@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N39CSBKCG3GKSTDR8DF23F",
+  "session_id": "01a125af-3ac6-7c02-a43b-a467b6fc3d3a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T09:04:24.09163Z",
+  "branch": "ao/neatlogs-hack-2/confirming-intake-fix",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/github.test.ts",
+    "adapters/github.ts",
+    "cli/main.test.ts",
+    "cli/main.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "8bbb5917ad59",
+  "checkpoint_transcript_start": 14260,
+  "transcript_lines_at_start": 14260,
+  "compact_transcript_start": 1645,
+  "token_usage": {
+    "input_tokens": 142660,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5570688,
+    "output_tokens": 14458,
+    "api_call_count": 52
+  },
+  "session_metrics": {
+    "turn_count": 20
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T09:04:23.264705Z",
+    "agent_lines": 98,
+    "agent_removed": 6,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 98,
+    "total_lines_changed": 104,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

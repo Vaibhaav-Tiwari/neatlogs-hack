@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N39CSBKCG3GKSTDR8DF23F",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/confirming-intake-fix",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/github.test.ts",
+    "adapters/github.ts",
+    "cli/main.test.ts",
+    "cli/main.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 142660,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5570688,
+    "output_tokens": 14458,
+    "api_call_count": 52
+  }
+}
