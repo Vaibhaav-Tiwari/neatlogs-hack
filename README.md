@@ -5,8 +5,8 @@ each task, sends it to the cheapest model likely to finish it, stops any task
 that overruns its spend ceiling, hands failed work to a stronger model, and
 ends with a ledger tying spend to each attempt, its test result and any opened PR.
 
-Status: early build, available from GitHub. The npm package `tally-agents`
-has not been released yet. The seven-task demo uses simulated workers; real
+Status: early build, being prepared for npm publication as `tally-agents`.
+Until it is published, use the GitHub release alternative below. The seven-task demo uses simulated workers; real
 runs use Agent Orchestrator by default, or the direct runner (Claude Code or Codex),
 and record their attempts and evidence separately.
 
@@ -46,6 +46,9 @@ prints the size, confidence, route and ceiling without starting a worker.
 
 ### Direct Codex Runner
 
+The direct Codex implementation is merged. Its first real end-to-end proof is
+still in progress; do not treat the simulated demo as proof of this path.
+
 With `runner: direct`, a tier with `harness: codex` runs `codex exec --json` in
 the task's worktree. It needs Codex on PATH and signed in with `codex login`.
 The worker runs in Codex's `workspace-write` sandbox with approvals off and the
@@ -83,17 +86,31 @@ of 1.25x / 2x the configured input price. Existing ledger costs are unchanged.
 Subagents and MCP tools are disabled so their unmetered work cannot escape the
 task ceiling. These are harness permission rules, not an OS isolation guarantee;
 configured commands and installed hooks must be trusted. Entire and neatlogs
-hooks are retained (no bare mode); their real headless capture is not yet proven.
+hooks are retained (no bare mode); verify capture through the run's recorded
+evidence and read-back rather than assuming that installed hooks prove delivery.
 Published worktrees are removed; stopped/failed checkouts stay available for
 handoff or recovery. A live direct process cannot be reattached after Tally exits.
 
+### AO Workers
+
+With `runner: ao`, each tier chooses its own `harness` and model. Codex workers
+use the project's consented `auto` mode. Claude Code workers use `default` at
+launch and a worktree-local `.claude/settings.local.json` with the consented
+`dontAsk` rules and exact Tally test/setup scripts. The local settings and
+instructions are excluded from commits. No bypass-permissions mode is used.
+Mixed AO tiers select the harness mode immediately before spawning under an
+in-process project lock; separate Tally processes and manual AO changes are not
+coordinated by that lock. Both Codex AO and Claude Code AO have real-run evidence.
+For Claude AO, worker traces reach neatlogs, but the worker trace id is not yet
+recorded on the ledger row; routing trace ids are recorded.
+
 Three ways in:
 
-1. **GitHub (available now):** `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack#release`.
+1. **npm (primary):** `npm install -g tally-agents` once version `0.1.0` is published.
+2. **GitHub (alternative, available now):** `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack#release`.
    The `release` branch includes the compiled CLI and records its source commit
    in `release-source.json`; no TypeScript or manual build is needed. The main
    branch is source-only and is not the global-install target.
-2. **npm (not released yet):** after release, `npm install -g tally-agents`.
 3. **Source checkout:** `git clone https://github.com/Vaibhaav-Tiwari/neatlogs-hack`,
    enter `neatlogs-hack`, and run `npm install` followed by `npm run build`.
    Then use `node bin/tally.js` in place of `tally` in the commands below.
@@ -107,6 +124,10 @@ Maintainers can build a release tree with
 `npm run release:branch -- --source origin/main --out /tmp/tally-release`.
 Add `--push` to update the dedicated `release` branch (never publishes to npm).
 The main-push workflow builds and smoke-checks that tree before updating it.
+For npm publication, pack the built `release` tree, not the source-only main
+checkout. Check that `release-source.json` identifies the intended main commit,
+then inspect and smoke-test the tarball before publishing that exact artifact.
+The built package includes `dist/` and has no build or install lifecycle scripts.
 `npm run test:git-install` checks the GitHub `#release` URL with an empty cache
 and temporary global prefix, then checks version, help, demo and dashboard
 outside the checkout. Pass another Git URL after `--` to check a candidate.
@@ -169,7 +190,7 @@ repository you want Tally to work on:
 4. **`tally run --plan`** lists the tasks it found and the model each would go
    to. It starts no workers and spends nothing. Check the task count here
    before going further.
-5. **`tally run`** starts real workers through AO. It spends against your
+5. **`tally run`** starts real workers through the configured AO or direct runner. It spends against your
    agent accounts and can push branches and open pull requests on the
    repository.
 6. **`tally dashboard`**, in a second terminal in the same directory, prints a
@@ -181,11 +202,10 @@ defaulting to No. It displays a compact proposal (full YAML with `--verbose`), i
 final confirmation (default No) before applying changes. Use `tally init
 --dry-run` to preview without applying, or `--yes` only when you consent to
 applying detected defaults without prompts. Review model tiers, prices, tests
-and ceilings before starting workers. Scoped worker allow-list enforcement is
-not yet installed; init does not change global coding-agent settings.
-The final summary explicitly includes automatic safety review for this AO
-project's workers only. Uninstall restores that owned setting; it never
-enables bypass-permissions.
+and ceilings before starting workers. Claude's consented rules are installed
+locally before launch; init does not change global coding-agent settings.
+The final summary shows the permission policy for this AO project's workers.
+Uninstall restores owned project settings; it never enables bypass-permissions.
 
 Interactive init requires a terminal. Piped input exits with a plain message
 instead of waiting for answers. For scripted onboarding, pass values explicitly:
