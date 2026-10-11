@@ -165,6 +165,20 @@ describe('AO branch continuation', () => {
     await expect(adapter.wait('startup')).resolves.toMatchObject({ status: 'never_started', resultReason: 'worker never started' });
     expect(calls.at(-1)).toEqual(['session', 'kill', 'startup']);
   });
+  it('preserves the provider reason when an AO session ends before worker activity', async () => {
+    const calls: string[][] = [];
+    const adapter = new AoCliAdapter({ pollMs: 0, sleep: async () => {},
+      command: async (_file, args) => {
+        calls.push(args);
+        return { stdout: JSON.stringify({ session: { status: 'terminated', reason: 'terminated', message: 'model gpt-5.6-sol not available for this account' } }), stderr: '' };
+      },
+      fetch: async () => ({ ok: true, json: async () => ({ totals: { inputTokens: 0 } }) }) as Response });
+    await expect(adapter.wait('rejected-model')).resolves.toMatchObject({
+      status: 'never_started',
+      resultReason: 'worker never started: terminated; model gpt-5.6-sol not available for this account',
+    });
+    expect(calls.at(-1)).toEqual(['session', 'kill', 'rejected-model']);
+  });
   it('replays tracked and untracked edits on the same branch before sending the task', async () => {
     const root = await mkdtemp(join(tmpdir(), 'tally-continuation-test-'));
     const old = join(root, 'old');
