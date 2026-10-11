@@ -35,14 +35,15 @@ import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { GitHubPublisher, type PublishPort } from '../adapters/publisher.js';
 import { outOfScopeFiles } from './scope.js';
 import { CommandVerifier, EntireGraphVerifier, type VerifierPort } from '../adapters/verifier.js';
-import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
+import { attemptId, ceilingNanos, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
 import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
 import { type BacklogTask } from './backlog.js';
 import { loadConfig } from './config.js';
 import { createPriceHistory } from './price-history.js';
 import { writeRunFiles } from './output.js';
 import { tierPriceNote } from './pricing.js';
-import type { RunOptions, RunResult } from './run.js';
+import { RunError, type RunOptions, type RunResult } from './run.js';
+import { Reservations, runPool, SerialQueue } from './concurrency.js';
 
 const execFileAsync = runCommand;
 
@@ -241,9 +242,9 @@ function neatlogsStatus(ports: RealRunPorts, traceState?: RunState['integrations
   return { status, detail: detail.length > 0 ? [...new Set(detail)].join('; ') : null };
 }
 
-function lastTraceId(trace: TracePort | undefined): string | null {
-  const withTraceId = trace as (TracePort & { lastTraceId?: () => string | null }) | undefined;
-  return withTraceId?.lastTraceId?.() ?? null;
+function lastTraceId(trace: TracePort | undefined, runId?: string, taskId?: string, attempt?: number): string | null {
+  const withTraceId = trace as (TracePort & { lastTraceId?: (runId?: string, taskId?: string, attempt?: number) => string | null }) | undefined;
+  return withTraceId?.lastTraceId?.(runId, taskId, attempt) ?? null;
 }
 
 function portStatus(port: unknown, fallback: RunState['integrations']['entire']): RunState['integrations']['entire'] {
@@ -251,8 +252,10 @@ function portStatus(port: unknown, fallback: RunState['integrations']['entire'])
   return withStatus.status?.() ?? fallback;
 }
 
-function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource }): RunState['integrations'] {
-  const cfoaiStatus = ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
+function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource; cfoaiReadFailure: string | null }): RunState['integrations'] {
+  const cfoaiStatus = options.cfoaiReadFailure
+    ? { status: 'missing' as const, detail: `cfo.ai budget read failed: ${options.cfoaiReadFailure}; using the fallback budget in tally.yaml${options.dryRun ? '; simulated workers only; spend not written' : ''}` }
+    : ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
   const graph = portStatus(ports.signals, { status: 'missing', detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.' });
   const recall = ports.recall?.status?.();
   return {
@@ -429,7 +432,7 @@ function stateFromRows(taskState: TaskState, rows: LedgerRow[]): TaskState {
   };
 }
 
-async function runAttempt(input: Parameters<typeof runSingleAttempt>[0]): Promise<LedgerRow> {
+async function runAttemptWithRetry(input: Parameters<typeof runSingleAttempt>[0]): Promise<LedgerRow> {
   const row = await runSingleAttempt(input);
   if (row.result === 'error' && row.resultReason === 'worker never started' && !(row.tokens?.total) && !input.dryRun) {
     await input.onStartupError?.(row);
@@ -463,6 +466,7 @@ async function runSingleAttempt(input: {
   onProgress?: (costNanos: number) => void;
   retrySuffix?: string;
   onEvent?: RunOptions['onEvent'];
+  stopRequested?: RunOptions['stopRequested'];
 }): Promise<LedgerRow> {
   let startedAt = input.now().toISOString();
   const repoPath = resolve(dirname(input.configPath), input.config.repo.path);
@@ -502,6 +506,10 @@ async function runSingleAttempt(input: {
       await input.ports.sessions.stop(sessionId, reason);
     },
   }, trace: input.ports.trace });
+  const interruption = setInterval(() => {
+    const reason = input.stopRequested?.();
+    if (reason) void input.ports.sessions.stop(started.sessionId, reason).catch(() => {});
+  }, input.dryRun ? 1 : 250);
   const abort = new AbortController();
   const watched = watcher.watch(
     { sessionId: started.sessionId, tier: input.tier, ceilingNanos: input.ceilingNanos },
@@ -546,7 +554,10 @@ async function runSingleAttempt(input: {
     workerResult = first.kind === 'worker' ? first.result : await worker;
     const completionPort = usage;
     const completionUsage = input.dryRun ? null : await (completionPort.settledUsageFor?.(started.sessionId) ?? completionPort.usageFor(started.sessionId));
-    if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated') && !(completionUsage?.tokens.total)))) {
+    if (input.stopRequested?.()) {
+      result = workerResult.status === 'experiment_stop' || input.stopRequested()!.startsWith('stopped:') ? 'stopped' : 'error';
+      resultReason = input.stopRequested()!;
+    } else if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated') && !(completionUsage?.tokens.total)))) {
       result = 'error';
       resultReason = workerResult.permissionWarnings?.length
         ? `permission failure: worker produced no commit after refused commands: ${workerResult.permissionWarnings.join('; ')}`
@@ -584,7 +595,10 @@ async function runSingleAttempt(input: {
         });
         result = verification.passed ? 'passed' : 'failed';
         resultReason = verification.reason;
-        if (verification.passed && !input.dryRun) {
+        if (verification.passed && input.stopRequested?.()) {
+          result = 'error';
+          resultReason = input.stopRequested()!;
+        } else if (verification.passed && !input.dryRun) {
           scopeWarnings = outOfScopeFiles(input.task, await input.ports.publisher.changedFiles({ checkoutPath: checkoutPath!, branch: branch!, config: input.config, baseCommit: attemptBase }));
           if (scopeWarnings.length && input.config.repo.blockOutOfScopeChanges) {
             result = 'error';
@@ -638,6 +652,7 @@ async function runSingleAttempt(input: {
     result = 'error';
     resultReason = error instanceof Error ? error.message : String(error);
   } finally {
+    clearInterval(interruption);
     abort.abort();
     if (!stopped) {
       try {
@@ -785,6 +800,14 @@ function handoffSummaryLedgerRow(input: {
 
 export async function runRealTally(options: RealRunOptions): Promise<RunResult> {
   const config = loadConfig(options.configPath);
+  const requestedConcurrency = options.parallel ?? config.parallelWorkers ?? 1;
+  if (!Number.isInteger(requestedConcurrency) || requestedConcurrency < 1) throw new Error('parallel worker count must be a positive integer');
+  if (config.runner === 'direct' && options.parallel !== undefined && options.parallel > 1) throw new Error('parallel workers require runner ao; direct remains sequential');
+  const concurrency = config.runner === 'direct' || options.baseline ? 1 : requestedConcurrency;
+  let safetyStop: string | null = null;
+  const stopRequested = () => safetyStop ?? options.stopRequested?.() ?? null;
+  if (options.baseline && (options.parallel ?? 1) > 1) throw new Error('parallel AO workers require per-attempt ceilings; baseline remains sequential');
+  if (concurrency > 1 && config.entire?.generatedSummaries) throw new Error('parallel workers require metadata-only handoffs; generated summary cost cannot be reserved');
   const ports = resolvePorts(config, options.configPath, options.ports, options.requiredBaseCommit);
   const now = options.now ?? (() => new Date());
   const started = now();
@@ -798,6 +821,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   let monthlyLimitNanos = usdToNanos(config.budget.usd);
   let monthlySpentNanos = 0;
   let cfoaiWriteFailure: string | null = null;
+  let cfoaiReadFailure: string | null = null;
   let committedBeforeRunNanos = 0;
   if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
     try {
@@ -809,20 +833,30 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         budgetLimitNanos = limit;
         committedBeforeRunNanos = Math.max(0, currentSpend - ledgerSpend(ledger));
       }
-    } catch {
+    } catch (error) {
+      cfoaiReadFailure = error instanceof Error ? error.message : String(error);
+      if (concurrency > 1 && !options.dryRun) throw new RunError([`parallel AO run cannot reserve the monthly budget: cfo.ai read failed: ${error instanceof Error ? error.message : String(error)}; no workers were started. Restore cfo.ai access or run sequentially with --parallel 1.`]);
       budgetSource = 'config';
     }
   }
-  const budget = new LedgerBudget(budgetLimitNanos, ledger, committedBeforeRunNanos);
-  const recordSpend = async (row: LedgerRow) => {
+  const ledgerBudget = new LedgerBudget(budgetLimitNanos, ledger, committedBeforeRunNanos);
+  const monthlyCommittedBeforeRun = Math.max(0, monthlySpentNanos - ledgerSpend(ledger));
+  const reservations = new Reservations(() => Math.min(
+    budgetLimitNanos - committedBeforeRunNanos - ledgerSpend(ledger),
+    monthlyLimitNanos - monthlyCommittedBeforeRun - ledgerSpend(ledger),
+  ));
+  const decisions = new SerialQueue();
+  const accounting = new SerialQueue();
+  const recordSpend = (row: LedgerRow) => accounting.run(async () => {
     if (options.dryRun) return;
     const cumulative = ledgerSpend(ledger);
+    const attempts = ledger.map((attempt) => ({ tier: attempt.tier, costNanos: attempt.estimatedCostNanos }));
     appendCfoaiFallback(outputDir, row, cumulative);
     if (!config.integrations.cfoai || !ports.cfoai) return;
     try {
       await ports.cfoai.writeCumulativeActualSpend(cumulative);
       await ports.cfoai.writeSpendDetail?.({
-        attempts: ledger.map((attempt) => ({ tier: attempt.tier, costNanos: attempt.estimatedCostNanos })),
+        attempts,
         cumulativeRunSpendNanos: cumulative,
       });
       cfoaiWriteFailure = null;
@@ -830,7 +864,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       cfoaiWriteFailure = `write failed: ${error instanceof Error ? error.message : String(error)}; actual spend retained in cfoai-spend-fallback.csv`;
       // CSV fallback has already preserved the attempted spend for a later sync.
     }
-  };
+  });
   const tasks = (await ports.intake.tasks(config, options.configPath)).filter((task) => {
     if (options.only === undefined) return true;
     return task.taskId === options.only || String(task.issueNumber) === options.only;
@@ -863,6 +897,10 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     state.model = tier.model;
     state.escalated = attempt > 1;
     state.spentNanos = ledger.filter((row) => row.taskId === state.taskId).reduce((sum, row) => sum + row.estimatedCostNanos, 0) + liveCosts.get(state.taskId)!;
+    if (concurrency > 1 && ledgerSpend(ledger) + [...liveCosts.values()].reduce((sum, cost) => sum + cost, 0)
+      >= Math.min(budgetLimitNanos - committedBeforeRunNanos, monthlyLimitNanos - monthlyCommittedBeforeRun)) {
+      safetyStop = 'stopped: shared run cap or monthly budget reached';
+    }
     writeCurrent('running', null);
     options.onEvent?.({ type: 'spend', taskId: state.taskId, attempt, costNanos: liveCosts.get(state.taskId)! });
   };
@@ -901,7 +939,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         spentNanos: ledgerSpend(ledger) + [...liveCosts.values()].reduce((sum, cost) => sum + cost, 0),
       },
       tasks: taskStates,
-      integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource }),
+      integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource, cfoaiReadFailure }),
     };
     if (cfoaiWriteFailure) runState.integrations.cfoai = { status: 'error', detail: cfoaiWriteFailure };
     const workerRows = ledger.filter(row => row.harness === 'codex' || row.harness === 'claude-code');
@@ -924,6 +962,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   options.onEvent?.({ type: 'budget', budget: initialRun.budget });
   const finishAttempt = (row: LedgerRow) => {
     ledger.push(row);
+    if (concurrency > 1) reservations.settle(row.taskId, row.estimatedCostNanos);
     liveCosts.delete(row.taskId);
     const index = taskStates.findIndex((state) => state.taskId === row.taskId);
     if (index >= 0) taskStates[index] = stateFromRows(taskStates[index]!, ledger.filter((item) => item.taskId === row.taskId));
@@ -934,50 +973,212 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     finishAttempt(row);
     await recordSpend(row);
     writeCurrent('running', null);
-    if (row.ceilingNanos !== null && row.ceilingNanos > await budget.remainingNanos()) throw new Error('worker never started; no budget for startup retry');
+    if (row.ceilingNanos !== null && row.ceilingNanos > await ledgerBudget.remainingNanos()) throw new Error('worker never started; no budget for startup retry');
   };
 
-  for (const [index, task] of tasks.entries()) {
-    const stopReason = options.stopRequested?.();
-    if (stopReason) {
-      for (const state of taskStates.slice(index)) {
-        state.status = 'skipped';
-        state.statusReason = stopReason;
+  const processTask = async (task: BacklogTask, index: number) => {
+    const taskBudget: BudgetPort = concurrency === 1 ? ledgerBudget : { remainingNanos: async () => reservations.remaining(task.taskId) };
+    // Each task sees its own held funds, but never another running task's reservation.
+    const budget = taskBudget;
+    const routingBudget: BudgetPort = concurrency === 1 ? budget : {
+      remainingNanos: async () => Math.min(budgetLimitNanos - committedBeforeRunNanos, monthlyLimitNanos - monthlyCommittedBeforeRun) - ledgerSpend(ledger),
+    };
+    const runAttempt = async (input: Parameters<typeof runAttemptWithRetry>[0]) => {
+      if (concurrency > 1) {
+        for (;;) {
+          const admission = await decisions.run(async () => {
+            const cost = input.ceilingNanos ?? Infinity;
+            const next = input.attempt === 1 ? config.tiers[config.tiers.findIndex(t => t.name === input.tier.name) + 1] : undefined;
+            const amount = cost + (next ? ceilingNanos(config, input.task.size, next) : 0);
+            const fits = reservations.reserve(task.taskId, amount);
+            return { fits, wait: fits ? null : reservations.waiting(task.taskId) };
+          });
+          if (admission.fits) break;
+          if (!admission.wait) throw new Error('not started: reservation does not fit the run cap and monthly budget');
+          await admission.wait;
+          if (stopRequested()) throw new Error(stopRequested()!);
+        }
       }
-      break;
-    }
-    const existingRows = ledger.filter((row) => row.taskId === task.taskId);
-    if (isTaskDone(existingRows)) {
-      taskStates[index] = stateFromRows(taskStates[index]!, existingRows);
+      if (stopRequested()) throw new Error(stopRequested()!);
+      return runAttemptWithRetry({ ...input, stopRequested });
+    };
+    try {
+      const stopReason = stopRequested();
+      if (stopReason) {
+        taskStates[index]!.status = 'skipped';
+        taskStates[index]!.statusReason = stopReason;
+        return;
+      }
+      const existingRows = ledger.filter((row) => row.taskId === task.taskId);
+      if (isTaskDone(existingRows)) {
+        taskStates[index] = stateFromRows(taskStates[index]!, existingRows);
+        writeCurrent('running', null);
+        return;
+      }
+      const interrupted = existingRows[existingRows.length - 1];
+      if (interrupted && interrupted.result !== 'passed' && interrupted.attempt === 1) {
+        task.size = interrupted.size;
+        let latest = interrupted;
+        if (interrupted.result !== 'error') {
+          const escalation = await decisions.run(() => decideEscalation({
+            previous: {
+              attemptId: interrupted.attemptId,
+              taskId: interrupted.taskId,
+              attempt: interrupted.attempt,
+              size: interrupted.size,
+              tier: interrupted.tier,
+              result: interrupted.result,
+              sessionId: interrupted.sessionId,
+              branch: interrupted.branch,
+              checkpointId: interrupted.checkpointId,
+              resultReason: interrupted.resultReason,
+            },
+            task,
+            config,
+            ports: { budget, handoff: ports.handoff, trace: ports.trace },
+            traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
+          }));
+          const escalationTraceId = lastTraceId(ports.trace, runId, task.taskId, 2);
+          if (escalation.action === 'escalate') {
+            const summaryRow = handoffSummaryLedgerRow({ runId, task, previous: interrupted, decision: escalation, traceId: escalationTraceId, now });
+            if (summaryRow) {
+              ledger.push(summaryRow);
+              await recordSpend(summaryRow);
+            }
+            latest = await runAttempt({
+              runId,
+              task,
+              attempt: 2,
+              tier: escalation.tier,
+              ceilingNanos: escalation.ceilingNanos,
+              decision: escalation.reason,
+              escalatedFrom: escalation.escalatedFrom,
+              handoff: escalation.handoff,
+              handoffSummary: escalation.handoffSummary,
+              traceId: escalationTraceId,
+              config,
+              configPath: options.configPath,
+              ports,
+              now,
+              dryRun: options.dryRun,
+              baseCommit,
+              requiredBaseCommit: options.requiredBaseCommit,
+              continueBranch: escalation.handoffBranch ?? interrupted.branch,
+              continueSessionId: interrupted.sessionId,
+              onChangedFiles: changedFor(index),
+              onStartupError,
+              onProgress: progressFor(index, 2, escalation.tier),
+              onEvent: options.onEvent,
+            });
+            finishAttempt(latest);
+            await recordHistory({ ports, row: latest, dryRun: options.dryRun });
+            await recordSpend(latest);
+          } else {
+            interrupted.resultReason = escalation.statusReason;
+          }
+        }
+        taskStates[index] = stateFromRows(taskStates[index]!, ledger.filter((row) => row.taskId === task.taskId));
+        writeCurrent('running', null);
+        return;
+      }
+      const taskInput = { taskId: task.taskId, title: task.title, body: task.body };
+      const sized = await sizeTask(taskInput, { signals: ports.signals, trace: ports.trace });
+      let estimate = sized;
+      if (ports.recall) {
+        try {
+          estimate = applyCheckpointRecall(sized, await ports.recall.recallFor(taskInput));
+        } catch (error) {
+          estimate = { ...sized, summary: `${sized.summary}; checkpoint recall unavailable: ${error instanceof Error ? error.message : 'search failed'}` };
+        }
+        const recallStatus = ports.recall.status?.();
+        if (recallStatus?.status === 'missing') estimate = { ...estimate, summary: `${estimate.summary}; ${recallStatus.detail}` };
+      }
+      task.size = estimate.size;
+      const state = taskStates[index]!;
+      state.size = estimate.size;
+      state.impact ??= structuredClone(estimate.signals?.impact ?? {
+        source: estimate.signals?.source ?? 'none', query: `${task.title}\n${task.body}`.trim(), nodes: [], edges: [],
+        totals: { filesTouched: estimate.signals?.filesTouched ?? 0, dependents: estimate.signals?.dependents ?? 0, testsPresent: estimate.signals?.testsPresent ?? false, nodes: 0, edges: 0 }, truncated: false,
+      });
       writeCurrent('running', null);
-      continue;
-    }
-    const interrupted = existingRows[existingRows.length - 1];
-    if (interrupted && interrupted.result !== 'passed' && interrupted.attempt === 1) {
-      task.size = interrupted.size;
-      let latest = interrupted;
-      if (interrupted.result !== 'error') {
-        const escalation = await decideEscalation({
+      const route = await decisions.run(async () => options.baseline
+        ? await routeBaseline({
+            task: taskInput,
+            estimate,
+            config,
+            ports: { history: ports.history, budget: routingBudget, trace: ports.trace },
+            traceAttributes: { sessionId: runId, taskId: task.taskId, attempt: 1 },
+          })
+        : await routeTask({
+            task: taskInput,
+            estimate,
+            config,
+            ports: { history: ports.history, budget: routingBudget, trace: ports.trace },
+            traceAttributes: { sessionId: runId, taskId: task.taskId, attempt: 1 },
+          }));
+      const routeTraceId = lastTraceId(ports.trace, runId, task.taskId, 1);
+      options.onEvent?.({ type: 'route', taskId: task.taskId, size: estimate.size, confidence: estimate.confidence,
+        tier: route.action === 'start' ? route.tier.name : null,
+        harness: route.action === 'start' ? route.tier.harness : null,
+        model: route.action === 'start' ? route.tier.model : null,
+        ceilingNanos: route.action === 'start' ? task.firstAttemptCeilingUsd === undefined || options.baseline ? route.ceilingNanos : Math.min(route.ceilingNanos ?? Infinity, usdToNanos(task.firstAttemptCeilingUsd)) : null,
+        decision: route.reason });
+      if (route.action === 'skip') {
+        state.status = 'skipped';
+        state.statusReason = route.statusReason;
+        writeCurrent('running', null);
+        return;
+      }
+      const first = await runAttempt({
+        runId,
+        task,
+        attempt: 1,
+        tier: route.tier,
+        ceilingNanos: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.ceilingNanos : Math.min(route.ceilingNanos ?? Infinity, usdToNanos(task.firstAttemptCeilingUsd)),
+        decision: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.reason : `${route.reason} Deliberate first-attempt ceiling override: $${task.firstAttemptCeilingUsd.toFixed(3)} (normal ceiling remains an upper bound).`,
+        escalatedFrom: null,
+        handoff: 'none',
+        handoffSummary: null,
+        traceId: routeTraceId,
+        config,
+        configPath: options.configPath,
+        ports,
+        now,
+        dryRun: options.dryRun,
+        baseCommit,
+        requiredBaseCommit: options.requiredBaseCommit,
+        onChangedFiles: changedFor(index),
+        onStartupError,
+        onProgress: progressFor(index, 1, route.tier),
+        onEvent: options.onEvent,
+      });
+      finishAttempt(first);
+      if (first.result === 'stopped' && stopRequested()) first.resultReason = stopRequested()!;
+      await recordHistory({ ports, row: first, dryRun: options.dryRun });
+      await recordSpend(first);
+      let latest = first;
+      if (first.result !== 'passed' && first.result !== 'error' && !stopRequested()) {
+        const escalation = await decisions.run(() => decideEscalation({
           previous: {
-            attemptId: interrupted.attemptId,
-            taskId: interrupted.taskId,
-            attempt: interrupted.attempt,
-            size: interrupted.size,
-            tier: interrupted.tier,
-            result: interrupted.result,
-            sessionId: interrupted.sessionId,
-            branch: interrupted.branch,
-            checkpointId: interrupted.checkpointId,
-            resultReason: interrupted.resultReason,
+            attemptId: first.attemptId,
+            taskId: first.taskId,
+            attempt: first.attempt,
+            size: first.size,
+            tier: first.tier,
+            result: first.result,
+            sessionId: first.sessionId,
+            branch: first.branch,
+            checkpointId: first.checkpointId,
+            resultReason: first.resultReason,
           },
           task,
           config,
           ports: { budget, handoff: ports.handoff, trace: ports.trace },
-          traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
-        });
-        const escalationTraceId = lastTraceId(ports.trace);
+          traceAttributes: { sessionId: runId, taskId: first.taskId, attempt: 2 },
+        }));
+        const escalationTraceId = lastTraceId(ports.trace, runId, task.taskId, 2);
         if (escalation.action === 'escalate') {
-          const summaryRow = handoffSummaryLedgerRow({ runId, task, previous: interrupted, decision: escalation, traceId: escalationTraceId, now });
+          const summaryRow = handoffSummaryLedgerRow({ runId, task, previous: first, decision: escalation, traceId: escalationTraceId, now });
           if (summaryRow) {
             ledger.push(summaryRow);
             await recordSpend(summaryRow);
@@ -1000,8 +1201,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             dryRun: options.dryRun,
             baseCommit,
             requiredBaseCommit: options.requiredBaseCommit,
-            continueBranch: escalation.handoffBranch ?? interrupted.branch,
-            continueSessionId: interrupted.sessionId,
+            continueBranch: escalation.handoffBranch ?? first.branch,
+            continueSessionId: first.sessionId,
             onChangedFiles: changedFor(index),
             onStartupError,
             onProgress: progressFor(index, 2, escalation.tier),
@@ -1011,161 +1212,27 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           await recordHistory({ ports, row: latest, dryRun: options.dryRun });
           await recordSpend(latest);
         } else {
-          interrupted.resultReason = escalation.statusReason;
+          latest.resultReason = latest.result === 'error' && latest.resultReason ? latest.resultReason : escalation.statusReason;
         }
       }
-      taskStates[index] = stateFromRows(taskStates[index]!, ledger.filter((row) => row.taskId === task.taskId));
+      const rows = ledger.filter((row) => row.taskId === task.taskId);
+      taskStates[index] = stateFromRows(taskStates[index]!, rows);
       writeCurrent('running', null);
-      continue;
-    }
-    const taskInput = { taskId: task.taskId, title: task.title, body: task.body };
-    const sized = await sizeTask(taskInput, { signals: ports.signals, trace: ports.trace });
-    let estimate = sized;
-    if (ports.recall) {
-      try {
-        estimate = applyCheckpointRecall(sized, await ports.recall.recallFor(taskInput));
-      } catch (error) {
-        estimate = { ...sized, summary: `${sized.summary}; checkpoint recall unavailable: ${error instanceof Error ? error.message : 'search failed'}` };
-      }
-      const recallStatus = ports.recall.status?.();
-      if (recallStatus?.status === 'missing') estimate = { ...estimate, summary: `${estimate.summary}; ${recallStatus.detail}` };
-    }
-    task.size = estimate.size;
-    const state = taskStates[index]!;
-    state.size = estimate.size;
-    state.impact ??= structuredClone(estimate.signals?.impact ?? {
-      source: estimate.signals?.source ?? 'none', query: `${task.title}\n${task.body}`.trim(), nodes: [], edges: [],
-      totals: { filesTouched: estimate.signals?.filesTouched ?? 0, dependents: estimate.signals?.dependents ?? 0, testsPresent: estimate.signals?.testsPresent ?? false, nodes: 0, edges: 0 }, truncated: false,
-    });
-    writeCurrent('running', null);
-    const route = options.baseline
-      ? await routeBaseline({
-          task: taskInput,
-          estimate,
-          config,
-          ports: { history: ports.history, budget, trace: ports.trace },
-          traceAttributes: { sessionId: runId, taskId: task.taskId, attempt: 1 },
-        })
-      : await routeTask({
-          task: taskInput,
-          estimate,
-          config,
-          ports: { history: ports.history, budget, trace: ports.trace },
-          traceAttributes: { sessionId: runId, taskId: task.taskId, attempt: 1 },
-        });
-    const routeTraceId = lastTraceId(ports.trace);
-    options.onEvent?.({ type: 'route', taskId: task.taskId, size: estimate.size, confidence: estimate.confidence,
-      tier: route.action === 'start' ? route.tier.name : null,
-      harness: route.action === 'start' ? route.tier.harness : null,
-      model: route.action === 'start' ? route.tier.model : null,
-      ceilingNanos: route.action === 'start' ? task.firstAttemptCeilingUsd === undefined || options.baseline ? route.ceilingNanos : Math.min(route.ceilingNanos ?? Infinity, usdToNanos(task.firstAttemptCeilingUsd)) : null,
-      decision: route.reason });
-    if (route.action === 'skip') {
-      state.status = 'skipped';
-      state.statusReason = route.statusReason;
+    } catch (error) {
+      if (concurrency === 1) throw error;
+      const state = taskStates[index]!;
+      state.status = (stopRequested() && !ledger.some(row => row.taskId === task.taskId)) || (error instanceof Error && error.message.startsWith('not started:')) ? 'skipped' : 'failed';
+      state.statusReason = error instanceof Error ? error.message : String(error);
+      liveCosts.delete(task.taskId);
       writeCurrent('running', null);
-      continue;
+    } finally {
+      if (concurrency > 1) reservations.release(task.taskId);
     }
-    const first = await runAttempt({
-      runId,
-      task,
-      attempt: 1,
-      tier: route.tier,
-      ceilingNanos: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.ceilingNanos : Math.min(route.ceilingNanos ?? Infinity, usdToNanos(task.firstAttemptCeilingUsd)),
-      decision: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.reason : `${route.reason} Deliberate first-attempt ceiling override: $${task.firstAttemptCeilingUsd.toFixed(3)} (normal ceiling remains an upper bound).`,
-      escalatedFrom: null,
-      handoff: 'none',
-      handoffSummary: null,
-      traceId: routeTraceId,
-      config,
-      configPath: options.configPath,
-      ports,
-      now,
-      dryRun: options.dryRun,
-      baseCommit,
-      requiredBaseCommit: options.requiredBaseCommit,
-      onChangedFiles: changedFor(index),
-      onStartupError,
-      onProgress: progressFor(index, 1, route.tier),
-      onEvent: options.onEvent,
-    });
-    finishAttempt(first);
-    if (first.result === 'stopped' && options.stopRequested?.()) first.resultReason = options.stopRequested()!;
-    await recordHistory({ ports, row: first, dryRun: options.dryRun });
-    await recordSpend(first);
-    let latest = first;
-    if (first.result !== 'passed' && first.result !== 'error' && !options.stopRequested?.()) {
-      const escalation = await decideEscalation({
-        previous: {
-          attemptId: first.attemptId,
-          taskId: first.taskId,
-          attempt: first.attempt,
-          size: first.size,
-          tier: first.tier,
-          result: first.result,
-          sessionId: first.sessionId,
-          branch: first.branch,
-          checkpointId: first.checkpointId,
-          resultReason: first.resultReason,
-        },
-        task,
-        config,
-        ports: { budget, handoff: ports.handoff, trace: ports.trace },
-        traceAttributes: { sessionId: runId, taskId: first.taskId, attempt: 2 },
-      });
-      const escalationTraceId = lastTraceId(ports.trace);
-      if (escalation.action === 'escalate') {
-        const summaryRow = handoffSummaryLedgerRow({ runId, task, previous: first, decision: escalation, traceId: escalationTraceId, now });
-        if (summaryRow) {
-          ledger.push(summaryRow);
-          await recordSpend(summaryRow);
-        }
-        latest = await runAttempt({
-          runId,
-          task,
-          attempt: 2,
-          tier: escalation.tier,
-          ceilingNanos: escalation.ceilingNanos,
-          decision: escalation.reason,
-          escalatedFrom: escalation.escalatedFrom,
-          handoff: escalation.handoff,
-          handoffSummary: escalation.handoffSummary,
-          traceId: escalationTraceId,
-          config,
-          configPath: options.configPath,
-          ports,
-          now,
-          dryRun: options.dryRun,
-          baseCommit,
-          requiredBaseCommit: options.requiredBaseCommit,
-          continueBranch: escalation.handoffBranch ?? first.branch,
-          continueSessionId: first.sessionId,
-          onChangedFiles: changedFor(index),
-          onStartupError,
-          onProgress: progressFor(index, 2, escalation.tier),
-          onEvent: options.onEvent,
-        });
-        finishAttempt(latest);
-        await recordHistory({ ports, row: latest, dryRun: options.dryRun });
-        await recordSpend(latest);
-      } else {
-        latest.resultReason = latest.result === 'error' && latest.resultReason ? latest.resultReason : escalation.statusReason;
-      }
-    }
-    const rows = ledger.filter((row) => row.taskId === task.taskId);
-    state.status = statusFrom(latest.result);
-    state.statusReason = latest.resultReason;
-    state.attempts = latest.attempt;
-    state.tier = latest.tier;
-    state.model = latest.model;
-    state.spentNanos = rows.reduce((sum, row) => sum + row.estimatedCostNanos, 0);
-    state.escalated = latest.escalatedFrom !== null;
-    state.prUrl = latest.prUrl;
-    writeCurrent('running', null);
-  }
+  };
+  await runPool(tasks, concurrency, processTask);
 
   const endedAt = now().toISOString();
-  const runState = writeCurrent(options.stopRequested?.() ? 'interrupted' : 'finished', endedAt);
+  const runState = writeCurrent(stopRequested() ? 'interrupted' : 'finished', endedAt);
   await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
   const paths = writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
   return { runState, ledger, ...paths };

@@ -49,6 +49,8 @@ describe('init process lifecycle', () => {
         send -- "n\\r"
         expect -exact "Runner:"
         send -- "ao\\r"
+        expect -exact "Run tasks in parallel"
+        send -- "n\\r"
         expect -exact "Coding agents:"
         send -- "codex\\r"
         expect -exact "Monthly budget"

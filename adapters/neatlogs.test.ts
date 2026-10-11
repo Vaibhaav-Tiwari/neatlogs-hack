@@ -30,6 +30,18 @@ class FakeNeatlogs implements NeatlogsSdk {
 }
 
 describe('NeatlogsTraceAdapter', () => {
+  it('keeps decision ids per run/task/attempt when worker polling interleaves', async () => {
+    const sdk = new FakeNeatlogs();
+    let serial = 0;
+    sdk.injectTraceContext = carrier => { carrier.traceparent = `00-${String(++serial).padStart(32, '0')}-abcdef1234567890-01`; };
+    const adapter = new NeatlogsTraceAdapter({ env: { NEATLOGS_API_KEY: 'fake' }, sdk });
+    await adapter.span('tally.route', { sessionId: 'run-1', taskId: 'T1', attempt: 1 }, async () => {});
+    await adapter.span('tally.route', { sessionId: 'run-1', taskId: 'T2', attempt: 1 }, async () => {});
+    await adapter.span('tally.ceiling.poll', { sessionId: 'worker-1', taskId: 'T1' }, async () => {});
+    expect(adapter.lastTraceId('run-1', 'T1', 1)).toBe('1'.padStart(32, '0'));
+    expect(adapter.lastTraceId('run-1', 'T2', 1)).toBe('2'.padStart(32, '0'));
+    expect(adapter.lastTraceId()).toBe('3'.padStart(32, '0'));
+  });
   it('is off and acts as a no-op when the key is missing', async () => {
     const adapter = new NeatlogsTraceAdapter({ env: {}, sdk: new FakeNeatlogs() });
     let called = false;

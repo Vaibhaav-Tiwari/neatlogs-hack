@@ -124,7 +124,8 @@
         }
       }
     },
-    "concurrency": { "type": "integer", "minimum": 1 },
+    "concurrency": { "type": "integer", "minimum": 1, "default": 1 },
+    "parallelWorkers": { "type": "integer", "minimum": 1 },
     "entire": {
       "type": "object",
       "additionalProperties": false,

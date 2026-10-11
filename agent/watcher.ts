@@ -95,7 +95,16 @@ export class CeilingWatcher {
 
   /** Polls until the session has been stopped at its ceiling or the signal is aborted. */
   async watch(attempt: WatchedAttempt, options: WatchOptions = {}): Promise<WatchVerdict> {
-    const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        options.signal?.removeEventListener('abort', done);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      options.signal?.addEventListener('abort', done, { once: true });
+      if (options.signal?.aborted) done();
+    }));
     for (;;) {
       const verdict = await this.poll(attempt);
       if (verdict.action === 'stop' && verdict.stopped) return verdict;

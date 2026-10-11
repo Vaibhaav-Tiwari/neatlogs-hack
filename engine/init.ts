@@ -191,6 +191,7 @@ function printSummary(config: TallyConfig, print: (line: string) => void): void 
   print(config.budget.source === 'cfoai' ? `Budget: cfo.ai live account budget (local fallback: $${config.budget.usd})` : `Budget: $${config.budget.usd} from config`);
   for (const tier of config.tiers) print(`Tier ${tier.name}: ${tier.harness}/${tier.model} (${tier.sessionMode})`);
   print(`Products: ${(['neatlogs', 'entire', 'cfoai'] as const).map(name => `${name} ${config.integrations[name] ? 'on' : 'off'}`).join(', ')}`);
+  print(`Workers: ${config.runner === 'direct' ? 1 : config.parallelWorkers ?? 1} (${config.runner ?? 'ao'})`);
 }
 
 function tiersFor(choice: 'codex' | 'claude-code' | 'mixed'): TallyConfig['tiers'] {
@@ -212,7 +213,7 @@ function tiersFor(choice: 'codex' | 'claude-code' | 'mixed'): TallyConfig['tiers
   });
 }
 
-async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd: string, readLine: PromptReader, print: (line: string) => void): Promise<{ runner: 'ao' | 'direct'; tiers: TallyConfig['tiers'] }> {
+async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd: string, readLine: PromptReader, print: (line: string) => void): Promise<{ runner: 'ao' | 'direct'; concurrency: number; tiers: TallyConfig['tiers'] }> {
   let aoFound = false;
   try { await command('ao', ['--version'], { cwd }); aoFound = true; } catch { /* Optional CLI: direct mode needs no AO. */ }
   let runner = options.runner;
@@ -224,6 +225,11 @@ async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd
     const value = options.yes || options.dryRun ? 'ao' : (await readLine('Runner: parallel through Agent Orchestrator (ao), or one at a time directly (direct)?', 'ao')).trim();
     if (value !== 'ao' && value !== 'direct') throw new InitError('Runner must be ao or direct; nothing was changed.');
     runner = value;
+  }
+  let concurrency = 1;
+  if (runner === 'ao' && !options.yes && !options.dryRun && parseYes(await readLine('Run tasks in parallel through AO? y/N', 'N'))) {
+    concurrency = Number(await readLine('Maximum concurrent AO workers?', '3'));
+    if (!Number.isInteger(concurrency) || concurrency < 1) throw new InitError('Worker count must be a positive integer; nothing was changed.');
   }
   const statuses = [];
   for (const harness of ['claude-code', 'codex'] as const) {
@@ -239,7 +245,7 @@ async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd
   const required = choice === 'mixed' ? ['claude-code', 'codex'] : [choice];
   if (required.some(h => !ready.has(h as Harness))) throw new InitError(`Selected ${choice} requires installed and signed-in ${required.join(' and ')}; Tally will not substitute another harness.`);
   if (choice === 'mixed') print('Mixed tiers: cheap Codex Luna, middle Claude Sonnet 5.5, top Claude Opus 5.5.');
-  return { runner, tiers: tiersFor(choice as 'codex' | 'claude-code' | 'mixed') };
+  return { runner, concurrency, tiers: tiersFor(choice as 'codex' | 'claude-code' | 'mixed') };
 }
 
 async function consentClaude(config: TallyConfig, options: InitOptions, readLine: PromptReader, print: (line: string) => void): Promise<void> {
@@ -318,6 +324,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
       const setup = await chooseSetup({ ...options, runner: options.runner ?? before.runner ?? 'ao' }, options.command ?? defaultCommand, resolve(dirname(configPath), config.repo.path), readLine, print);
       if (setup.runner !== (before.runner ?? 'ao')) throw new InitError('Changing an existing installation runner requires uninstall and a fresh init; AO ownership will not be silently changed.');
       config.runner = setup.runner;
+      if (!options.yes && !options.dryRun) config.parallelWorkers = setup.concurrency;
       if (options.harnessChoice) config.tiers = setup.tiers;
     }
     if ((config.runner ?? 'ao') === 'ao') aoWorkerMode(config);
@@ -400,7 +407,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const neatlogs = options.integrations?.neatlogs ?? parseYes(await readLine('Enable neatlogs traces? y/N', 'N'));
   const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
   const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Enable cfo.ai budget integration? y/N', 'N'));
-  const { runner, tiers } = await chooseSetup(options, command, repoRoot, readLine, print);
+  const { runner, concurrency, tiers } = await chooseSetup(options, command, repoRoot, readLine, print);
   if (runner === 'ao') aoWorkerMode({ tiers });
   const projectId = runner === 'ao' ? basename(repoRoot) : '';
   const config: TallyConfig = {
@@ -429,7 +436,8 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
       source: cfoai ? 'cfoai' : 'config',
       usd: options.budgetUsd ?? 40,
     },
-    concurrency: runner === 'direct' ? 1 : 3,
+    concurrency,
+    parallelWorkers: concurrency,
     integrations: { neatlogs, entire, cfoai, slack: false },
   };
   await consentClaude(config, options, readLine, print);

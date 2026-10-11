@@ -20,6 +20,7 @@ export interface RunOptions {
   dryRun: boolean;
   baseline: boolean;
   budgetUsd?: number;
+  parallel?: number;
   only?: string;
   outputDir?: string;
   latestRunDir?: string;
