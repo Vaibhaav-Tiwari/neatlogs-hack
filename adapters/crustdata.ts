@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { estimateMarketCredits, writeMarketReport, applyMarketReviews, type MarketReview } from './market-report.js';
 import { loadEnv } from '../engine/env.js';
+import { runJobMarket } from './market-jobs.js';
 
 const ENDPOINT = 'https://api.crustdata.com/company/search';
 const API_VERSION = '2025-11-01';
@@ -19,6 +20,8 @@ export interface MarketSearchOptions {
   review?: string;
   plan?: boolean;
   onEstimate?: (credits: number) => void;
+  jobs?: boolean;
+  secondary?: string;
 }
 
 export interface MarketCompany {
@@ -33,6 +36,7 @@ export interface MarketCompany {
   sourceDate: string | null;
   label: 'candidate' | 'vendor' | 'hiring intent' | 'verified use' | 'rejected';
   review: MarketReview | null;
+  jobEvidence?: Array<{ id: string | number; title: string; url: string; date: string; terms: string[]; excerpt: string }>;
 }
 
 export interface MarketSearchResult {
@@ -49,6 +53,8 @@ export interface MarketSearchResult {
   replayed: boolean;
   csvPath: string;
   reportPath: string;
+  jobSearch?: { returnedCount: number; discardedCount: number; duplicates: number };
+  secondary?: MarketSearchResult;
 }
 
 export class CrustDataError extends Error {
@@ -130,6 +136,18 @@ function summarizeCompany(company: unknown): MarketCompany {
 
 export async function runCrustDataMarketSearch(options: MarketSearchOptions = {}): Promise<MarketSearchResult> {
   if (options.replay) return replayMarket(options);
+  if (options.jobs) {
+    const secondary = options.secondary ? replayMarket({ replay: options.secondary }, false) : undefined;
+    const result = await runJobMarket(options);
+    if (secondary && !options.plan) {
+      result.secondary = secondary;
+      const saved = JSON.parse(readFileSync(result.companiesPath, 'utf8'));
+      writeFileSync(result.companiesPath, `${JSON.stringify({ ...saved, secondary }, null, 2)}\n`);
+      writeMarketReport(result);
+    }
+    return result;
+  }
+  if (options.secondary) throw new CrustDataError('--secondary is for --jobs or cached job replay');
   if (options.review) throw new CrustDataError('Apply reviews to a cached snapshot with --replay');
   const payload = buildCodingAgentsMarketQuery(options);
   const maxCredits = options.maxCredits ?? 10;
@@ -231,7 +249,7 @@ export async function runCrustDataMarketSearch(options: MarketSearchOptions = {}
   return result;
 }
 
-function replayMarket(options: MarketSearchOptions): MarketSearchResult {
+function replayMarket(options: MarketSearchOptions, write = true): MarketSearchResult {
   if (options.limit !== undefined || options.keyword !== undefined || options.plan) throw new CrustDataError('Replay uses the saved query; omit limit, keyword and plan');
   let query: Record<string, unknown>, saved: Record<string, unknown>;
   try {
@@ -239,7 +257,7 @@ function replayMarket(options: MarketSearchOptions): MarketSearchResult {
     saved = recordValue(JSON.parse(readFileSync(resolve(dirname(options.replay!), 'companies.json'), 'utf8')));
   } catch { throw new CrustDataError('Cannot read saved query and companies.json'); }
   const queryHash = createHash('sha256').update(JSON.stringify(query.payload) ?? '').digest('hex');
-  if (query.endpoint !== ENDPOINT || query.method !== 'POST' || query.apiVersion !== API_VERSION || query.queryHash !== queryHash || saved.queryHash !== queryHash || saved.apiVersion !== API_VERSION ||
+  if (![ENDPOINT, 'https://api.crustdata.com/job/search'].includes(String(query.endpoint)) || query.method !== 'POST' || query.apiVersion !== API_VERSION || query.queryHash !== queryHash || saved.queryHash !== queryHash || saved.apiVersion !== API_VERSION ||
     !Array.isArray(saved.companies) || typeof saved.retrievedAt !== 'string' || !Number.isFinite(Date.parse(saved.retrievedAt)) ||
     typeof saved.estimatedMaxCredits !== 'number' || !Number.isFinite(saved.estimatedMaxCredits) || saved.estimatedMaxCredits < 0 || saved.returnedCount !== saved.companies.length) {
     throw new CrustDataError('Saved query and snapshot are invalid or do not match');
@@ -249,11 +267,16 @@ function replayMarket(options: MarketSearchOptions): MarketSearchResult {
     csvPath: resolve(outputDir, 'companies.csv'), reportPath: resolve(outputDir, 'report.md'),
     companies: saved.companies as MarketCompany[], totalCount: numberValue(saved.totalCount), nextCursor: Boolean(saved.nextCursor),
     creditCost: stringValue(saved.creditCost), estimatedMaxCredits: saved.estimatedMaxCredits,
-    retrievedAt: saved.retrievedAt, queryHash, replayed: true };
+    retrievedAt: saved.retrievedAt, queryHash, replayed: true,
+    ...(saved.jobSearch ? { jobSearch: saved.jobSearch as MarketSearchResult['jobSearch'] } : {}),
+    ...(saved.secondary ? { secondary: saved.secondary as MarketSearchResult } : {}) };
+  if (options.secondary) result.secondary = replayMarket({ replay: options.secondary }, false);
   applyMarketReviews(result.companies, options.review);
+  if (result.secondary) applyMarketReviews(result.secondary.companies);
+  if (!write) return result;
   mkdirSync(outputDir, { recursive: true });
   writeFileSync(result.queryPath, `${JSON.stringify(query, null, 2)}\n`);
-  writeFileSync(result.companiesPath, `${JSON.stringify({ ...saved, companies: result.companies, replayed: true }, null, 2)}\n`);
+  writeFileSync(result.companiesPath, `${JSON.stringify({ ...saved, companies: result.companies, secondary: result.secondary, replayed: true }, null, 2)}\n`);
   writeMarketReport(result);
   return result;
 }

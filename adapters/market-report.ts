@@ -83,17 +83,24 @@ const csv = (v: unknown): string => {
 };
 export function writeMarketReport(result: MarketSearchResult): void {
   const counts = labels.map(label => `${label}: ${result.companies.filter(c => c.label === label).length}`).join('; ');
-  const columns = ['id', 'name', 'domain', 'headcount', 'industry', 'label', 'reason', 'sourceUrl', 'sourceDate', 'retrievedAt'];
+  const columns = ['id', 'name', 'domain', 'headcount', 'industry', 'label', 'reason', 'sourceUrl', 'sourceDate', 'retrievedAt', 'jobTitle', 'evidence'];
   writeFileSync(result.csvPath, `${columns.join(',')}\n${result.companies.map(c => [c.id, c.name, c.domain, c.headcount, c.industry, c.label,
-    c.review?.reason ?? 'Firmographic candidate only; tool use unverified', c.review?.sourceUrl ?? c.sourceUrl,
-    c.review?.sourceDate ?? c.sourceDate, result.retrievedAt].map(csv).join(',')).join('\n')}\n`);
+    c.review?.reason ?? (c.jobEvidence ? 'Engineering job tool mention; hiring intent, not verified use' : 'Firmographic candidate only; tool use unverified'), c.review?.sourceUrl ?? c.sourceUrl,
+    c.review?.sourceDate ?? c.sourceDate, result.retrievedAt, c.jobEvidence?.[0]?.title, c.jobEvidence?.[0]?.excerpt].map(csv).join(',')).join('\n')}\n`);
   writeFileSync(result.reportPath, `# Find and qualify likely pilot companies\n\n` +
     `Retrieved: ${result.retrievedAt}; API: 2025-11-01. Returned ${result.companies.length}; API query matches: ${result.totalCount ?? 'unknown'}.\n` +
     `Credits reported: ${result.creditCost ?? 'unknown'}; conservative maximum estimate: ${result.estimatedMaxCredits}.\n` +
     `Query SHA256: ${result.queryHash}. ${result.replayed ? 'Cached replay: no API calls or new data.' : 'Single bounded batch; no pagination or enrichment.'}\n\n` +
     `Reviewed rows: ${result.companies.filter(c => c.review !== null).length}; ${counts}.\n\n` +
-    `Prospects, not adoption or market size. Headcount is not coding-agent seats. Labels are manual review judgements, not independently verified by Tally. API source dates are record-update timestamps, not the publication date or proof of current adoption. Dates remain unknown when absent.\n\n` +
+    (result.jobSearch && !result.companies.length ? 'No usable coding-tool hiring evidence in this bounded batch. The secondary sample is only firmographic evidence.\n\n' : '') +
+    `Prospects, not adoption or market size. Headcount is not coding-agent seats. Company reviews are manual judgements. Job labels require engineering category, explicit tool text, source and date; they establish hiring intent only, not deployed use or a qualified buyer. Posting companies can be staffing firms; cross-posts under different domains may refer to the same role/employer. Job dates are API date_added; postings may be stale. Company dates are API record updates, not publication dates. Sources are not independently visited.\n\n` +
+    (result.jobSearch ? `Job stage: ${result.jobSearch.returnedCount} returned posts; ${result.jobSearch.discardedCount} ambiguous/incomplete rows dropped; ${result.jobSearch.duplicates} duplicate-company posts grouped. ${result.companies.length} distinct companies, by normalized domain or company id.\n\n` +
+      `| Company | Label | Job title | Tool evidence | Source | Date |\n| --- | --- | --- | --- | --- | --- |\n` +
+      result.companies.slice(0, 10).map(c => `| ${md(c.name)} (${md(c.domain)}) | hiring intent | ${md(c.jobEvidence?.[0]?.title)} | ${md(c.jobEvidence?.[0]?.excerpt)} | ${md(c.sourceUrl)} | ${md(c.sourceDate)} |`).join('\n') + '\n\n' : '') +
+    (result.jobSearch ? '### Posting-company summary\n\n' : '') +
     `| Company | Label | Reason | Source | Source date |\n| --- | --- | --- | --- | --- |\n` +
-    result.companies.slice(0, 10).map(c => `| ${md(c.name)} (${md(c.domain)}) | ${md(c.label)} | ${md(c.review?.reason ?? 'Firmographic candidate; tool use unverified')} | ${md(c.review?.sourceUrl ?? c.sourceUrl)} | ${md(c.review?.sourceDate ?? c.sourceDate)} |`).join('\n') +
-    `\n\nShowing ${Math.min(10, result.companies.length)} of ${result.companies.length} returned rows. JSON/CSV retain all rows. No deduplication or extrapolation applied.\n`);
+    result.companies.slice(0, 10).map(c => `| ${md(c.name)} (${md(c.domain)}) | ${md(c.label)} | ${md(c.review?.reason ?? (c.jobEvidence ? 'Explicit tool mention in engineering post; not buyer qualification' : 'Firmographic candidate; tool use unverified'))} | ${md(c.review?.sourceUrl ?? c.sourceUrl)} | ${md(c.review?.sourceDate ?? c.sourceDate)} |`).join('\n') +
+    `\n\nShowing ${Math.min(10, result.companies.length)} of ${result.companies.length} companies. JSON/CSV retain all qualified companies; JSON retains grouped job evidence. No extrapolation applied.\n` +
+    (result.secondary ? `\n### Secondary firmographic sample (no tool-use proof)\n\nRetrieved ${result.secondary.retrievedAt}; ${result.secondary.companies.length} returned; ${result.secondary.totalCount ?? 'unknown'} API matches; ${result.secondary.creditCost ?? 'unknown'} credits originally. Query SHA256 ${result.secondary.queryHash}.\n\n` +
+      `| Company | Label | Reason | Source | Record update |\n| --- | --- | --- | --- | --- |\n` + result.secondary.companies.slice(0, 10).map(c => `| ${md(c.name)} | ${md(c.label)} | ${md(c.review?.reason ?? 'Tool use unverified')} | ${md(c.review?.sourceUrl ?? c.sourceUrl)} | ${md(c.review?.sourceDate ?? c.sourceDate)} |`).join('\n') + '\n' : ''));
 }

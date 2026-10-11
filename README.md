@@ -321,6 +321,7 @@ npm test
 | `tally traces drain --run <id>` | Recover only that finished run's worker traces, verify readable spans, then update saved status and worker trace ids. Use `--output <run-dir>` for a run stored elsewhere. |
 | `tally market --limit 5 --max-credits 4` | Find and qualify likely pilot companies with CrustData; checks account pricing before a bounded search. |
 | `tally market --plan --limit 10` | Free account-pricing check; prints a conservative maximum credit estimate without searching. |
+| `tally market --jobs --limit 25 --max-credits 1` | Find engineering posts with explicit coding-tool evidence; group by posting company and label hiring intent, never confirmed adoption. |
 | `tally market --replay .tally/market/latest/query.json --output /tmp/tally-market-replay` | Render the saved snapshot again with no API calls or credentials. |
 | `tally publish --out site` | Static dashboard export with a sensitive-content scan. No deployment. |
 
@@ -364,7 +365,25 @@ Use `null` for unknown source dates. Intent/use labels require a sourced excerpt
 Tally checks the structure, not the truth of manual judgements. Without a review,
 every returned row remains an unverified candidate. JSON/CSV retain all rows;
 the short Markdown report shows at most ten. No deduplication or extrapolation
-is applied.
+is applied to company search.
+
+The stronger second stage is `--jobs`: a single batch (default 25) of engineering
+posts from the past 90 days whose descriptions mention Claude Code, Cursor,
+GitHub Copilot, Codex or AI coding agents. It uses Job Search, with no premium
+company filters. Ambiguous Cursor/Codex mentions need nearby AI/coding context;
+rows missing title, company identity, source URL or date are dropped. Accepted
+rows are grouped by normalized domain (or company id) and labelled hiring intent.
+That is evidence in a job advertisement, not a verified deployment, current open
+role, buyer or purchase commitment. Posting entities can be staffing companies;
+cross-posts under different domains are not assumed to be the same buyer.
+Dates are the API's `metadata.date_added`, not independently verified publication
+dates. JSON retains grouped job evidence and CSV includes title/excerpt.
+
+Use `--jobs --secondary <saved-company-query.json>` to include a previously
+reviewed firmographic snapshot as a secondary table without re-fetching it.
+The job snapshot embeds that secondary evidence, so `--replay <job-query.json>`
+later renders both tables with no API calls. Query match counts remain database
+counts, never adoption or market size.
 
 ## Layout
 

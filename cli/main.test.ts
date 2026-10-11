@@ -185,6 +185,7 @@ describe('parseCli', () => {
       kind: 'command', command: 'market', options: { replay: 'saved/query.json', review: 'labels.json', maxCredits: 2.5 },
     });
     for (const cap of ['0', '-1', 'NaN', 'Infinity']) expect(parseCli(['market', '--max-credits', cap])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['market', '--jobs', '--secondary', 'saved/query.json'])).toMatchObject({ kind: 'command', options: { jobs: true, secondary: 'saved/query.json' } });
   });
 
   it('rejects a budget that is not a positive number', () => {

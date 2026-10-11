@@ -65,6 +65,8 @@ export interface CliOptions {
   replay?: string;
   review?: string;
   maxCredits?: number;
+  jobs?: boolean;
+  secondary?: string;
   out?: string;
   runs?: string[];
   runId?: string;
@@ -126,6 +128,8 @@ Options:
   --max-credits <N> Market estimated credit cap (default: 10); refuses above cap
   --replay <query.json> Replay cached market snapshot; no API calls
   --review <json>   Apply human review labels to a cached market snapshot
+  --jobs            Search engineering job posts for explicit coding-tool evidence
+  --secondary <query.json> Include a cached firmographic table in the job report
                     market --plan checks free account pricing, without a search
   --out <dir>       New directory for tally publish (required)
   --runs <ids>      Comma-separated run folder ids (default: all real runs)
@@ -167,6 +171,8 @@ export function parseCli(argv: string[]): ParsedCli {
         replay: { type: 'string' },
         review: { type: 'string' },
         'max-credits': { type: 'string' },
+        jobs: { type: 'boolean', default: false },
+        secondary: { type: 'string' },
         repeats: { type: 'string' },
         out: { type: 'string' },
         runs: { type: 'string' },
@@ -266,6 +272,8 @@ export function parseCli(argv: string[]): ParsedCli {
       ...(values.replay === undefined ? {} : { replay: values.replay }),
       ...(values.review === undefined ? {} : { review: values.review }),
       ...(maxCredits === undefined ? {} : { maxCredits }),
+      ...(values.jobs ? { jobs: true } : {}),
+      ...(values.secondary === undefined ? {} : { secondary: values.secondary }),
       ...(values.out !== undefined ? { out: values.out } : {}),
       ...(values.runs !== undefined ? { runs: values.runs.split(',') } : {}),
       ...(values.run !== undefined ? { runId: values.run } : {}),
@@ -471,6 +479,8 @@ async function marketCommand(options: CliOptions, io: CliIO): Promise<number> {
       replay: options.replay,
       review: options.review,
       maxCredits: options.maxCredits,
+      jobs: options.jobs,
+      secondary: options.secondary,
       plan: options.plan,
       onEstimate: credits => io.stdout(`estimated maximum: ${credits} credits; cap: ${options.maxCredits ?? 10}`),
     });
