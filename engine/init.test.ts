@@ -107,6 +107,7 @@ describe('runInit', () => {
         return { stdout: file === 'claude' ? '{"loggedIn":true}' : 'Logged in using ChatGPT', stderr: '' };
       }
       if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
+      if (file === 'ao' && args[0] === 'status' && args[1] === '--json') return { stdout: '{"state":"running"}', stderr: '' };
       if (args[0] === 'agent') return { stdout: JSON.stringify({ supported: [{ id: 'codex' }, { id: 'claude-code' }], installed: installed.map((id) => ({ id })) }), stderr: '' };
       if (args[1] === 'get') return { stdout: JSON.stringify({ project: { config: {} } }), stderr: '' };
       return { stdout: '{}', stderr: '' };
@@ -256,7 +257,8 @@ describe('runInit', () => {
       if (file === 'codex') return { stdout: 'Logged in using ChatGPT', stderr: '' };
       if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
       if (args[0] === 'agent') return { stdout: JSON.stringify({ installed: [{ id: 'codex' }] }), stderr: '' };
-      if (args[0] === 'status' || args[0] === '--version' || file === 'gh') return { stdout: 'ok', stderr: '' };
+      if (file === 'ao' && args[0] === 'status') return { stdout: '{"state":"running"}', stderr: '' };
+      if (args[0] === '--version' || file === 'gh') return { stdout: 'ok', stderr: '' };
       if (args[1] === 'get') return { stdout: JSON.stringify({ project: { config: { postCreate: ['echo preserved'], worker: { agentConfig: { permissions: 'default' } } } } }), stderr: '' };
       expect(printed.join('\n')).toContain('Requested worker rules (not yet enforced)');
       expect(printed.join('\n')).toContain('git add and git commit');
@@ -308,7 +310,7 @@ describe('runInit', () => {
       if (joined === 'git remote get-url origin') return { stdout: 'git@github.com:acme/widgets.git\n', stderr: '' };
       if (joined === 'git --version') return { stdout: 'git version test', stderr: '' };
       if (joined === 'ao agent ls --refresh --json') return { stdout: JSON.stringify({ installed: [{ id: 'codex' }] }), stderr: '' };
-      if (joined === 'ao status' || file === 'gh') return { stdout: 'ok', stderr: '' };
+      if (joined === 'ao status --json' || file === 'gh') return { stdout: joined === 'ao status --json' ? '{"state":"running"}' : 'ok', stderr: '' };
       if (file === 'entire') return { stdout: args[0] === 'status' ? '{"enabled":true}' : 'ok', stderr: '' };
       if (file === 'ao' && args[0] === 'project' && args[1] === 'get') {
         if (!projectAdded) throw new Error('missing project');

@@ -51,8 +51,8 @@ describe('runDoctor', () => {
     config.claudeCode = { allow: claudeAllowList(config.test) };
     config.integrations = { neatlogs: false, entire: false, cfoai: false, slack: false };
     writeFileSync(configPath, stringify(config));
-    const lines = await runDoctor({ configPath, env: {}, runner: async file => ({
-      stdout: file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT'
+    const lines = await runDoctor({ configPath, env: {}, runner: async (file, args) => ({
+      stdout: file === 'ao' && args[0] === 'status' ? '{"state":"running"}' : file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT'
         : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'default' } } } } }), stderr: '' }) });
     expect(lines.find(line => line.product === 'AO worker auto mode')).toMatchObject({
       status: 'connected', detail: expect.stringContaining('immediately before each spawn under a project lock'),
@@ -68,7 +68,7 @@ describe('runDoctor', () => {
     config.budget.source = 'config';
     config.claudeCode = { allow: claudeAllowList(config.test) };
     writeFileSync(configPath, stringify(config));
-    const runner = vi.fn(async (file: string) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'default' } }, postCreate: [aoClaudeSetupCommand(configPath)] } } }), stderr: '' }));
+    const runner = vi.fn(async (file: string, args: string[]) => ({ stdout: file === 'ao' && args[0] === 'status' ? '{"state":"running"}' : file === 'claude' ? '{"loggedIn":true}' : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'default' } }, postCreate: [aoClaudeSetupCommand(configPath)] } } }), stderr: '' }));
     const check = vi.fn(async () => ({ status: 'missing' as const, detail: 'no token' }));
     const lines = await runDoctor({ runner, configPath, env: {}, cfoaiCheck: check });
     expect(lines.filter(line => ['neatlogs key', 'Entire CLI', 'Entire graph plugin', 'cfo.ai'].includes(line.product)).every(line => line.status === 'off' && line.fix === null)).toBe(true);
@@ -77,38 +77,81 @@ describe('runDoctor', () => {
     expect(lines.some(line => line.status === 'missing' || line.status === 'broken')).toBe(false);
   });
   it('reports a missing AO executable honestly instead of daemon-only connectivity', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-ao-missing-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'ao';
+    delete config.repo.aoProject;
+    config.integrations = { neatlogs: false, entire: false, cfoai: false, slack: false };
+    writeFileSync(configPath, stringify(config));
     const detail = 'Agent Orchestrator (AO) is required; looked in PATH and app bundles; set TALLY_AO_BIN to its executable path.';
     const lines = await runDoctor({ runner: async (file) => {
       if (file === 'ao') throw new CommandError(detail, 'ENOENT');
       return { stdout: 'ok', stderr: '' };
-    }, env: {}, cfoaiCheck: async () => ({ status: 'missing', detail: 'test' }) });
+    }, configPath, env: {}, cfoaiCheck: async () => ({ status: 'missing', detail: 'test' }) });
     expect(lines.find((line) => line.product === 'AO daemon')).toMatchObject({ status: 'missing', detail, fix: expect.stringContaining('TALLY_AO_BIN') });
   });
+  it('keeps optional integrations off before init without probing local credentials', async () => {
+    const runner = vi.fn(async (_file: string, _args: string[] = []) => ({ stdout: 'ok', stderr: '' }));
+    const cfoaiCheck = vi.fn(async () => ({ status: 'ok' as const, detail: 'connected' }));
+    const lines = await runDoctor({ runner, env: { NEATLOGS_API_KEY: 'present' }, cfoaiCheck });
+    expect(lines.filter(line => ['AO daemon', 'Entire CLI', 'Entire graph plugin', 'neatlogs key', 'cfo.ai'].includes(line.product))
+      .every(line => line.status === 'off' && line.fix === null)).toBe(true);
+    expect(doctorHasFailures(lines)).toBe(false);
+    expect(runner.mock.calls.some(([file]) => file === 'ao' || file === 'entire')).toBe(false);
+    expect(cfoaiCheck).not.toHaveBeenCalled();
+  });
+  it('reports a stopped configured AO daemon as broken with the start command', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-ao-stopped-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'ao';
+    delete config.repo.aoProject;
+    config.integrations = { neatlogs: false, entire: false, cfoai: false, slack: false };
+    writeFileSync(configPath, stringify(config));
+    const lines = await runDoctor({ configPath, runner: async (file, args) => ({
+      stdout: file === 'ao' && args[0] === 'status' ? '{"state":"stopped"}' : 'ok', stderr: '' }), env: {} });
+    expect(lines.find(line => line.product === 'AO daemon')).toMatchObject({ status: 'broken', detail: 'AO daemon is stopped', fix: 'ao start' });
+  });
   it('reports product status and exact fix commands', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-products-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'direct';
+    config.integrations = { neatlogs: true, entire: false, cfoai: true, slack: false };
+    config.budget.source = 'config';
+    writeFileSync(configPath, stringify(config));
     const runner: DoctorRunner = async (file, args) => {
       const command = `${file} ${args.join(' ')}`;
-      if (command === 'ao status') return { stdout: 'ok', stderr: '' };
       if (command === 'gh auth status') throw Object.assign(new Error('missing'), { code: 'ENOENT' });
-      if (command === 'entire --version') return { stdout: 'entire 1', stderr: '' };
-      if (command === 'entire graph --help') throw new Error('no graph');
+      if (file === 'claude') return { stdout: args[0] === 'auth' ? '{"loggedIn":true}' : 'Claude 1', stderr: '' };
       throw new Error(command);
     };
     const lines = await runDoctor({
       runner,
+      configPath,
       env: { NEATLOGS_API_KEY: 'set' },
       cfoaiCheck: async () => ({ status: 'ok', detail: 'Tally cached token works against https://api.cfo.ai/mcp' }),
     });
-    expect(lines.find((line) => line.product === 'AO daemon')).toMatchObject({ status: 'connected' });
+    expect(lines.find((line) => line.product === 'AO daemon')).toMatchObject({ status: 'off' });
     expect(lines.find((line) => line.product === 'GitHub CLI')).toMatchObject({ status: 'missing', fix: 'gh auth login' });
-    expect(lines.find((line) => line.product === 'Entire graph plugin')).toMatchObject({ status: 'broken', fix: 'entire enable' });
+    expect(lines.find((line) => line.product === 'Entire graph plugin')).toMatchObject({ status: 'off' });
     expect(lines.find((line) => line.product === 'neatlogs key')).toMatchObject({ status: 'connected' });
     expect(lines.find((line) => line.product === 'cfo.ai')).toMatchObject({ status: 'connected' });
   });
 
   it('reports cfo.ai from Tally token state with the Tally login fix', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-cfoai-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'direct';
+    config.integrations = { neatlogs: false, entire: false, cfoai: true, slack: false };
+    config.budget.source = 'config';
+    writeFileSync(configPath, stringify(config));
     const runner: DoctorRunner = async () => ({ stdout: 'ok', stderr: '' });
     const lines = await runDoctor({
       runner,
+      configPath,
       env: { NEATLOGS_API_KEY: 'set' },
       cfoaiCheck: async () => ({ status: 'missing', detail: 'Tally has no cached cfo.ai token. Run `tally login cfoai` to connect cfo.ai.' }),
     });
@@ -146,7 +189,7 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
     writeFileSync(join(dir, 'backlog.yaml'), 'tasks: []\n');
     const runner: DoctorRunner = async (file, args) => {
       const command = `${file} ${args.join(' ')}`;
-      if (command === 'ao status') return { stdout: 'ok', stderr: '' };
+      if (command === 'ao status --json') return { stdout: '{"state":"running"}', stderr: '' };
       if (command === 'ao project get fly-doom-jev --json') {
         return {
           stdout: JSON.stringify({
@@ -204,6 +247,7 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
     writeFileSync(join(dir, 'backlog.yaml'), 'tasks: []\n');
     const runner: DoctorRunner = async (file, args) => {
       const command = `${file} ${args.join(' ')}`;
+      if (command === 'ao status --json') return { stdout: '{"state":"running"}', stderr: '' };
       if (command === 'ao project get fly-doom-jev --json') {
         return {
           stdout: JSON.stringify({

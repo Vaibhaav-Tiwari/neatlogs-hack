@@ -334,4 +334,29 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
       expect(c.out.join('\n')).toContain('1 tasks, 1 attempts');
     });
   });
+  it('explains that an empty plan will start no tasks', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-cli-empty-plan-'));
+    const configPath = join(dir, 'tally.yaml');
+    writeFileSync(configPath, `version: 1
+repo: { path: ".", baseBranch: "main" }
+test: { command: "npm test" }
+backlog: { source: "file", file: "backlog.yaml" }
+tiers:
+  - name: cheap
+    harness: codex
+    provider: test
+    model: test-model
+    price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 }
+    ceilingFraction: 1
+ceilings:
+  bySizeUsd: { small: 1, medium: 2, large: 3 }
+budget: { source: config, usd: 10 }
+integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
+`);
+    writeFileSync(join(dir, 'backlog.yaml'), 'tasks: []\n');
+    const { io, out, err } = capture();
+    expect(await main(['run', '--plan', '--dry-run', '--config', configPath], io)).toBe(0);
+    expect(out.join('\n')).toContain('No tasks found in the configured file backlog "backlog.yaml"; nothing would start.');
+    expect(err).toEqual([]);
+  });
 });
