@@ -18,6 +18,8 @@ function fixture() {
   let fail = false;
   const mutations: string[] = [];
   const command: InitCommandRunner = async (file, args) => {
+    if (file === 'claude') throw new Error('not installed');
+    if (file === 'codex') return { stdout: 'Logged in using ChatGPT', stderr: '' };
     if (file === 'git') return { stdout: args[0] === 'rev-parse' ? cwd : args[0] === 'branch' ? 'main' : '', stderr: '' };
     if (file === 'gh' || args[0] === 'status') return { stdout: 'ok', stderr: '' };
     if (args[0] === 'agent') return { stdout: '{"installed":[{"id":"codex"}]}', stderr: '' };

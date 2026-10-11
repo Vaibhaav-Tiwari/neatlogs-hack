@@ -12,7 +12,7 @@ describe('runInit', () => {
     const output: string[] = [];
     const readLine = vi.fn(async () => { throw new Error('unexpected prompt'); });
     const result = await runInit({ cwd: repo, command: detectedAgents(repo), doctor: async () => [], onboarding: async () => undefined,
-      yes: true, testCommand: 'node --check js/app.js', setupCommand: '', budgetUsd: 5, issueLabel: 'ready',
+      yes: true, allowClaude: true, testCommand: 'node --check js/app.js', setupCommand: '', budgetUsd: 5, issueLabel: 'ready',
       integrations: { neatlogs: false, entire: false, cfoai: false }, readLine, print: line => output.push(line) });
     expect(result.applied).toBe(true);
     expect(readLine).not.toHaveBeenCalled();
@@ -31,6 +31,10 @@ describe('runInit', () => {
   });
   function detectedAgents(repo: string, installed = ['claude-code']): InitCommandRunner {
     return async (file, args) => {
+      if (file === 'claude' || file === 'codex') {
+        if (!installed.includes(file === 'claude' ? 'claude-code' : 'codex')) throw new Error('not installed');
+        return { stdout: file === 'claude' ? '{"loggedIn":true}' : 'Logged in using ChatGPT', stderr: '' };
+      }
       if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
       if (args[0] === 'agent') return { stdout: JSON.stringify({ supported: [{ id: 'codex' }, { id: 'claude-code' }], installed: installed.map((id) => ({ id })) }), stderr: '' };
       if (args[1] === 'get') return { stdout: JSON.stringify({ project: { config: {} } }), stderr: '' };
@@ -51,6 +55,7 @@ describe('runInit', () => {
     const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, doctor: async () => [], onboarding,
       readBudget: async () => ({ source: 'cfoai', monthlyLimitNanos: 40_000_000_000, limitNanos: 40_000_000_000, limitSource: 'cfoai' }),
       cfoaiCheck: async () => ({ status: 'ok', detail: 'fake connected' }),
+      allowClaude: true,
       readLine: async (question, fallback) => { questions.push(question); return question.includes('fallback if') ? '5' : question === 'Enable cfo.ai budget integration? y/N' || question === 'Connect y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? ''; } });
     expect(onboarding).toHaveBeenCalledOnce();
     expect(parseYaml(readFileSync(result.configPath, 'utf8')).budget.cfoai.orgId).toBe('42');
@@ -88,13 +93,13 @@ describe('runInit', () => {
   it('accepts explicit shell commands for a static repo and proposes only installed Claude tiers', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-explicit-'));
     const output: string[] = [];
-    const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: (line) => output.push(line), doctor: async () => [],
+    const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: (line) => output.push(line), doctor: async () => [], allowClaude: true,
       readLine: async (question, fallback) => question === 'Test command (shell command)' ? 'test -f index.html && sh checks.sh' : question === 'Setup command (shell command; optional)' ? 'sh prepare.sh' : question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
     const config = parseYaml(readFileSync(result.configPath, 'utf8'));
     expect(config.test.command).toBe('test -f index.html && sh checks.sh');
     expect(config.test.setupCommand).toBe('sh prepare.sh');
     expect(config.tiers.every((tier: { harness: string }) => tier.harness === 'claude-code')).toBe(true);
-    expect(output.join('\n')).toContain('Codex is not installed');
+    expect(output.join('\n')).toContain('codex is not installed');
     expect(output.join('\n')).toContain('No setup command found');
   });
 
@@ -127,7 +132,7 @@ describe('runInit', () => {
   it('refuses to propose an absent supported agent when none is installed', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-no-agent-'));
     writeFileSync(join(repo, 'Makefile'), 'test:\n\ttrue\n');
-    await expect(runInit({ cwd: repo, command: detectedAgents(repo, []), doctor: async () => [], yes: true, print: () => {} })).rejects.toThrow('No installed Codex or Claude Code');
+    await expect(runInit({ cwd: repo, command: detectedAgents(repo, []), doctor: async () => [], yes: true, print: () => {} })).rejects.toThrow('No installed and signed-in Codex or Claude Code');
     expect(existsSync(join(repo, 'tally.yaml'))).toBe(false);
   });
 
@@ -141,7 +146,7 @@ describe('runInit', () => {
 
   it('allows an explicitly supplied test without inventing optional setup', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-no-setup-'));
-    const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, doctor: async () => [],
+    const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, doctor: async () => [], allowClaude: true,
       readLine: async (question, fallback) => question === 'Test command (shell command)' ? 'sh checks.sh' : question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
     expect(result.setupCommand).toBeNull();
     expect(parseYaml(readFileSync(result.configPath, 'utf8')).test).not.toHaveProperty('setupCommand');
@@ -153,9 +158,11 @@ describe('runInit', () => {
     const mutations: string[] = [];
     let confirmations = 0;
     const command: InitCommandRunner = async (file, args) => {
+      if (file === 'claude') throw new Error('not installed');
+      if (file === 'codex') return { stdout: 'Logged in using ChatGPT', stderr: '' };
       if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
       if (args[0] === 'agent') return { stdout: JSON.stringify({ installed: [{ id: 'codex' }] }), stderr: '' };
-      if (args[0] === 'status' || file === 'gh') return { stdout: 'ok', stderr: '' };
+      if (args[0] === 'status' || args[0] === '--version' || file === 'gh') return { stdout: 'ok', stderr: '' };
       if (args[1] === 'get') return { stdout: JSON.stringify({ project: { config: { postCreate: ['echo preserved'], worker: { agentConfig: { permissions: 'default' } } } } }), stderr: '' };
       expect(printed.join('\n')).toContain('Requested worker rules (not yet enforced)');
       expect(printed.join('\n')).toContain('git add and git commit');
@@ -199,6 +206,9 @@ describe('runInit', () => {
     const command: InitCommandRunner = async (file, args, options) => {
       calls.push({ file, args, cwd: options?.cwd });
       const joined = `${file} ${args.join(' ')}`;
+      if (file === 'claude') throw new Error('not installed');
+      if (file === 'codex') return { stdout: 'Logged in using ChatGPT', stderr: '' };
+      if (joined === 'ao --version') return { stdout: 'ao test', stderr: '' };
       if (joined === 'git rev-parse --show-toplevel') return { stdout: repo, stderr: '' };
       if (joined === 'git branch --show-current') return { stdout: 'main\n', stderr: '' };
       if (joined === 'git remote get-url origin') return { stdout: 'git@github.com:acme/widgets.git\n', stderr: '' };
@@ -226,7 +236,7 @@ describe('runInit', () => {
       print: () => {},
       onboarding: async () => undefined,
       env: { NEATLOGS_API_KEY: 'fake-test-key' },
-      readLine: async () => answers[prompt++]!,
+      readLine: async (question, fallback) => question.startsWith('Runner:') || question.startsWith('Coding agents:') ? fallback ?? '' : answers[prompt++]!,
       doctor: async () => [{ product: 'AO daemon', status: 'connected', detail: 'ok', fix: null }],
     });
 

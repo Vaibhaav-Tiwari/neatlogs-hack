@@ -23,8 +23,9 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<{ re
   const aoBin = typeof configuredBin === 'string' ? configuredBin : undefined;
   const command = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: aoBin ? resolve(dirname(configPath), aoBin) : undefined }));
   const cwd = dirname(configPath);
-  const { stdout } = await command('ao', ['project', 'get', record.projectId, '--json'], { cwd });
-  const current = (JSON.parse(stdout) as { project: { config?: Record<string, unknown> } }).project.config ?? {};
+  const direct = record.runner === 'direct';
+  const current = direct ? {} : (JSON.parse((await command('ao', ['project', 'get', record.projectId, '--json'], { cwd })).stdout) as { project: { config?: Record<string, unknown> } }).project.config ?? {};
+  if (direct && (record.projectCreated || record.addedSetupCommand || record.workerAfterHash)) throw new Error('Invalid direct installation record contains AO ownership; refusing to uninstall.');
   if (record.projectCreated && configHash(current) !== record.projectConfigHash) throw new Error('AO project configuration changed after init; refusing to unregister it.');
   if (!record.projectCreated && record.addedSetupCommand && configHash(current.postCreate ?? []) !== record.postCreateAfterHash) {
     throw new Error('AO post-create hooks changed after init; refusing to overwrite them.');

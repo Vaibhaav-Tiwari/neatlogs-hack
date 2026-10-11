@@ -6,6 +6,7 @@ import { stringify } from 'yaml';
 import { loadConfig } from './config.js';
 import { runDoctor, type DoctorRunner } from './doctor.js';
 import { CommandError } from '../adapters/command.js';
+import { claudeAllowList } from './harness.js';
 
 describe('runDoctor', () => {
   it('reports disabled products as off, without checking credentials or optional CLIs', async () => {
@@ -15,8 +16,9 @@ describe('runDoctor', () => {
     config.repo.aoProject = 'scratch';
     config.integrations = { neatlogs: false, entire: false, cfoai: false, slack: false };
     config.budget.source = 'config';
+    config.claudeCode = { allow: claudeAllowList(config.test) };
     writeFileSync(configPath, stringify(config));
-    const runner = vi.fn(async (_file: string) => ({ stdout: JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'auto' } } } } }), stderr: '' }));
+    const runner = vi.fn(async (file: string) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'auto' } } } } }), stderr: '' }));
     const check = vi.fn(async () => ({ status: 'missing' as const, detail: 'no token' }));
     const lines = await runDoctor({ runner, configPath, env: {}, cfoaiCheck: check });
     expect(lines.filter(line => ['neatlogs key', 'Entire CLI', 'Entire graph plugin', 'cfo.ai'].includes(line.product)).every(line => line.status === 'off' && line.fix === null)).toBe(true);

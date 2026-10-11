@@ -31,7 +31,7 @@ export function sampleConfig(overrides: Partial<TallyConfig> = {}): TallyConfig 
     tiers: [
       {
         name: 'bronze',
-        harness: 'harness-a',
+        harness: 'claude-code',
         model: 'model-small',
         provider: 'fake',
         price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0.1, outputUsdPerMTok: 5 },
@@ -39,7 +39,7 @@ export function sampleConfig(overrides: Partial<TallyConfig> = {}): TallyConfig 
       },
       {
         name: 'silver',
-        harness: 'harness-a',
+        harness: 'claude-code',
         model: 'model-mid',
         provider: 'fake',
         price: { inputUsdPerMTok: 2, cachedInputUsdPerMTok: 0.2, outputUsdPerMTok: 10 },
@@ -47,7 +47,7 @@ export function sampleConfig(overrides: Partial<TallyConfig> = {}): TallyConfig 
       },
       {
         name: 'gold',
-        harness: 'harness-b',
+        harness: 'codex',
         model: 'model-big',
         provider: 'fake',
         price: { inputUsdPerMTok: 4, cachedInputUsdPerMTok: 0.4, outputUsdPerMTok: 20 },

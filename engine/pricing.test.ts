@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { CODEX_LIST_PRICES, tierPriceNote } from './pricing.js';
+import { CLAUDE_LIST_PRICES, CODEX_LIST_PRICES, tierPriceNote } from './pricing.js';
 
 describe('price provenance', () => {
+  it.each(Object.keys(CLAUDE_LIST_PRICES))('cites verified Anthropic input/cache-read/output rates for %s', model => {
+    const note = tierPriceNote({ provider: 'anthropic', model, price: CLAUDE_LIST_PRICES[model]! });
+    expect(note).toContain('Verified base list price');
+    expect(note).toContain('https://platform.claude.com/docs/en/about-claude/pricing');
+    expect(note).toContain('checked 2026-10-11');
+    expect(note).toContain('cache writes');
+    expect(note).toContain('Not an invoice');
+  });
+  it('does not verify the old doubled Claude cache-read prices', () => {
+    expect(tierPriceNote({ provider: 'anthropic', model: 'claude-sonnet-5-5', price: { inputUsdPerMTok: 2, cachedInputUsdPerMTok: 0.2, outputUsdPerMTok: 10 } })).toContain('Unverified configured price: differs');
+  });
   it.each(Object.keys(CODEX_LIST_PRICES))('cites verified base rates for %s', (model) => {
     const note = tierPriceNote({ provider: 'openai', model, price: CODEX_LIST_PRICES[model]! });
     expect(note).toContain('Verified base list price');

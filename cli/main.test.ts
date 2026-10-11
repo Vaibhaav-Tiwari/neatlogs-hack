@@ -30,6 +30,9 @@ async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
 
 describe('parseCli', () => {
   it('parses scripted init flags and rejects invalid product opt-ins', () => {
+    expect(parseCli(['init', '--runner', 'direct', '--harness', 'mixed', '--allow-claude'])).toMatchObject({ kind: 'command', options: { runner: 'direct', harnessChoice: 'mixed', allowClaude: true } });
+    expect(parseCli(['init', '--runner', 'other'])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['init', '--harness', 'other'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['init', '--yes', '--test-command', 'node --check app.js', '--setup-command', '', '--budget', '5', '--issue-label', 'tally', '--neatlogs', 'yes', '--entire', 'no', '--cfoai', 'yes', '--verbose'])).toMatchObject({ kind: 'command', options: {
       testCommand: 'node --check app.js', setupCommand: '', budgetUsd: 5, issueLabel: 'tally', verbose: true,
       integrations: { neatlogs: true, entire: false, cfoai: true },
