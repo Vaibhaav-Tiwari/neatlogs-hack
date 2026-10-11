@@ -460,6 +460,8 @@ describe('runRealTally', () => {
       const result = await runRealTally({ configPath, dryRun: false, baseline: false,
         outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
         ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+          history: { lookup: async () => null, record: async () => {} },
+          worktrees: { checkoutPathFor: async () => '/worker', commitFor: async () => 'test-base' },
           trace: new FakeTrace(), verifier: new SequenceVerifier([{ passed: true, reason: null }]),
           workerTraceDrain: { drainWorker: async () => { expect(worker.stopped).toContain('session-1'); drains++; } },
           workerTraceReader: { verifyFor: async context => {
