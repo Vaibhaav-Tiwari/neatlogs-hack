@@ -14,7 +14,7 @@ describe('runInit', () => {
     const onboarding = vi.fn(async () => undefined);
     const command = vi.fn(detectedAgents(repo, ['claude-code', 'codex']));
     await expect(runInit({ cwd: repo, command, runner: 'ao', harnessChoice: 'mixed', yes: true,
-      testCommand: 'true', setupCommand: '', print: () => {}, onboarding })).rejects.toThrow(/consent|allow-claude/i);
+      testCommand: 'true', setupCommand: '', print: () => {}, onboarding })).rejects.toThrow('Claude Code allow-list was not approved');
     expect(onboarding).not.toHaveBeenCalled();
     expect(existsSync(join(repo, 'tally.yaml'))).toBe(false);
     expect(command.mock.calls.some(([, args]) => args[0] === 'project')).toBe(false);
