@@ -17,8 +17,8 @@ class FakeHistory implements PriceHistoryPort, PriceHistoryWriterPort {
   }
 }
 
-function response(body: unknown, ok = true): Response {
-  return { ok, status: ok ? 200 : 503, json: async () => body } as Response;
+function response(body: unknown, ok = true, status = ok ? 200 : 503): Response {
+  return { ok, status, json: async () => body } as Response;
 }
 
 describe('NeatlogsPriceHistory', () => {
@@ -57,6 +57,41 @@ describe('NeatlogsPriceHistory', () => {
 
     await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: usdToNanos(0.2) });
     expect(calls[0]).toContain('workflowName=tally-cfo-agent');
+  });
+
+  it('follows opaque trace cursors with a supported page size and a page bound', async () => {
+    const traceUrls: URL[] = [];
+    const history = new NeatlogsPriceHistory({
+      fallback: new FakeHistory(null),
+      env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
+      limit: 100,
+      maxPages: 2,
+      fetch: async (input) => {
+        const url = new URL(`${input}`);
+        if (!url.pathname.endsWith('/traces')) return response({ spans: [] });
+        traceUrls.push(url);
+        const cursor = url.searchParams.get('cursor');
+        if (!cursor) {
+          return response({
+            data: {
+              page: { hasMore: true, limit: 50, nextCursor: 'opaque/cursor+one=' },
+              traces: [{ traceName: historyTraceName({ size: 'small', tier: 'cheap', result: 'passed', costNanos: 100 }) }],
+            },
+          });
+        }
+        return response({
+          data: {
+            page: { hasMore: true, limit: 50, nextCursor: 'cursor-three' },
+            traces: [{ traceName: historyTraceName({ size: 'small', tier: 'cheap', result: 'passed', costNanos: 300 }) }],
+          },
+        });
+      },
+    });
+
+    await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 1, avgCostNanos: 200 });
+    expect(traceUrls).toHaveLength(2);
+    expect(traceUrls[0]!.searchParams.get('limit')).toBe('50');
+    expect(traceUrls[1]!.searchParams.get('cursor')).toBe('opaque/cursor+one=');
   });
 
   it('reads observations directly from the public trace list shape returned by neatlogs', async () => {
@@ -112,9 +147,10 @@ describe('NeatlogsPriceHistory', () => {
     const failing = new NeatlogsPriceHistory({
       fallback,
       env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
-      fetch: async () => response({}, false),
+      fetch: async () => response({}, false, 400),
     });
     await expect(failing.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 55 });
+    expect(failing.status()).toMatchObject({ status: 'error', detail: expect.stringContaining('traces read failed: 400') });
 
     const empty = new NeatlogsPriceHistory({
       fallback,
@@ -122,6 +158,7 @@ describe('NeatlogsPriceHistory', () => {
       fetch: async (input) => (`${input}`.includes('/traces?') ? response({ traces: [{ id: 'trace-1' }] }) : response({ spans: [] })),
     });
     await expect(empty.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 55 });
+    expect(empty.status()).toMatchObject({ status: 'ok', detail: expect.stringContaining('No usable Neatlogs price-history observations') });
   });
 
   it('continues recording to the local fallback', async () => {

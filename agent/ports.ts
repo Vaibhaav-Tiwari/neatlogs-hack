@@ -66,6 +66,8 @@ export interface PriceStats {
 export interface PriceHistoryPort {
   /** Null, or attempts = 0, when there is no history for the pair. */
   lookup(size: TaskSize, tier: string): Promise<PriceStats | null>;
+  /** Optional status for remote history adapters; local adapters can omit it. */
+  status?(): IntegrationState | null;
 }
 
 /** One finished attempt, as the history needs it. */

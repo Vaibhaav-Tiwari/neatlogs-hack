@@ -1456,6 +1456,40 @@ describe('runRealTally', () => {
     expect(result.runState.integrations.neatlogs).toEqual({ status: 'ok', detail: 'https://app.neatlogs.com/traces/test-trace' });
   });
 
+  it('includes price-history fallback failures in the saved Neatlogs integration status', async () => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+
+    const result = await runRealTally({
+      configPath,
+      dryRun: true,
+      baseline: false,
+      outputDir: join(dir, 'neatlogs-history-error'),
+      now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+        trace: new FakeTrace(),
+        history: {
+          lookup: async () => null,
+          record: async () => {},
+          status: () => ({ status: 'error' as const, detail: 'Neatlogs price-history read failed; using local history. HTTP 400' }),
+        },
+      },
+    });
+
+    expect(result.runState.integrations.neatlogs).toEqual({
+      status: 'error',
+      detail: 'https://app.neatlogs.com/traces/test-trace; Neatlogs price-history read failed; using local history. HTTP 400',
+    });
+  });
+
   it.each([
     [
       'neatlogs',
