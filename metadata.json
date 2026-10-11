@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MZ1V97X9B8061T1AQHCTWA",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-2/first-user-flow",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "README.md",
+    "adapters/cfoai.ts",
+    "cli/init-terminal.test.ts",
+    "cli/main.test.ts",
+    "cli/main.ts",
+    "engine/init-recovery.test.ts",
+    "engine/init-transaction.ts",
+    "engine/init.test.ts",
+    "engine/init.ts",
+    "engine/install-record.ts",
+    "engine/plan.test.ts",
+    "engine/plan.ts",
+    "engine/preflight.ts",
+    "engine/uninstall.test.ts",
+    "engine/uninstall.ts",
+    "onboarding/neatlogs.test.ts",
+    "onboarding/neatlogs.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5361954,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 193764480,
+    "output_tokens": 602017,
+    "api_call_count": 1463
+  }
+}

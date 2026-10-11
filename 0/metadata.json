@@ -1,0 +1,64 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MZ1V97X9B8061T1AQHCTWA",
+  "session_id": "01a125af-3ac6-7c02-a43b-a467b6fc3d3a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T07:50:22.333232Z",
+  "branch": "ao/neatlogs-hack-2/first-user-flow",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "README.md",
+    "adapters/cfoai.ts",
+    "cli/init-terminal.test.ts",
+    "cli/main.test.ts",
+    "cli/main.ts",
+    "engine/init-recovery.test.ts",
+    "engine/init-transaction.ts",
+    "engine/init.test.ts",
+    "engine/init.ts",
+    "engine/install-record.ts",
+    "engine/plan.test.ts",
+    "engine/plan.ts",
+    "engine/preflight.ts",
+    "engine/uninstall.test.ts",
+    "engine/uninstall.ts",
+    "onboarding/neatlogs.test.ts",
+    "onboarding/neatlogs.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "c7891b7e2216",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5361954,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 193764480,
+    "output_tokens": 602017,
+    "api_call_count": 1463
+  },
+  "session_metrics": {
+    "turn_count": 17
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T07:50:21.549727Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 703,
+    "human_modified": 59,
+    "human_removed": 0,
+    "total_committed": 703,
+    "total_lines_changed": 762,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
