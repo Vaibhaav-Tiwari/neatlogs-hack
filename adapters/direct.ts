@@ -104,6 +104,7 @@ interface Session {
   stopped: boolean;
   error: string | null;
   denied: boolean;
+  permissionWarnings: string[];
 }
 
 export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPort {
@@ -159,7 +160,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
       const child = (this.options.launch ?? ((file, args, options) => spawn(file, args, options)))('claude', args, { cwd: checkoutPath, env, detached: true, stdio: 'pipe' });
       const meter = new ClaudeUsageMeter();
       let complete!: () => void;
-      const session: Session = { child, branch, checkoutPath, directory, meter, completion: new Promise(resolve => { complete = resolve; }), closed: false, stopped: false, error: null, denied: false };
+      const session: Session = { child, branch, checkoutPath, directory, meter, completion: new Promise(resolve => { complete = resolve; }), closed: false, stopped: false, error: null, denied: false, permissionWarnings: [] };
       this.sessions.set(sessionId, session);
       let buffer = '', stderr = '';
       const decoder = new StringDecoder('utf8');
@@ -169,9 +170,14 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
           const event = record(JSON.parse(line));
           meter.consume(event);
           if (event.type === 'result') {
+            if (Array.isArray(event.permission_denials)) session.permissionWarnings = event.permission_denials.map((denial: unknown) => {
+              const item = record(denial);
+              const command = record(item.tool_input).command;
+              return `permission denied for ${String(item.tool_name ?? 'tool')}${typeof command === 'string' ? `: ${command}` : ''}`.slice(0, 2000);
+            });
             if (event.is_error) session.error = typeof event.result === 'string' ? event.result.slice(0, 2000) : 'Claude reported an error';
             // Successful results may include earlier denials the worker recovered from.
-            if (event.is_error && Array.isArray(event.permission_denials) && event.permission_denials.length) { session.denied = true; session.error = `worker asked for input: permission denied for ${event.permission_denials.map((d: unknown) => record(d).tool_name ?? 'tool').join(', ')}`; }
+            if (event.is_error && session.permissionWarnings.length) { session.denied = true; session.error = `permission failure: ${session.permissionWarnings.join('; ')}`; }
           }
         } catch { session.error = 'Invalid JSON in Claude stream; live usage cannot be trusted'; void this.stop(sessionId, session.error).catch(() => {}); }
       };
@@ -186,12 +192,15 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
       child.on('error', error => { session.error = `Could not start Claude Code: ${error.message}; no harness will be substituted`; });
       child.once('close', (code, signal) => {
         consume(buffer + decoder.end());
-        if (code !== 0 && !session.stopped && !session.error) session.error = `Claude Code exited ${code ?? signal}: ${stderr}`;
+        if (code !== 0 && !session.stopped && !session.error) session.error = `Claude Code exited ${code ?? signal}: ${stderr}${session.permissionWarnings.length ? `; permission failure: ${session.permissionWarnings.join('; ')}` : ''}`;
         session.closed = true; complete();
       });
       await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
       const testPath = paths.get(scripts[0]!.rule)!;
-      child.stdin.end(`${input.prompt}\n\nTally verification instruction: run exactly ${testPath} as your verification command, not the raw test command or a shell wrapper. This executable is outside the worktree and approved only for execution. Do not read, edit, replace or delete it. It runs the consented test command in your current worktree. Setup is already complete; do not run setup.\n`);
+      const newline = input.prompt.indexOf('\n');
+      const prefix = newline < 0 ? input.prompt : input.prompt.slice(0, newline);
+      const body = newline < 0 ? '' : input.prompt.slice(newline + 1);
+      child.stdin.end(`${prefix}\n\nTally verification instruction (takes precedence over the issue): run exactly ${testPath} first, before making edits, and again after your changes. Never run a raw test pipeline from the issue or wrap this script in a shell. This executable is outside the worktree and approved only for execution. Do not read, edit, replace or delete it. It runs the consented test command in your current worktree. Setup is already complete; do not run setup.\n\n${body}\n`);
       return { sessionId, branch, checkoutPath, setupDurationMs };
     } catch (error) {
       if (created) await this.command('git', ['worktree', 'remove', '--force', checkoutPath], { cwd: this.options.repoPath }).catch(() => {});
@@ -216,7 +225,8 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
       if (timedOut) await this.stop(id, 'worker exceeded wall-clock limit');
     } finally { if (timer) clearTimeout(timer); }
     return { status: timedOut ? 'timeout' : session.denied ? 'needs_input' : session.error ? 'error' : session.stopped ? 'terminated' : !session.meter.usage() ? 'never_started' : 'idle', branch: session.branch, checkoutPath: session.checkoutPath, prUrl: null,
-      resultReason: timedOut ? 'worker exceeded wall-clock limit' : session.error };
+      resultReason: timedOut ? 'worker exceeded wall-clock limit' : session.error,
+      ...(session.permissionWarnings.length ? { permissionWarnings: session.permissionWarnings } : {}) };
   }
   async usageFor(id: string): Promise<LiveUsage | null> { return this.session(id).meter.usage(); }
   async settledUsageFor(id: string): Promise<LiveUsage | null> {

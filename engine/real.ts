@@ -67,6 +67,7 @@ export interface WorkerResult {
   checkoutPath: string | null;
   prUrl: string | null;
   resultReason?: string | null;
+  permissionWarnings?: string[];
 }
 
 export interface WorkerPort {
@@ -298,6 +299,8 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
       : 'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
     publishInstruction,
     'Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.',
+    ...(config.runner === 'direct' && tier.harness === 'claude-code'
+      ? ['Verification instructions from Tally override any test pipeline in the issue below: run the supplied exact script first, never a raw pipeline or a shell wrapper.'] : []),
     '',
     task.body || '(No issue body was provided.)',
     '',
@@ -526,7 +529,9 @@ async function runSingleAttempt(input: {
     const completionUsage = input.dryRun ? null : await (completionPort.settledUsageFor?.(started.sessionId) ?? completionPort.usageFor(started.sessionId));
     if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated') && !(completionUsage?.tokens.total)))) {
       result = 'error';
-      resultReason = 'worker never started';
+      resultReason = workerResult.permissionWarnings?.length
+        ? `permission failure: worker produced no commit after refused commands: ${workerResult.permissionWarnings.join('; ')}`
+        : 'worker never started';
     } else if (workerResult.status === 'experiment_stop') {
       result = 'stopped';
       resultReason = workerResult.resultReason ?? 'stopped: experiment cap reached';
@@ -544,8 +549,10 @@ async function runSingleAttempt(input: {
         result = 'error';
         resultReason = 'could not locate worker checkout';
       } else if (!input.dryRun && (await input.ports.publisher.commitsAhead({ checkoutPath: checkoutPath!, branch: branch!, config: input.config })) <= 0) {
-        result = 'failed';
-        resultReason = 'no changes made';
+        result = workerResult.permissionWarnings?.length ? 'error' : 'failed';
+        resultReason = workerResult.permissionWarnings?.length
+          ? `permission failure: worker produced no commit after refused commands: ${workerResult.permissionWarnings.join('; ')}`
+          : 'no changes made';
       } else {
         const verification = await input.ports.verifier.verify({
           checkoutPath,
@@ -657,6 +664,9 @@ async function runSingleAttempt(input: {
     catch (error) { resultReason = `${resultReason ?? 'verified and published'}; checkout cleanup failed: ${error instanceof Error ? error.message : String(error)}`; }
   }
 
+  if (workerResult?.permissionWarnings?.length && (result === 'passed' || result === 'failed')) {
+    resultReason = `${resultReason ? `${resultReason}; ` : ''}warning: ${workerResult.permissionWarnings.join('; ')}`;
+  }
   return {
     schemaVersion: SCHEMA_VERSION,
     attemptId: attemptId(input.runId, input.task.taskId, input.attempt) + (input.retrySuffix ?? ''),
@@ -682,6 +692,7 @@ async function runSingleAttempt(input: {
     result,
     resultReason,
     scopeWarnings,
+    ...(workerResult?.permissionWarnings?.length ? { permissionWarnings: workerResult.permissionWarnings } : {}),
     escalatedFrom: input.escalatedFrom,
     handoff: input.handoff,
     handoffText: input.handoffSummary,

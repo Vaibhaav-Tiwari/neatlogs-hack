@@ -78,6 +78,8 @@ export interface LedgerRow {
   /** Short explanation of the result, e.g. "2 tests failing" or "ceiling crossed". */
   resultReason: string | null;
   scopeWarnings?: string[];
+  /** Refused worker tool calls; warnings unless the worker errored or made no commit. */
+  permissionWarnings?: string[];
   /** attemptId of the attempt this one took over from, if it is an escalation. */
   escalatedFrom: string | null;
   handoff: Handoff;

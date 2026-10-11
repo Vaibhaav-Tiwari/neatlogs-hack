@@ -816,6 +816,30 @@ describe('runRealTally', () => {
     expect(result.ledger.every((row) => row.result === 'failed' && row.resultReason === 'no changes made' && row.prUrl === null)).toBe(true);
   });
 
+  it.each(['idle', 'error'] as const)('does not escalate permission failures with no commit or an errored worker (%s)', async status => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    worker.commitsAheadCount = 0;
+    worker.wait = async () => ({ status, branch: 'task', checkoutPath: '/tmp/worker', prUrl: null,
+      resultReason: status === 'error' ? 'permission failure: permission denied for Bash: raw test pipeline' : null,
+      permissionWarnings: ['permission denied for Bash: raw test pipeline'] });
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+    try {
+      const result = await runRealTally({ configPath, dryRun: false, baseline: false,
+        outputDir: join(dir, 'permission-error'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+        ports: { intake, signals, worker, verifier, usage: worker, sessions: worker, publisher: worker } });
+      expect(verifier.calls).toBe(0);
+      expect(worker.published).toHaveLength(0);
+      expect(worker.starts).toHaveLength(1);
+      expect(result.ledger).toHaveLength(1);
+      expect(result.ledger[0]).toMatchObject({ result: 'error', resultReason: expect.stringContaining('permission failure'),
+        permissionWarnings: ['permission denied for Bash: raw test pipeline'] });
+      expect(validateLedger(result.ledger).ok).toBe(true);
+      const disk = JSON.parse(readFileSync(join(dir, 'permission-error', 'ledger.json'), 'utf8'));
+      expect(disk[0].permissionWarnings).toEqual(result.ledger[0]?.permissionWarnings);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('publishes the verified worker branch from Tally and records the PR URL', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
