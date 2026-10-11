@@ -5,8 +5,34 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultCommand, runInit, type InitCommandRunner } from './init.js';
 import { installRecordPath } from './install-record.js';
+import { aoClaudeSetupCommand } from './ao-claude-settings.js';
+import { runUninstall } from './uninstall.js';
 
 describe('runInit', () => {
+  it.each([false, true])('installs Claude AO prelaunch settings and restores ownership (doctor recovery: %s)', async recover => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-ao-claude-'));
+    const original = { postCreate: ['echo existing'], worker: { agentConfig: { permissions: 'auto', effort: 'high' } }, env: { KEEP: 'yes' } };
+    let project = structuredClone(original);
+    const command: InitCommandRunner = async (file, args, options) => {
+      if (file === 'ao' && args[0] === 'project' && args[1] === 'get') return { stdout: JSON.stringify({ project: { path: repo, config: project } }), stderr: '' };
+      if (file === 'ao' && args[0] === 'project' && args[1] === 'set-config') { project = JSON.parse(args[args.indexOf('--config-json') + 1]!); return { stdout: '{}', stderr: '' }; }
+      return detectedAgents(repo)(file, args, options);
+    };
+    let doctorCalls = 0;
+    const options = { cwd: repo, runner: 'ao' as const, harnessChoice: 'claude-code' as const, command,
+      doctor: async () => { doctorCalls += 1; if (recover && doctorCalls === 1) throw new Error('doctor interrupted'); return []; }, onboarding: async () => undefined,
+      yes: true, allowClaude: true, testCommand: 'true | cat', setupCommand: 'echo setup', print: () => {} };
+    if (recover) await expect(runInit(options)).rejects.toThrow('doctor interrupted');
+    const result = await runInit(options);
+    expect(project.worker.agentConfig).toEqual({ permissions: 'default', effort: 'high' });
+    expect(project.postCreate).toEqual(['echo existing', aoClaudeSetupCommand(result.configPath)]);
+    const ownership = JSON.parse(readFileSync(installRecordPath(result.configPath), 'utf8'));
+    expect(ownership.workerPermissionMode).toBe('default');
+    expect(ownership.addedSetupCommand).toBe(project.postCreate[1]);
+    expect(project.env).toEqual(original.env);
+    await runUninstall({ configPath: result.configPath, command, readLine: async () => 'y' });
+    expect(project).toEqual(original);
+  });
   it('initializes a static repo non-interactively from flags and prints a compact summary', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-flags-'));
     const output: string[] = [];

@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { CommandError } from '../adapters/command.js';
 import { configHash, contentHash, type InstallRecord } from './install-record.js';
 import type { InitCommandRunner } from './init.js';
-import { withWorkerAutoMode } from './preflight.js';
+import { withWorkerPermissionMode } from './preflight.js';
 
 export interface InitTransaction {
   version: 1;
@@ -32,6 +32,7 @@ export function readPendingInit(configPath: string): InitTransaction | null {
       value.record.version !== 1 || (value.record.runner !== undefined && !['ao', 'direct'].includes(value.record.runner)) || typeof value.record.projectId !== 'string' || typeof value.record.projectCreated !== 'boolean' || typeof value.record.projectConfigHash !== 'string') {
     throw new CommandError(`Invalid init recovery record at ${path}; preserve it and inspect it before retrying.`);
   }
+  if (value.record.workerPermissionMode !== undefined && !['auto', 'default'].includes(value.record.workerPermissionMode)) throw new CommandError('Invalid init recovery worker permission mode.');
   return value;
 }
 
@@ -72,7 +73,7 @@ export async function applyInitTransaction(transaction: InitTransaction, command
       if (!record.projectCreated && hash !== transaction.beforeProjectConfigHash && hash !== record.projectConfigHash) {
         throw new CommandError('AO project settings changed since init was proposed; refusing to overwrite them.');
       }
-      const next = record.workerAfterHash ? withWorkerAutoMode(current) : { ...current };
+      const next = record.workerAfterHash ? withWorkerPermissionMode(current, record.workerPermissionMode ?? 'auto') : { ...current };
       if (record.addedSetupCommand) {
         const commands = Array.isArray(next.postCreate) ? next.postCreate as string[] : [];
         next.postCreate = commands.includes(record.addedSetupCommand) ? commands : [...commands, record.addedSetupCommand];

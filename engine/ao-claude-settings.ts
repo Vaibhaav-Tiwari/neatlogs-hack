@@ -45,6 +45,7 @@ export interface AoClaudeSettingsOptions {
   worktreePath?: string;
   scriptRoot?: string;
   command?: Command;
+  runSetup?: boolean;
 }
 
 export interface AoClaudeSettingsResult {
@@ -121,6 +122,8 @@ export async function installAoClaudeSettings(options: AoClaudeSettingsOptions):
   chmodSync(settingsPath, 0o600);
   writeFileSync(instructionsPath, instructions, { mode: 0o600 });
   chmodSync(instructionsPath, 0o600);
+  const setupScript = scripts.find(script => script.name === 'setup')?.path;
+  if (options.runSetup && setupScript) await command(setupScript, [], { cwd: worktree });
   return { installed: true, settingsPath, testScript: scripts.find(script => script.name === 'test')!.path,
-    ...(scripts.some(script => script.name === 'setup') ? { setupScript: scripts.find(script => script.name === 'setup')!.path } : {}) };
+    ...(setupScript ? { setupScript } : {}) };
 }

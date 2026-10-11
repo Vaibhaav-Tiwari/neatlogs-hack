@@ -15,6 +15,7 @@ export interface InstallRecord {
   workerExisted?: boolean;
   workerBefore?: unknown;
   workerAfterHash?: string;
+  workerPermissionMode?: 'auto' | 'default';
 }
 
 export function installRecordPath(configPath: string): string {

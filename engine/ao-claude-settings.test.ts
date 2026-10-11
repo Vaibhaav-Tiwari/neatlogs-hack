@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
@@ -30,6 +30,24 @@ function fixture() {
 }
 
 describe('AO Claude local settings', () => {
+  it('runs only the consented external setup executable before launch and propagates setup failure', async () => {
+    const f = fixture();
+    const command = vi.fn(async (file: string, args: string[], options: { cwd: string }) => {
+      if (file === 'git') return f.command(file, args, options);
+      expect(file).toContain(f.scriptRoot);
+      expect(args).toEqual([]);
+      expect(options.cwd).toBe(realpathSync(f.worktreePath));
+      expect(readFileSync(file, 'utf8')).toBe('#!/bin/sh\nset -e\nprintf setup-ok\n');
+      expect(existsSync(join(f.worktreePath, '.claude/settings.local.json'))).toBe(true);
+      return { stdout: 'setup-ok', stderr: '' };
+    });
+    await installAoClaudeSettings({ ...f, command, runSetup: true });
+    expect(command.mock.calls.filter(([file]) => file !== 'git')).toHaveLength(1);
+    await expect(installAoClaudeSettings({ ...f, runSetup: true, command: async (file, args, options) => {
+      if (file === 'git') return f.command(file, args, options);
+      throw new Error('approved setup failed');
+    } })).rejects.toThrow('approved setup failed');
+  });
   it('materializes content-bound scripts outside the worker and preserves hooks/settings', async () => {
     const f = fixture();
     mkdirSync(join(f.worktreePath, '.claude'));
