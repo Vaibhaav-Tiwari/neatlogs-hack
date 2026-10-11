@@ -34,7 +34,7 @@ describe('direct runner through the real loop', () => {
     const configPath = join(dir, 'tally.yaml'); writeFileSync(configPath, stringify(config));
     const children: Array<EventEmitter & { pid: number }> = [];
     const paths: string[] = [], branches: string[] = [];
-    const command: DirectRunnerOptions['command'] = (file, args, options) => file === 'claude' ? Promise.resolve({ stdout: '{"loggedIn":true}', stderr: '' }) : runCommand(file, file === 'git' && args[0] === 'commit' ? ['-c', 'user.name=Tally Test', '-c', 'user.email=tally-test@example.invalid', ...args] : args, options);
+    const command: DirectRunnerOptions['command'] = (file, args, options) => file === 'claude' ? Promise.resolve({ stdout: '{"loggedIn":true}', stderr: '' }) : runCommand(file, file === 'git' && args.includes('commit') ? ['-c', 'user.name=Tally Test', '-c', 'user.email=tally-test@example.invalid', ...args] : args, options);
     const runner = new DirectRunner({ repoPath: dir, baseBranch: 'main', requiredBaseCommit: base, test: config.test, approvedRules: config.claudeCode!.allow, command,
       launch: (_file, args, options) => {
         const child = Object.assign(new EventEmitter(), { pid: 10000 + children.length, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough() });
@@ -53,8 +53,8 @@ describe('direct runner through the real loop', () => {
           } else {
             expect(git(['log', '-1', '--format=%s'], options.cwd)).toBe('wip: preserve Tally ceiling-stopped task edits');
             writeFileSync(join(options.cwd, 'calc.js'), readFileSync(join(options.cwd, 'calc.js'), 'utf8') + '// continued from the first attempt\n');
-            git(['add', 'calc.js'], options.cwd);
-            git(['-c', 'user.name=Tally Test', '-c', 'user.email=tally-test@example.invalid', 'commit', '-m', 'fix add'], options.cwd);
+            writeFileSync(join(options.cwd, 'new file.txt'), 'new task output\n');
+            writeFileSync(join(options.cwd, 'vercel.json'), '{}\n');
             child.stdout.write(JSON.stringify({ type: 'result', is_error: false, permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'raw test pipeline' } }], usage: { input_tokens: 200, output_tokens: 10 } }) + '\n');
             queueMicrotask(() => child.emit('close', 0, null));
           }
@@ -73,8 +73,13 @@ describe('direct runner through the real loop', () => {
           worktrees: { checkoutPathFor: async () => paths[0]!, commitFor: async () => base,
             commitWorkInProgress: async () => { git(['add', '-A'], paths[0]); git(['-c', 'user.name=Tally Test', '-c', 'user.email=tally-test@example.invalid', 'commit', '-m', 'wip: preserve Tally ceiling-stopped task edits'], paths[0]); return git(['rev-parse', 'HEAD'], paths[0]); } },
           publisher: { commitsAhead: input => publisher.commitsAhead(input), changedFiles: input => publisher.changedFiles(input),
-            publishPr: async input => { publishedBranch = input.branch; expect(git(['rev-list', '--count', `${base}..HEAD`], input.checkoutPath)).toBe('2'); return 'https://github.com/acme/calc/pull/1'; } },
-          verifier: { verify: async input => { await runCommand('node', ['--check', 'calc.js'], { cwd: input.checkoutPath! }); return { passed: testsPass, reason: testsPass ? 'syntax passed' : 'verification failed' }; } },
+            publishPr: async input => { publishedBranch = input.branch; expect(git(['rev-list', '--count', `${base}..HEAD`], input.checkoutPath)).toBe('2'); expect(input.scopeWarnings).toEqual(['vercel.json']); return 'https://github.com/acme/calc/pull/1'; } },
+          verifier: { verify: async input => {
+            expect(git(['status', '--porcelain'], input.checkoutPath!)).toBe('');
+            expect(git(['log', '-1', '--format=%s'], input.checkoutPath!)).toBe('tally: commit completed task edits');
+            expect(git(['diff', '--name-only', `${base}..HEAD`], input.checkoutPath!)).toContain('new file.txt');
+            await runCommand('node', ['--check', 'calc.js'], { cwd: input.checkoutPath! }); return { passed: testsPass, reason: testsPass ? 'syntax passed' : 'verification failed' };
+          } },
         },
       });
       expect(result.ledger.map(row => row.result)).toEqual(['stopped', testsPass ? 'passed' : 'failed']);
@@ -82,6 +87,10 @@ describe('direct runner through the real loop', () => {
       expect(result.ledger[1]?.prUrl).toBe(testsPass ? 'https://github.com/acme/calc/pull/1' : null);
       expect(result.ledger[1]?.permissionWarnings).toEqual(['permission denied for Bash: raw test pipeline']);
       expect(result.ledger[1]?.resultReason).toContain('warning: permission denied for Bash: raw test pipeline');
+      expect(result.ledger[1]?.tallyCommit).toMatch(/^[0-9a-f]{40}$/);
+      expect(result.ledger[1]?.resultReason).toContain('Tally committed task changes');
+      const disk = JSON.parse(readFileSync(join(dir, 'runs', 'test', 'ledger.json'), 'utf8'));
+      expect(disk[1].tallyCommit).toBe(result.ledger[1]?.tallyCommit);
       expect(paths[0]).toBe(paths[1]); expect(branches[0]).toBe(branches[1]); expect(publishedBranch).toBe(testsPass ? branches[0] : undefined);
       expect(result.ledger.every(row => row.estimatedCostNanos > 0)).toBe(true);
       expect(existsSync(paths[0]!)).toBe(!testsPass);

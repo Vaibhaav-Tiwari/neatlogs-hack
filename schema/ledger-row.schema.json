@@ -82,6 +82,7 @@
     "resultReason": { "type": ["string", "null"] },
     "scopeWarnings": { "type": "array", "items": { "type": "string" } },
     "permissionWarnings": { "type": "array", "items": { "type": "string" } },
+    "tallyCommit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
     "escalatedFrom": { "type": ["string", "null"] },
     "handoff": { "enum": ["none", "restart", "entire-handoff"] },
     "handoffText": { "type": ["string", "null"] },
