@@ -38,7 +38,8 @@ import { CommandVerifier, EntireGraphVerifier, type VerifierPort } from '../adap
 import { attemptId, ceilingNanos, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
 import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
 import { type BacklogTask } from './backlog.js';
-import { loadConfig } from './config.js';
+import { ConfigError, loadConfig } from './config.js';
+import { modelAccessConfigurationError } from './model-access.js';
 import { createPriceHistory } from './price-history.js';
 import { writeRunFiles } from './output.js';
 import { tierPriceNote } from './pricing.js';
@@ -433,10 +434,23 @@ function stateFromRows(taskState: TaskState, rows: LedgerRow[]): TaskState {
 }
 
 async function runAttemptWithRetry(input: Parameters<typeof runSingleAttempt>[0]): Promise<LedgerRow> {
-  const row = await runSingleAttempt(input);
+  let row: LedgerRow;
+  try {
+    row = await runSingleAttempt(input);
+  } catch (error) {
+    const modelError = modelAccessConfigurationError(error, input.tier);
+    if (modelError) throw new ConfigError(input.configPath, [modelError]);
+    throw error;
+  }
   if (row.result === 'error' && row.resultReason === 'worker never started' && !(row.tokens?.total) && !input.dryRun) {
     await input.onStartupError?.(row);
-    return runSingleAttempt({ ...input, retrySuffix: ':startup-retry', continueBranch: row.branch, continueSessionId: row.sessionId });
+    try {
+      return await runSingleAttempt({ ...input, retrySuffix: ':startup-retry', continueBranch: row.branch, continueSessionId: row.sessionId });
+    } catch (error) {
+      const modelError = modelAccessConfigurationError(error, input.tier);
+      if (modelError) throw new ConfigError(input.configPath, [modelError]);
+      throw error;
+    }
   }
   return row;
 }
@@ -559,15 +573,18 @@ async function runSingleAttempt(input: {
       resultReason = input.stopRequested()!;
     } else if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated') && !(completionUsage?.tokens.total)))) {
       result = 'error';
-      resultReason = workerResult.permissionWarnings?.length
+      const startupReason = workerResult.permissionWarnings?.length
         ? `permission failure: worker produced no commit after refused commands: ${workerResult.permissionWarnings.join('; ')}`
-        : 'worker never started';
+        : workerResult.resultReason ?? 'worker never started';
+      resultReason = modelAccessConfigurationError(startupReason, input.tier)
+        ?? (workerResult.status === 'never_started' && startupReason !== 'worker never started' ? 'worker never started' : startupReason);
     } else if (workerResult.status === 'experiment_stop') {
       result = 'stopped';
       resultReason = workerResult.resultReason ?? 'stopped: experiment cap reached';
     } else if (workerResult.status === 'needs_input' || workerResult.status === 'timeout' || workerResult.status === 'error') {
       result = 'error';
-      resultReason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
+      const reason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
+      resultReason = modelAccessConfigurationError(reason, input.tier) ?? reason;
     } else {
       let checkoutPath = workerResult.checkoutPath ?? started.checkoutPath;
       const branch = workerResult.branch ?? started.branch;

@@ -672,6 +672,38 @@ describe('runRealTally', () => {
     expect(verifier.calls).toBe(alwaysZero ? 0 : 1);
     expect(new Set(result.ledger.map((row) => row.attemptId)).size).toBe(2);
   });
+  it('records an AO model rejection as a tier configuration error without retrying or verifying task work', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    worker.usageFor = async () => null;
+    worker.settledUsageFor = async () => null;
+    worker.wait = async () => ({ status: 'never_started', branch: null, checkoutPath: null, prUrl: null,
+      resultReason: `worker never started: model ${worker.starts[0]?.model} not available for this account` });
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'model-rejected'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier } });
+    const first = result.ledger[0]!;
+    expect(worker.starts).toHaveLength(1);
+    expect(verifier.calls).toBe(0);
+    expect(first).toMatchObject({ result: 'error', estimatedCostNanos: 0 });
+    expect(first.resultReason).toContain(`tier "${worker.starts[0]?.tier.name}"`);
+    expect(first.resultReason).toContain(`model "${worker.starts[0]?.model}"`);
+    expect(first.resultReason).toContain('update this tier\'s model in tally.yaml');
+  });
+  it('surfaces a model rejection thrown before a worker session starts as a configuration error', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    worker.start = async (input) => {
+      worker.starts.push(input);
+      throw new Error(`model ${input.model} not available for this account`);
+    };
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+    await expect(runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'model-start-rejected'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier } }))
+      .rejects.toThrow(/Model configuration error for tier .*active harness account rejected the configured model/);
+    expect(worker.starts).toHaveLength(1);
+    expect(verifier.calls).toBe(0);
+  });
   it.each([
     { dryRun: true, source: 'cfoai', enabled: false },
     { dryRun: false, source: 'cfoai', enabled: false },

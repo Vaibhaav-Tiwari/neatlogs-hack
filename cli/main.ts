@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { BacklogError } from '../engine/backlog.js';
 import { ConfigError, loadConfig } from '../engine/config.js';
-import { runDoctor } from '../engine/doctor.js';
+import { doctorHasFailures, runDoctor } from '../engine/doctor.js';
 import { InitError, runInit } from '../engine/init.js';
 import { CommandError } from '../adapters/command.js';
 import { runUninstall } from '../engine/uninstall.js';
@@ -379,7 +379,7 @@ async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
     for (const line of result.doctor) {
       io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
     }
-    return result.doctor.some((line) => line.status !== 'connected' && line.status !== 'off') ? 1 : 0;
+    return doctorHasFailures(result.doctor) ? 1 : 0;
   } catch (e) {
     io.stderr(`tally init: ${e instanceof Error ? e.message : 'initialization failed; no changes confirmed'}`);
     return 2;
@@ -491,7 +491,7 @@ async function doctorCommand(options: CliOptions, io: CliIO): Promise<number> {
   for (const line of lines) {
     io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
   }
-  return lines.some((line) => line.status !== 'connected' && line.status !== 'off') ? 1 : 0;
+  return doctorHasFailures(lines) ? 1 : 0;
 }
 
 async function marketCommand(options: CliOptions, io: CliIO): Promise<number> {
