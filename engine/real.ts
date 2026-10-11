@@ -30,8 +30,7 @@ import { NeatlogsWorkerSpoolAdapter, type WorkerTraceDrainPort } from '../adapte
 import { NeatlogsWorkerTraceReader, type WorkerTraceReaderPort } from '../adapters/neatlogs-worker-traces.js';
 import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
 import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.js';
-import { FilePriceHistory } from '../adapters/history-file.js';
-import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
+import { historyAttributes, historyTraceName } from '../adapters/neatlogs-history.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { GitHubPublisher, type PublishPort } from '../adapters/publisher.js';
 import { outOfScopeFiles } from './scope.js';
@@ -40,6 +39,7 @@ import { attemptId, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState
 import type { AttemptResult, BudgetSource, IntegrationState, Ledger, LedgerRow, RunMode, RunState, TaskState, TallyConfig, Tier, TokenUsage } from '../schema/index.js';
 import { type BacklogTask } from './backlog.js';
 import { loadConfig } from './config.js';
+import { createPriceHistory } from './price-history.js';
 import { writeRunFiles } from './output.js';
 import { tierPriceNote } from './pricing.js';
 import type { RunOptions, RunResult } from './run.js';
@@ -175,7 +175,6 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
   const runner = config.runner === 'direct'
     ? createDirectRunner({ repoPath, baseBranch: config.repo.baseBranch, configPath: resolve(configPath), test: config.test, requiredBaseCommit, approvedRules: config.claudeCode?.allow })
     : new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, aoBin: config.repo.aoBin ? resolve(configDir, config.repo.aoBin) : undefined });
-  const localHistory = hasPort(overrides, 'history') ? null : new FilePriceHistory({ path: resolve(configDir, '.tally', 'history.json') });
   const trace = hasPort(overrides, 'trace') ? overrides.trace : config.integrations.neatlogs ? new NeatlogsTraceAdapter() : undefined;
   const cfoai = hasPort(overrides, 'cfoai')
     ? overrides.cfoai
@@ -198,7 +197,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
     verifier: overrides.verifier ?? (config.integrations.entire ? new EntireGraphVerifier() : new CommandVerifier()),
     usage: overrides.usage ?? runner,
     sessions: overrides.sessions ?? runner,
-    history: overrides.history ?? (config.integrations.neatlogs ? new NeatlogsPriceHistory({ fallback: localHistory! }) : localHistory!),
+    history: overrides.history ?? createPriceHistory(config, configPath),
     ...(recall ? { recall } : {}),
     publisher: overrides.publisher ?? new GitHubPublisher(),
     worktrees: overrides.worktrees ?? new GitWorktreeResolver(),

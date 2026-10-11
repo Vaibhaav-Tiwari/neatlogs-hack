@@ -1,10 +1,14 @@
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { planTally, readPlanBudget } from './plan.js';
 import { CfoaiBudgetAdapter } from '../adapters/cfoai.js';
+import { NeatlogsPriceHistory } from '../adapters/neatlogs-history.js';
+import { routeTask } from '../agent/router.js';
+import { sizeTask } from '../agent/sizer.js';
 import { loadConfig } from './config.js';
+import { createPriceHistory } from './price-history.js';
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'tally-plan-'));
@@ -88,6 +92,57 @@ describe('planTally', () => {
     });
     expect(plan).toHaveLength(1);
     expect(plan[0]).toMatchObject({ taskId: 'T1', size: 'small', tier: 'cheap', model: 'cheap-model', skipped: false });
+    expect(plan[0]?.historySources).toEqual(['none']);
     expect(plan[0]?.decision).toContain('expected to cost');
+  });
+
+  it('uses persisted history like routing and leaves the history file unchanged', async () => {
+    const configPath = fixture();
+    const historyPath = join(dirname(configPath), '.tally', 'history.json');
+    mkdirSync(dirname(historyPath), { recursive: true });
+    const snapshot = JSON.stringify({
+      version: 1,
+      cells: { 'small:cheap': { attempts: 5, passes: 0, totalCostNanos: 1_000_000_000 } },
+    }, null, 2);
+    writeFileSync(historyPath, `${snapshot}\n`);
+    const historyBefore = readFileSync(historyPath, 'utf8');
+    const signals = { async signalsFor() { return { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' as const }; } };
+    const plan = await planTally({ configPath, dryRun: true, baseline: false, signals });
+    const config = loadConfig(configPath);
+    const history = createPriceHistory(config, configPath);
+    const task = { taskId: 'T1', title: 'Fix `calc.ts` should add values', body: 'Expected calc.ts to return a + b.' };
+    const estimate = await sizeTask(task, { signals });
+    const route = await routeTask({
+      task,
+      estimate,
+      config,
+      ports: { history, budget: { remainingNanos: async () => 10_000_000_000 } },
+    });
+
+    expect(plan[0]).toMatchObject({ tier: 'top', historySources: ['local'] });
+    expect(plan[0]?.decision).toContain('History changed the choice for cheap: 5 attempts');
+    expect(route.action === 'start' ? route.tier.name : null).toBe(plan[0]?.tier);
+    expect(readFileSync(historyPath, 'utf8')).toBe(historyBefore);
+  });
+
+  it('labels Neatlogs observations as the plan source', async () => {
+    const configPath = fixture();
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('neatlogs: false', 'neatlogs: true'));
+    const lookup = vi.spyOn(NeatlogsPriceHistory.prototype, 'lookup').mockResolvedValue({ attempts: 2, passRate: 1, avgCostNanos: 100 });
+    const source = vi.spyOn(NeatlogsPriceHistory.prototype, 'sourceOfLastLookup').mockReturnValue('neatlogs');
+    try {
+      const plan = await planTally({
+        configPath,
+        dryRun: true,
+        baseline: false,
+        signals: { async signalsFor() { return { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' }; } },
+      });
+
+      expect(plan[0]?.historySources).toEqual(['neatlogs']);
+      expect(lookup).toHaveBeenCalled();
+    } finally {
+      lookup.mockRestore();
+      source.mockRestore();
+    }
   });
 });

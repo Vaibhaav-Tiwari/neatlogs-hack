@@ -1,7 +1,7 @@
 import { loadEnv } from '../engine/env.js';
 import { NANOS_PER_USD } from '../schema/money.js';
 import type { IntegrationState, TaskSize } from '../schema/types.js';
-import type { AttemptOutcome, PriceHistoryPort, PriceHistoryWriterPort, PriceStats } from '../agent/ports.js';
+import type { AttemptOutcome, PriceHistoryPort, PriceHistorySource, PriceHistoryWriterPort, PriceStats } from '../agent/ports.js';
 
 export interface NeatlogsHistoryOptions {
   fallback: PriceHistoryPort & PriceHistoryWriterPort;
@@ -172,6 +172,7 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
   private readonly limit: number;
   private readonly maxPages: number;
   private readStatus: IntegrationState | null;
+  private lastLookupSource: PriceHistorySource = 'none';
 
   constructor(options: NeatlogsHistoryOptions) {
     const env = options.env ?? loadEnv();
@@ -192,19 +193,33 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
     return this.readStatus;
   }
 
+  sourceOfLastLookup(): PriceHistorySource {
+    return this.lastLookupSource;
+  }
+
   async lookup(size: TaskSize, tier: string): Promise<PriceStats | null> {
-    if (!this.token || !this.projectId) return this.fallback.lookup(size, tier);
+    if (!this.token || !this.projectId) return this.fallbackLookup(size, tier);
+    let remote: PriceStats | null;
     try {
-      const remote = aggregate(await this.remoteObservations(), size, tier);
-      this.readStatus = remote
-        ? { status: 'ok', detail: null }
-        : { status: 'ok', detail: `No usable Neatlogs price-history observations matched ${size}/${tier}; using local history.` };
-      return remote ?? this.fallback.lookup(size, tier);
+      remote = aggregate(await this.remoteObservations(), size, tier);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.readStatus = { status: 'error', detail: `Neatlogs price-history read failed; using local history. ${message}` };
-      return this.fallback.lookup(size, tier);
+      return this.fallbackLookup(size, tier);
     }
+    if (remote) {
+      this.readStatus = { status: 'ok', detail: null };
+      this.lastLookupSource = 'neatlogs';
+      return remote;
+    }
+    this.readStatus = { status: 'ok', detail: `No usable Neatlogs price-history observations matched ${size}/${tier}; using local history.` };
+    return this.fallbackLookup(size, tier);
+  }
+
+  private async fallbackLookup(size: TaskSize, tier: string): Promise<PriceStats | null> {
+    const stats = await this.fallback.lookup(size, tier);
+    this.lastLookupSource = stats ? 'local' : 'none';
+    return stats;
   }
 
   async record(outcome: AttemptOutcome): Promise<void> {
