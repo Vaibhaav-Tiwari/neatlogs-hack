@@ -206,6 +206,28 @@ describe('direct Codex worker', () => {
     expect(dead.calls.some(call => call.startsWith('git worktree remove --force'))).toBe(true);
   });
 
+  it('commits the finished worker\'s edits itself, and refuses for a stopped or errored worker', async () => {
+    const h = harness();
+    const started = await h.runner.start(input);
+    await expect(h.runner.commitChanges(started.sessionId)).rejects.toThrow('active, stopped or errored');
+    h.child.emit('close', 0, null);
+    h.command.mockImplementation(async (file: string, args: string[]) => {
+      h.calls.push(`${file} ${args.join(' ')}`);
+      if (args[0] === 'branch') return { stdout: `${started.branch}\n`, stderr: '' };
+      if (args[0] === 'diff') return { stdout: 'src/add.py\0tally.yaml\0', stderr: '' };
+      if (args[0] === 'ls-files' && args.includes('--others')) return { stdout: 'tests/test_add.py\0.tally/runs/x\0', stderr: '' };
+      if (args[0] === 'rev-parse') return { stdout: 'abc123\n', stderr: '' };
+      return { stdout: '', stderr: '' };
+    });
+    expect(await h.runner.commitChanges(started.sessionId)).toBe('abc123');
+    expect(h.calls).toContain('git --literal-pathspecs commit --only -m tally: commit completed task edits -- src/add.py tests/test_add.py');
+
+    const stopped = harness();
+    const other = await stopped.runner.start(input);
+    await stopped.runner.stop(other.sessionId, 'ceiling crossed');
+    await expect(stopped.runner.commitChanges(other.sessionId)).rejects.toThrow('active, stopped or errored');
+  });
+
   it('releases the worktree only once the worker has exited', async () => {
     const h = harness();
     const started = await h.runner.start(input);
@@ -222,6 +244,7 @@ describe('dispatch by harness', () => {
     start: vi.fn(async () => ({ sessionId: id, branch: `b-${id}`, checkoutPath: `/c/${id}`, setupDurationMs: 0 })),
     wait: vi.fn(async () => ({ status: 'idle' as const, branch: `b-${id}`, checkoutPath: `/c/${id}`, prUrl: null })),
     usageFor: vi.fn(async () => null), settledUsageFor: vi.fn(async () => null), stop: vi.fn(async () => {}), release: vi.fn(async () => {}),
+    commitChanges: vi.fn(async () => `commit-${id}`),
   });
   it('sends each attempt to its own harness and never substitutes one for another', async () => {
     const claude = fakeRunner('c1'), codex = fakeRunner('x1');
@@ -232,6 +255,8 @@ describe('dispatch by harness', () => {
     expect(codex.stop).toHaveBeenCalledWith('x1', 'ceiling');
     expect(claude.stop).not.toHaveBeenCalled();
     expect(claude.usageFor).toHaveBeenCalledWith('c1');
+    expect(await router.commitChanges('x1')).toBe('commit-x1');
+    expect(claude.commitChanges).not.toHaveBeenCalled();
     expect(codex.release).toHaveBeenCalledWith('x1');
     await expect(router.start({ ...input, harness: 'toString' })).rejects.toThrow('no harness will be substituted');
     await expect(router.usageFor('nope')).rejects.toThrow('Unknown direct worker session');

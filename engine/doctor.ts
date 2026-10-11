@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadConfig } from './config.js';
 import { loadEnv } from './env.js';
-import { checkSetupPostCreate, checkWorkerAutoMode } from './preflight.js';
+import { checkClaudePostCreate, checkConfiguredWorkerMode, checkSetupPostCreate } from './preflight.js';
 import { checkHarness, claudeAllowList } from './harness.js';
 import { configHash } from './install-record.js';
 
@@ -52,7 +52,7 @@ async function aoWorkerModeLine(configPath: string, runner: DoctorRunner): Promi
   try {
     const output = await runner('ao', ['project', 'get', projectId, '--json']);
     const payload = JSON.parse(output.stdout) as { project?: { config?: unknown } };
-    const check = checkWorkerAutoMode(projectId, payload.project?.config);
+    const check = checkConfiguredWorkerMode(config, payload.project?.config);
     return {
       product: 'AO worker auto mode',
       status: check.ok ? 'connected' : 'broken',
@@ -60,6 +60,7 @@ async function aoWorkerModeLine(configPath: string, runner: DoctorRunner): Promi
       fix: check.ok ? null : check.fix,
     };
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Mixed AO harnesses')) return { product: 'AO worker auto mode', status: 'broken', detail: error.message, fix: 'use Claude-only or Codex-only AO tiers, or runner: direct' };
     if (error instanceof CommandError && error.code === 'ENOENT') return { product: 'AO worker auto mode', status: 'missing', detail: error.message, fix: 'set TALLY_AO_BIN to the installed AO executable path' };
     return {
       product: 'AO worker auto mode',
@@ -73,7 +74,7 @@ async function aoWorkerModeLine(configPath: string, runner: DoctorRunner): Promi
 async function aoSetupPostCreateLine(configPath: string, runner: DoctorRunner): Promise<DoctorLine | null> {
   if (!existsSync(configPath)) return null;
   const config = loadConfig(configPath);
-  if (!config.test.setupCommand) return null;
+  if (!config.test.setupCommand && !config.tiers.some(tier => tier.harness === 'claude-code')) return null;
   const projectId = config.repo.aoProject;
   if (!projectId) {
     return {
@@ -86,7 +87,8 @@ async function aoSetupPostCreateLine(configPath: string, runner: DoctorRunner): 
   try {
     const output = await runner('ao', ['project', 'get', projectId, '--json']);
     const payload = JSON.parse(output.stdout) as { project?: { config?: unknown } };
-    const check = checkSetupPostCreate(projectId, payload.project?.config, config.test.setupCommand)!;
+    const check = checkClaudePostCreate(config, configPath, payload.project?.config)
+      ?? checkSetupPostCreate(projectId, payload.project?.config, config.test.setupCommand)!;
     return {
       product: 'AO setup post-create',
       status: check.ok ? 'connected' : 'broken',

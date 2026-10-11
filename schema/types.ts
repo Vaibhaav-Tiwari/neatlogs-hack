@@ -80,6 +80,8 @@ export interface LedgerRow {
   scopeWarnings?: string[];
   /** Refused worker tool calls; warnings unless the worker errored or made no commit. */
   permissionWarnings?: string[];
+  /** Commit made by Tally for uncommitted direct-worker edits before verification. */
+  tallyCommit?: string;
   /** attemptId of the attempt this one took over from, if it is an escalation. */
   escalatedFrom: string | null;
   handoff: Handoff;

@@ -92,6 +92,7 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
   commitsAheadCount = 1;
   files = ['calc.ts'];
   async changedFiles() { return this.files; }
+  async commitChanges() { return null; }
 
   async start(input: WorkerStartInput): ReturnType<WorkerPort['start']> {
     this.starts.push(input);
@@ -789,6 +790,7 @@ describe('runRealTally', () => {
 
   it('fails a real task that leaves the worker branch with no commits ahead of base', async () => {
     const { dir, configPath } = fixture();
+    writeFileSync(configPath, stringifyYaml({ ...loadConfig(configPath), runner: 'direct' }));
     const worker = new FakeWorker();
     worker.commitsAheadCount = 0;
     const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
@@ -813,11 +815,13 @@ describe('runRealTally', () => {
 
     expect(verifier.calls).toBe(0);
     expect(worker.published).toHaveLength(0);
+    expect(worker.starts).toHaveLength(2);
     expect(result.ledger.every((row) => row.result === 'failed' && row.resultReason === 'no changes made' && row.prUrl === null)).toBe(true);
   });
 
   it.each(['idle', 'error'] as const)('does not escalate permission failures with no commit or an errored worker (%s)', async status => {
     const { dir, configPath } = fixture();
+    writeFileSync(configPath, stringifyYaml({ ...loadConfig(configPath), runner: 'direct' }));
     const worker = new FakeWorker();
     worker.commitsAheadCount = 0;
     worker.wait = async () => ({ status, branch: 'task', checkoutPath: '/tmp/worker', prUrl: null,

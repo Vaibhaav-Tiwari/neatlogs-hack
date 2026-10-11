@@ -9,7 +9,7 @@ import type { TallyConfig, TokenUsage } from '../schema/index.js';
 import { runCommand } from './command.js';
 import type { CommandRunner } from './ao.js';
 import { checkHarness, claudeScripts } from '../engine/harness.js';
-import { DirectRunner, type DirectRunnerOptions } from './direct.js';
+import { DirectRunner, commitWorkerEdits, type DirectRunnerOptions } from './direct.js';
 
 type Json = Record<string, unknown>;
 function record(value: unknown): Json { return value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {}; }
@@ -74,6 +74,7 @@ export interface CodexDirectOptions {
   repoPath: string;
   baseBranch: string;
   requiredBaseCommit?: string;
+  configPath?: string;
   test: TallyConfig['test'];
   command?: CommandRunner;
   launch?: (file: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; stdio: 'pipe' }) => ChildProcessWithoutNullStreams;
@@ -328,6 +329,13 @@ export class CodexDirectRunner implements WorkerPort, LiveUsagePort, SessionCont
     try { await Promise.race([session.completion, failedKill]); } finally { if (timer) clearTimeout(timer); }
   }
 
+  /** The sandbox cannot write git metadata, so Tally commits the finished worker's edits itself. */
+  async commitChanges(id: string): Promise<string | null> {
+    const session = this.session(id);
+    if (!session.closed || session.error || session.stopped) throw new Error('Cannot commit edits from an active, stopped or errored direct worker');
+    return commitWorkerEdits(this.command, session, this.options);
+  }
+
   /** Called only after verification, publishing and capture have read the checkout. Stopped branches remain for continuation. */
   async release(id: string): Promise<void> {
     const session = this.session(id);
@@ -346,6 +354,7 @@ export async function checkCodex(command: CommandRunner = runCommand): Promise<v
 
 type DirectPorts = WorkerPort & LiveUsagePort & SessionControlPort & {
   settledUsageFor(sessionId: string): Promise<LiveUsage | null>;
+  commitChanges(sessionId: string): Promise<string | null>;
   release(sessionId: string): Promise<void>;
 };
 
@@ -369,6 +378,7 @@ export class DirectHarnessRouter implements WorkerPort, LiveUsagePort, SessionCo
   async usageFor(sessionId: string) { return this.owner(sessionId).usageFor(sessionId); }
   async settledUsageFor(sessionId: string) { return this.owner(sessionId).settledUsageFor(sessionId); }
   async stop(sessionId: string, reason: string) { return this.owner(sessionId).stop(sessionId, reason); }
+  async commitChanges(sessionId: string) { return this.owner(sessionId).commitChanges(sessionId); }
   async release(sessionId: string) { return this.owner(sessionId).release(sessionId); }
 }
 

@@ -39,7 +39,7 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<{ re
   const items = [configPath, recordPath,
     ...(record.projectCreated ? [`AO project registration: ${record.projectId}`] : [
       ...(record.addedSetupCommand ? [`AO post-create hook: ${record.addedSetupCommand}`] : []),
-      ...(record.workerAfterHash ? ['AO project worker auto mode (restore previous worker settings)'] : []),
+      ...(record.workerAfterHash ? ['AO project worker permission mode (restore previous worker settings)'] : []),
     ])];
   for (const item of items) options.print?.(`Remove: ${item}`);
   if (!/^y(?:es)?$/i.test((await (options.readLine ?? defaultReadLine)('Remove the listed Tally installation items? y/N', 'N')).trim())) return { removed: false, items };
