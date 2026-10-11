@@ -21,6 +21,7 @@ import { applyCheckpointRecall, sizeTask } from '../agent/sizer.js';
 import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
 import { DirectRunner } from '../adapters/direct.js';
+import { workerCorrelationPrefix } from './worker-correlation.js';
 import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { RepositorySizingAdapter } from '../adapters/repository-sizing.js';
@@ -288,7 +289,7 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
     ? 'Commit your changes on your current branch, push that branch, open a pull request against the default branch, and do not merge it.'
     : 'Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.';
   return [
-    `You are implementing Tally run ${runId}, task ${task.taskId}, attempt ${attempt}: ${task.title}`,
+    `${workerCorrelationPrefix(runId, task.taskId, attempt)} ${task.title}`,
     `Neatlogs correlation: runId=${runId} taskId=${task.taskId} attempt=${attempt}.`,
     '',
     config.runner === 'direct' ? 'You are already inside your own git worktree for the target repo. Work only in the current working directory.' : 'You are already inside your own AO git worktree for the target repo. Work only in the current working directory.',

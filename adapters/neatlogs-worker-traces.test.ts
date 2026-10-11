@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NeatlogsWorkerTraceReader } from './neatlogs-worker-traces.js';
+import { workerCorrelationPrefix } from '../engine/worker-correlation.js';
 
 const context = { runId: 'run-1', taskId: 'T1', attempt: 1, nativeSessionId: 'native' };
 const traceId = 'a'.repeat(32);
@@ -8,6 +9,26 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify({ data
 const env = { NEATLOGS_TOKEN: 'fake-read-token', NEATLOGS_PROJECT_ID: 'fake-project' };
 
 describe('NeatlogsWorkerTraceReader', () => {
+  it.each(['run-20261011-102312Z', 'long-run-id-'.repeat(20)])('reads the truncated compact prefix for three-digit issues and attempt 2: %s', async runId => {
+    const input = { runId, taskId: '#123', attempt: 2, nativeSessionId: 'native' };
+    const prefix = workerCorrelationPrefix(runId, input.taskId, input.attempt);
+    expect(prefix.length).toBeLessThanOrEqual(55);
+    expect(prefix).toContain('#123 a2:');
+    const candidate = { ...trace, workflowName: `${prefix} ${'Long task title '.repeat(20)}`.slice(0, 60) };
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async url => {
+      if (String(url).includes('?')) return json({ traces: [candidate] });
+      return json(String(url).endsWith('/spans') ? { spans: [{}] } : candidate);
+    } });
+    expect(await reader.verifyFor(input)).toBe(traceId);
+    expect(await reader.verifyFor({ ...input, taskId: '#12' })).toBeNull();
+    expect(await reader.verifyFor({ ...input, attempt: 1 })).toBeNull();
+  });
+  it('keeps arbitrarily long task and run ids compact and distinct', () => {
+    const run = 'run-with-spaces '.repeat(30), task = 'task-with-spaces '.repeat(30);
+    const prefix = workerCorrelationPrefix(run, task, 2);
+    expect(prefix.length).toBeLessThanOrEqual(55);
+    expect(prefix).not.toBe(workerCorrelationPrefix(run, task + 'other', 2));
+  });
   it('verifies a correlated worker without Entire and rejects a CFO decision trace', async () => {
     const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async input => {
       if (String(input).includes('?')) return json({ traces: [{ ...trace, sessionId: 'run-1' }, trace] });

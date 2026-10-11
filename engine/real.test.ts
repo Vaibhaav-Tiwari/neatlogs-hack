@@ -778,6 +778,7 @@ describe('runRealTally', () => {
     });
 
     const prompt = worker.starts[0]!.prompt;
+    expect(prompt).toMatch(/^Tally run-\d{8}-\d{6}Z T1 a1:/);
     expect(prompt).toContain('Work only in the current working directory');
     expect(prompt).toContain('Never read or write any other checkout or path outside this worktree');
     expect(prompt).toContain('The environment has already been set up before you started');
