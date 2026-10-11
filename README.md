@@ -46,8 +46,9 @@ prints the size, confidence, route and ceiling without starting a worker.
 
 ### Direct Codex Runner
 
-The direct Codex implementation is merged. Its first real end-to-end proof is
-still in progress; do not treat the simulated demo as proof of this path.
+The direct Codex path has completed a real run: `run-20261011-130259Z`, using
+luna, produced [chip-design-groundup PR #18](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18),
+with both decision and worker trace ids and a Tally-created commit.
 
 With `runner: direct`, a tier with `harness: codex` runs `codex exec --json` in
 the task's worktree. It needs Codex on PATH and signed in with `codex login`.
@@ -103,6 +104,27 @@ in-process project lock; separate Tally processes and manual AO changes are not
 coordinated by that lock. Both Codex AO and Claude Code AO have real-run evidence.
 For Claude AO, worker traces reach neatlogs, but the worker trace id is not yet
 recorded on the ledger row; routing trace ids are recorded.
+
+### Real-Run Evidence
+
+All four runner/harness paths have completed real runs on chip-design-groundup:
+
+| Path | Real-run PR evidence |
+|---|---|
+| Codex via AO | [#10](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/10) |
+| Claude Code via AO | [#13](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/13), [#16](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/16) |
+| Claude Code direct | [#14](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/14) |
+| Codex direct | [#18](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18) |
+
+These runs do not prove every workflow. The following remain unproven live:
+
+- Mixed AO spawning a real Codex worker after a Claude Code worker. The mixed
+  setup proof completed on Claude Code without escalating to Codex.
+- Parallel workers.
+- Escalation on the direct runner.
+- The no-account onboarding path.
+
+The simulated demo is not evidence of any real worker path.
 
 Three ways in:
 
@@ -291,7 +313,7 @@ npm test
 | `tally experiment` | Run simulated baseline and Tally modes with `--dry-run --repeats N` (default 2). Real experiment execution is currently gated. `--budget <usd>` is the aggregate safety cap. Baseline keeps no per-task ceiling; real worker base validation and safety monitoring are implemented but have not been exercised live. |
 | `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to light up read-only integrations while workers stay fake. |
 | `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
-| `tally init` | Preview files and AO changes, then ask final default-No consent. `--dry-run` previews; `--yes` applies defaults without prompts. Scoped worker allow-list enforcement is not yet installed. |
+| `tally init` | Preview files and AO changes, then ask final default-No consent. `--dry-run` previews; `--yes` applies defaults without prompts. Claude workers require the consented scoped allow-list. |
 | `tally uninstall` | Confirm removal of init-owned configuration and AO settings; preserve history and credentials. |
 | `tally logo` | Replay the first-run logo animation. It plays once by itself, the first time you run bare `tally` or `tally init` in a terminal; after that bare `tally` and `--help` show a small still mark. Nothing is drawn when output is piped, in CI, on `TERM=dumb`, or for any other command. `TALLY_NO_ANIMATION=1` turns the motion off and `NO_COLOR` gives plain text. |
 | `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
