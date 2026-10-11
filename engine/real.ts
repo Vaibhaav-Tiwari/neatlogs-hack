@@ -243,13 +243,13 @@ function portStatus(port: unknown, fallback: RunState['integrations']['entire'])
 
 function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { dryRun: boolean; budgetSource: BudgetSource }): RunState['integrations'] {
   const cfoaiStatus = ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
+  const graph = portStatus(ports.signals, { status: 'missing', detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.' });
+  const recall = ports.recall?.status?.();
   return {
     neatlogs: config.integrations.neatlogs ? (ports.workerTraceDrain?.status?.().status === 'missing' ? ports.workerTraceDrain.status() : traceStatus(ports.trace)) : { status: 'off', detail: null },
     entire: config.integrations.entire
-      ? portStatus(ports.signals, {
-          status: 'missing',
-          detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.',
-        })
+      ? recall ? { status: graph.status === 'ok' && recall.status === 'ok' ? 'ok' : 'missing',
+          detail: `Graph sizing: ${graph.status}${graph.detail ? ` (${graph.detail})` : ''}; ${recall.detail ?? `checkpoint recall: ${recall.status}`}` } : graph
       : { status: 'off', detail: null },
     cfoai: config.integrations.cfoai
       ? options.dryRun && options.budgetSource === 'cfoai' && cfoaiStatus.status === 'ok'
@@ -1010,9 +1010,11 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (ports.recall) {
       try {
         estimate = applyCheckpointRecall(sized, await ports.recall.recallFor(taskInput));
-      } catch {
-        estimate = sized;
+      } catch (error) {
+        estimate = { ...sized, summary: `${sized.summary}; checkpoint recall unavailable: ${error instanceof Error ? error.message : 'search failed'}` };
       }
+      const recallStatus = ports.recall.status?.();
+      if (recallStatus?.status === 'missing') estimate = { ...estimate, summary: `${estimate.summary}; ${recallStatus.detail}` };
     }
     task.size = estimate.size;
     const state = taskStates[index]!;

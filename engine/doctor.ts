@@ -7,6 +7,7 @@ import { loadEnv } from './env.js';
 import { checkClaudePostCreate, checkConfiguredWorkerMode, checkSetupPostCreate } from './preflight.js';
 import { checkHarness, claudeAllowList } from './harness.js';
 import { configHash } from './install-record.js';
+import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
 
 export type DoctorStatus = 'connected' | 'missing' | 'broken' | 'off';
 
@@ -139,6 +140,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
   lines.push(config?.integrations.entire === false ? off('Entire graph plugin') : await commandLine('Entire graph plugin', runner, 'entire', ['graph', '--help'], 'entire enable'));
   if (config?.integrations.entire) {
     const cwd = resolve(dirname(options.configPath!), config.repo.path);
+    const recall = await new EntireCheckpointRecallAdapter({ repoPath: cwd, command: runner }).checkAvailability();
+    lines.push({ product: 'Entire checkpoint recall', status: recall.status === 'ok' ? 'connected' : 'broken', detail: recall.detail ?? 'checkpoint search available', fix: recall.status === 'ok' ? null : 'check Entire repository mirroring and account access; entire enable alone does not enable hosted search' });
     try {
       const output = await runner('entire', ['status', '--json'], { cwd });
       const enabled = JSON.parse(output.stdout).enabled === true;
