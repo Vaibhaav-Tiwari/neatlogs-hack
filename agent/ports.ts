@@ -63,11 +63,15 @@ export interface PriceStats {
   avgCostNanos: number;
 }
 
+export type PriceHistorySource = 'neatlogs' | 'local' | 'none';
+
 export interface PriceHistoryPort {
   /** Null, or attempts = 0, when there is no history for the pair. */
   lookup(size: TaskSize, tier: string): Promise<PriceStats | null>;
   /** Optional status for remote history adapters; local adapters can omit it. */
   status?(): IntegrationState | null;
+  /** Source that supplied the most recent result; `none` means no observations matched. */
+  sourceOfLastLookup?(): PriceHistorySource;
 }
 
 /** One finished attempt, as the history needs it. */

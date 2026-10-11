@@ -287,7 +287,8 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
   let dashboard: DashboardServer | undefined;
   try {
     if (options.plan) {
-      const budget = await readPlanBudget(loadConfig(options.config), { budgetUsd: options.budgetUsd });
+      const config = loadConfig(options.config);
+      const budget = await readPlanBudget(config, { budgetUsd: options.budgetUsd });
       printBudget({ source: budget.source, limitSource: budget.limitSource, limitNanos: budget.limitNanos, spentNanos: 0,
         monthly: { source: budget.source, limitNanos: budget.monthlyLimitNanos, spentBeforeRunNanos: 0 } }, io);
       const plan = await planTally({
@@ -303,6 +304,12 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
           ? 'skip'
           : `${task.tier} ${task.harness}/${task.model} ceiling ${task.ceilingNanos === null ? 'none' : formatUsd(task.ceilingNanos)}`;
         io.stdout(`${task.taskId}: ${task.size} (confidence ${task.confidence.toFixed(2)}) -> ${route}`);
+        const historySources = task.historySources.map((source) => {
+          if (source === 'neatlogs') return 'remote Neatlogs';
+          if (source === 'local') return config.integrations.neatlogs ? 'local Neatlogs fallback' : 'local history';
+          return 'none';
+        });
+        io.stdout(`  History source: ${historySources.join(', ')}`);
         io.stdout(`  ${task.decision}`);
       }
       return 0;

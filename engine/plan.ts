@@ -1,7 +1,6 @@
 import { dirname, resolve } from 'node:path';
 import { routeBaseline } from '../agent/baseline.js';
-import { PriceHistory } from '../agent/history.js';
-import type { BudgetPort, SizingSignalsPort } from '../agent/ports.js';
+import type { BudgetPort, PriceHistoryPort, PriceHistorySource, SizingSignalsPort } from '../agent/ports.js';
 import { routeTask } from '../agent/router.js';
 import { sizeTask } from '../agent/sizer.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
@@ -12,6 +11,7 @@ import { usdToNanos } from '../schema/index.js';
 import type { BudgetSource, TallyConfig, TaskSize } from '../schema/index.js';
 import { loadConfig } from './config.js';
 import { createDryRunPorts } from './dry-run.js';
+import { createPriceHistory } from './price-history.js';
 import { validateRealRunConfig, type PreflightRunner } from './preflight.js';
 
 export interface PlannedTask {
@@ -24,6 +24,8 @@ export interface PlannedTask {
   harness: string | null;
   ceilingNanos: number | null;
   decision: string;
+  /** Sources that returned observations for this task's routing decision. */
+  historySources: PriceHistorySource[];
   skipped: boolean;
 }
 
@@ -54,6 +56,19 @@ class PlanBudget implements BudgetPort {
   reserve(ceilingNanos: number | null): void {
     this.reservedNanos += ceilingNanos ?? 0;
   }
+}
+
+function trackHistorySources(history: PriceHistoryPort, sources: Set<PriceHistorySource>): PriceHistoryPort {
+  return {
+    async lookup(size, tier) {
+      const stats = await history.lookup(size, tier);
+      if (stats && stats.attempts > 0) {
+        const source = history.sourceOfLastLookup?.() ?? 'local';
+        if (source !== 'none') sources.add(source);
+      }
+      return stats;
+    },
+  };
 }
 
 export async function readPlanBudget(config: TallyConfig, options: Pick<PlanOptions, 'budgetUsd'>): Promise<PlanBudgetInfo> {
@@ -89,14 +104,16 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
   });
   const budgetInfo = options.budgetInfo ?? await readPlanBudget(config, options);
   const budget = new PlanBudget(budgetInfo.limitNanos);
-  const history = new PriceHistory();
+  const historyPort = createPriceHistory(config, options.configPath);
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
     const taskInput = { taskId: task.taskId, title: task.title, body: task.body };
     const estimate = await sizeTask(taskInput, { signals });
+    const historySources = new Set<PriceHistorySource>();
     const route = options.baseline
-      ? await routeBaseline({ task: taskInput, estimate, config, ports: { budget, history } })
-      : await routeTask({ task: taskInput, estimate, config, ports: { budget, history } });
+      ? await routeBaseline({ task: taskInput, estimate, config, ports: { budget, history: trackHistorySources(historyPort, historySources) } })
+      : await routeTask({ task: taskInput, estimate, config, ports: { budget, history: trackHistorySources(historyPort, historySources) } });
+    const sources: PriceHistorySource[] = historySources.size > 0 ? [...historySources].sort() : ['none'];
     if (route.action === 'start') {
       const ceiling = task.firstAttemptCeilingUsd === undefined || options.baseline ? route.ceilingNanos : Math.min(route.ceilingNanos ?? Infinity, usdToNanos(task.firstAttemptCeilingUsd));
       budget.reserve(ceiling);
@@ -110,6 +127,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         harness: route.tier.harness,
         ceilingNanos: ceiling,
         decision: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.reason : `${route.reason} Deliberate first-attempt ceiling override: $${task.firstAttemptCeilingUsd.toFixed(3)} (normal ceiling remains an upper bound).`,
+        historySources: sources,
         skipped: false,
       });
     } else {
@@ -123,6 +141,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         harness: null,
         ceilingNanos: null,
         decision: route.reason,
+        historySources: sources,
         skipped: true,
       });
     }

@@ -44,7 +44,8 @@ With Entire off or unavailable, sizing uses named paths and bounded identifier
 searches in tracked repository files. It counts explicit new files and nearby
 tests without claiming graph dependencies. Specific target evidence increases
 confidence; ambiguous or truncated searches remain cautious. `run --plan`
-prints the size, confidence, route and ceiling without starting a worker.
+prints the size, confidence, route, ceiling and price-history source without
+starting a worker or writing history.
 
 ### Direct Codex Runner
 
