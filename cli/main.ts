@@ -543,6 +543,7 @@ async function greet(argv: string[], parsed: ParsedCli): Promise<boolean> {
       env: process.env,
       isTTY: Boolean(process.stdout.isTTY),
       columns: process.stdout.columns ?? 80,
+      rows: process.stdout.rows ?? 24,
       colorDepth: process.stdout.isTTY ? process.stdout.getColorDepth() : 1,
       seen: logoSeen(),
     },
