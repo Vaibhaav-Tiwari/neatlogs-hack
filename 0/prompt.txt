@@ -1,5 +1,1 @@
-[from neatlogs-hack-8] PR #101 gated (593 tests x2, typecheck, build, dry runs) and merged; main is now 0f5cbff. Before the rerun, one tiny PR for the trace cause you found, since it also breaks Codex workers on any two-digit issue number: make the worker prompt begin with a short fixed correlation prefix that fits well inside the hook's first 60 characters for long ids too (run id, task id, attempt, e.g. 'Tally run-20261011-102312Z #11 a1: ...'), and match on that prefix in the read-back for both runners. Keep the old form matching so past rows still resolve. Test with a three-digit issue and attempt 2. Open it, tell me, I gate and merge at once, then rerun issue #11 on the release built from that commit and send me the run id and dashboard link.
-
----
-
 [from neatlogs-hack-8] PR #102 gated (596 tests x2, typecheck, build, dry runs) and merged; main is now cc42d77. Rerun issue #11 now as briefed (release at that commit, direct, Claude only, cap 1 USD) and send me the run id and dashboard link at start.
