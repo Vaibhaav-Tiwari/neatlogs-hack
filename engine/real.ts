@@ -231,6 +231,17 @@ function traceStatus(trace: TracePort | undefined): RunState['integrations']['ne
   return withStatus?.status?.() ?? { status: 'missing', detail: 'Trace adapter is not configured.' };
 }
 
+function neatlogsStatus(ports: RealRunPorts, traceState?: RunState['integrations']['neatlogs']): RunState['integrations']['neatlogs'] {
+  const workerTraceStatus = ports.workerTraceDrain?.status?.();
+  const traces = traceState ?? (workerTraceStatus?.status === 'missing' ? workerTraceStatus : traceStatus(ports.trace));
+  const history = ports.history.status?.();
+  if (!history) return traces;
+  const priority: Record<IntegrationState['status'], number> = { off: 0, ok: 1, missing: 2, error: 3 };
+  const status = priority[history.status] > priority[traces.status] ? history.status : traces.status;
+  const detail = [traces.detail, history.detail].filter((value): value is string => Boolean(value));
+  return { status, detail: detail.length > 0 ? [...new Set(detail)].join('; ') : null };
+}
+
 function lastTraceId(trace: TracePort | undefined): string | null {
   const withTraceId = trace as (TracePort & { lastTraceId?: () => string | null }) | undefined;
   return withTraceId?.lastTraceId?.() ?? null;
@@ -246,7 +257,7 @@ function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { 
   const graph = portStatus(ports.signals, { status: 'missing', detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.' });
   const recall = ports.recall?.status?.();
   return {
-    neatlogs: config.integrations.neatlogs ? (ports.workerTraceDrain?.status?.().status === 'missing' ? ports.workerTraceDrain.status() : traceStatus(ports.trace)) : { status: 'off', detail: null },
+    neatlogs: config.integrations.neatlogs ? neatlogsStatus(ports) : { status: 'off', detail: null },
     entire: config.integrations.entire
       ? recall ? { status: graph.status === 'ok' && recall.status === 'ok' ? 'ok' : 'missing',
           detail: `Graph sizing: ${graph.status}${graph.detail ? ` (${graph.detail})` : ''}; ${recall.detail ?? `checkpoint recall: ${recall.status}`}` } : graph
@@ -897,10 +908,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     const workerRows = ledger.filter(row => row.harness === 'codex' || row.harness === 'claude-code');
     if (!options.dryRun && config.integrations.neatlogs && workerRows.length > 0 && workerRows.every(row => row.workerTraceId)
       && ports.workerTraceDrain?.status?.().detail?.startsWith('No queued worker trace found')) {
-      runState.integrations.neatlogs = traceStatus(ports.trace);
+      runState.integrations.neatlogs = neatlogsStatus(ports, traceStatus(ports.trace));
     }
     if (!options.dryRun && config.integrations.neatlogs && workerRows.some(row => !row.workerTraceId) && runState.integrations.neatlogs.status === 'ok') {
-      runState.integrations.neatlogs = { status: 'missing', detail: 'Decision traces sent; worker trace delivery is unverified or pending. Run tally traces drain --run ' + runId + ' to retry.' };
+      const details = [
+        runState.integrations.neatlogs.detail,
+        'Decision traces sent; worker trace delivery is unverified or pending. Run tally traces drain --run ' + runId + ' to retry.',
+      ].filter((value): value is string => Boolean(value));
+      runState.integrations.neatlogs = { status: 'missing', detail: [...new Set(details)].join('; ') };
     }
     assertValid(runState, ledger);
     writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
