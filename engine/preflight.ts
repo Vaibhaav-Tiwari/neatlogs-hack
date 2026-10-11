@@ -4,6 +4,7 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import type { TallyConfig } from '../schema/index.js';
 import { ConfigError } from './config.js';
 import { checkDirectHarness, requireClaudeConsent } from '../adapters/direct.js';
+import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 export type PreflightRunner = (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 
@@ -39,10 +40,20 @@ function quoteShell(value: string): string {
 }
 
 export function withWorkerAutoMode(config: unknown): Record<string, unknown> {
+  return withWorkerPermissionMode(config, 'auto');
+}
+
+export function aoWorkerMode(config: Pick<TallyConfig, 'tiers'>): 'default' | 'auto' {
+  const harnesses = new Set(config.tiers.map(tier => tier.harness));
+  if (harnesses.size > 1) throw new Error('Mixed AO harnesses are not supported yet; use Claude-only or Codex-only tiers, or runner: direct. No harness was substituted or worker started.');
+  return harnesses.has('claude-code') ? 'default' : 'auto';
+}
+
+export function withWorkerPermissionMode(config: unknown, mode: 'default' | 'auto'): Record<string, unknown> {
   const base = isRecord(config) ? { ...config } : {};
   const worker = isRecord(base.worker) ? { ...base.worker } : {};
   const agentConfig = isRecord(worker.agentConfig) ? { ...worker.agentConfig } : {};
-  agentConfig.permissions = 'auto';
+  agentConfig.permissions = mode;
   worker.agentConfig = agentConfig;
   base.worker = worker;
   return base;
@@ -86,6 +97,26 @@ export function checkWorkerAutoMode(projectId: string, projectConfig: unknown): 
     detail: `worker permission mode is ${label}; unattended Tally workers can stall before setup, edits, tests, or commits`,
     fix,
   };
+}
+
+export function checkConfiguredWorkerMode(config: TallyConfig, projectConfig: unknown): WorkerPermissionCheck {
+  const expected = aoWorkerMode(config);
+  if (expected === 'auto') return checkWorkerAutoMode(config.repo.aoProject!, projectConfig);
+  const mode = workerPermissionMode(projectConfig);
+  return { ok: mode === expected, mode,
+    detail: mode === expected ? 'worker permission mode is default; Claude uses its consented worktree-local dontAsk rules'
+      : `worker permission mode is ${mode ?? 'unset'}; Claude AO workers require default so their local dontAsk allow-list is not overridden`,
+    fix: `ao project set-config ${config.repo.aoProject} --config-json ${quoteJsonForShell(withWorkerPermissionMode(projectConfig, expected))}` };
+}
+
+export function checkClaudePostCreate(config: TallyConfig, configPath: string, projectConfig: unknown): SetupPostCreateCheck | null {
+  if (!config.tiers.some(tier => tier.harness === 'claude-code')) return null;
+  const hook = aoClaudeSetupCommand(configPath);
+  const commands = postCreateCommands(projectConfig);
+  const ok = commands.includes(hook);
+  return { ok, detail: ok ? 'post-create installs consented Claude local settings before launch; local files are excluded from Git'
+    : 'AO postCreate must install Tally Claude local settings before the worker starts; run tally init for a new installation or apply the listed project fix',
+    fix: setupPostCreateFixCommand(config.repo.aoProject!, projectConfig, hook) };
 }
 
 function postCreateCommands(projectConfig: unknown): string[] {
@@ -160,6 +191,7 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
   const resolvedBacklog = backlogPath(config, configPath);
   if (resolvedBacklog && !existsSync(resolvedBacklog)) problems.push(`backlog.file does not exist: ${resolvedBacklog}`);
   problems.push(...sessionModeProblems(config));
+  try { aoWorkerMode(config); } catch (error) { problems.push((error as Error).message); }
   if (config.repo.aoProject) {
     let project: AoProjectResponse | null = null;
     try {
@@ -171,15 +203,18 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
       );
     }
     if (project) {
-      const permission = checkWorkerAutoMode(config.repo.aoProject, project.project?.config);
+      if (new Set(config.tiers.map(tier => tier.harness)).size > 1) throw new ConfigError(configPath, problems);
+      const permission = checkConfiguredWorkerMode(config, project.project?.config);
       if (!permission.ok) {
         problems.push(`${permission.detail}; fix: ${permission.fix}`);
       }
-      const setup = checkSetupPostCreate(config.repo.aoProject, project.project?.config, config.test.setupCommand);
+      const setup = checkClaudePostCreate(config, configPath, project.project?.config)
+        ?? checkSetupPostCreate(config.repo.aoProject, project.project?.config, config.test.setupCommand);
       if (setup && !setup.ok) {
         problems.push(`${setup.detail}; fix: ${setup.fix}`);
       }
     }
   }
   if (problems.length > 0) throw new ConfigError(configPath, problems);
+  if (config.tiers.some(tier => tier.harness === 'claude-code')) requireClaudeConsent(config.claudeCode?.allow, config.test);
 }

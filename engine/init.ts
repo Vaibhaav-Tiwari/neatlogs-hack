@@ -9,7 +9,8 @@ import { tierPriceNote } from './pricing.js';
 import { CommandError, resolveAoBinary, runCommand } from '../adapters/command.js';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadEnv } from './env.js';
-import { withWorkerAutoMode, workerPermissionMode } from './preflight.js';
+import { aoWorkerMode, withWorkerPermissionMode, workerPermissionMode } from './preflight.js';
+import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 import { configureIntegrations } from '../onboarding/index.js';
 import { loadConfig } from './config.js';
 import { readPlanBudget } from './plan.js';
@@ -255,7 +256,7 @@ async function consentClaude(config: TallyConfig, options: InitOptions, readLine
   for (const rule of allow) print(`- ${rule}`);
   print('Script tokens are portable content-bound consent, replaced with exact paths outside the worker worktree at startup. Workers cannot edit these scripts; no broad Bash permission is granted.');
   for (const script of claudeScripts(config.test)) print(`${script.name} script contents:\n${script.contents}`);
-  print('Test and setup commands execute repository code and may install dependencies. This records repository consent only; worker-local enforcement still needs verification. Never bypass-permissions.');
+  print('Test and setup commands execute repository code and may install dependencies. Tally installs these consented script rules locally before Claude starts. Never bypass-permissions.');
   if (config.claudeCode && configHash(config.claudeCode.allow) === configHash(allow)) return;
   if (options.dryRun) { print('Preview only: Claude permission consent has not been granted.'); return; }
   const approved = options.allowClaude ?? (!options.yes && parseYes(await readLine('Approve this Claude Code allow-list once for this repository? y/N', 'N')));
@@ -326,6 +327,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
       config.runner = setup.runner;
       if (options.harnessChoice) config.tiers = setup.tiers;
     }
+    if ((config.runner ?? 'ao') === 'ao') aoWorkerMode(config);
     await consentClaude(config, options, readLine, print);
   }
   const validation = validateConfig(config);
@@ -379,7 +381,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     print(`Resume incomplete init from ${pendingInitPath(configPath)}; preserve matching files and existing AO settings.`);
     printSummary(saved, print);
     if (options.verbose) print(pending.configText);
-    print(saved.runner === 'direct' ? 'Direct installation; no AO settings owned or changed.' : `AO project ${pending.record.projectId}; setup entry: ${pending.record.addedSetupCommand ?? 'none'}; worker allow-list: not installed; no global harness settings changed.`);
+    print(saved.runner === 'direct' ? 'Direct installation; no AO settings owned or changed.' : `AO project ${pending.record.projectId}; setup entry: ${pending.record.addedSetupCommand ?? 'none'}; worker allow-list: ${pending.record.workerPermissionMode === 'default' ? 'Claude local settings installed before launch' : 'not installed'}; no global harness settings changed.`);
     const result = { configPath, projectId: pending.record.projectId, testCommand: saved.test.command, setupCommand: saved.test.setupCommand ?? null, baseBranch: saved.repo.baseBranch, tiers: saved.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
     if (options.dryRun || (!options.yes && !parseYes(await readLine('Resume these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
     return { ...result, applied: true, doctor: await finishInit(options, pending, resumeCommand, recordPath) };
@@ -406,6 +408,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
   const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Enable cfo.ai budget integration? y/N', 'N'));
   const { runner, tiers } = await chooseSetup(options, command, repoRoot, readLine, print);
+  if (runner === 'ao') aoWorkerMode({ tiers });
   const projectId = runner === 'ao' ? basename(repoRoot) : '';
   const config: TallyConfig = {
     version: 1,
@@ -463,7 +466,10 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const existingProjectPath = existingProject ? (JSON.parse(existingProject) as { project?: { path?: string } }).project?.path : undefined;
   if (existingProjectPath && resolve(existingProjectPath) !== resolve(repoRoot)) throw new InitError(`AO project ${projectId} belongs to ${existingProjectPath}, not ${repoRoot}; choose a distinct project id before init; nothing was changed.`);
   const currentProjectConfig = existingProject ? (parseYaml(existingProject) as { project?: { config?: unknown } })?.project?.config ?? {} : {};
-  const nextProjectConfig = runner === 'ao' ? withWorkerAutoMode(withPostCreate(currentProjectConfig, setupCommand)) : {};
+  const workerMode = runner === 'ao' ? aoWorkerMode(config) : null;
+  const hasClaude = config.tiers.some(tier => tier.harness === 'claude-code');
+  const ownedSetupCommand = runner === 'ao' && hasClaude ? aoClaudeSetupCommand(configPath) : setupCommand;
+  const nextProjectConfig = runner === 'ao' ? withWorkerPermissionMode(withPostCreate(currentProjectConfig, ownedSetupCommand), workerMode!) : {};
   print('Tally init proposed changes:');
   printSummary(config, print);
   print(`Create ${configPath}: repository configuration${options.verbose ? `\n${stringifyYaml(config)}` : ' (use --verbose for full YAML)'}.`);
@@ -471,13 +477,14 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   if (runner === 'ao') {
     print(`${existingProject ? 'Update' : 'Register'} AO project ${projectId} at ${repoRoot}; preserve all existing config fields.`);
     print(`AO post-create entries: ${JSON.stringify(nextProjectConfig.postCreate ?? [])}`);
-    print('AO worker permission mode: auto, only for this project\'s workers; harness sandbox and automatic safety review remain active. No bypass-permissions or global settings changes. Uninstall restores the owned setting.');
-    print('Worker allow-list: not installed; scoped enforcement is not available through the current AO worker launch API.');
-    print('Requested worker rules (not yet enforced):');
+    print(`AO worker permission mode: ${workerMode}, only for this project's workers; no bypass-permissions or global settings changes. Uninstall restores the owned setting.`);
+    if (hasClaude) print('Worker allow-list: consented Claude rules installed before launch in .claude/settings.local.json; scripts outside the worktree; local settings and instructions excluded from Git.');
+    else print('Worker allow-list: not installed; scoped enforcement is not available through the current AO worker launch API.');
+    print(hasClaude ? 'Consented worker rules (installed locally before launch):' : 'Requested worker rules (not yet enforced):');
     print('- Edit files in the worker\'s own worktree.');
     print(`- Run the configured test command: ${testCommand}`);
     print('- Run git add and git commit.');
-    print('- No git push, network access, or installs. Tally publishes.');
+    print('- Tally publishes; workers must not git push or create PRs. Approved setup may install dependencies.');
   } else print('Direct setup: no AO registration, post-create hooks, or AO worker permission changes.');
   print('Integration connection changes require their own explicit approval; the config proposal contains no credentials.');
   const result = { configPath, projectId, testCommand, setupCommand, baseBranch, tiers: tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`), doctor: [] as DoctorLine[] };
@@ -490,8 +497,9 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const record: InstallRecord = { version: 1, runner, configPath, configHash: contentHash(configText), projectId,
     projectCreated: runner === 'ao' && !existingProject, projectConfigHash: configHash(nextProjectConfig),
     postCreateExisted: Array.isArray(before.postCreate), postCreateAfterHash: configHash(nextProjectConfig.postCreate ?? []),
-    addedSetupCommand: runner === 'ao' && setupCommand && !postCreateBefore.includes(setupCommand) ? setupCommand : null,
-    ...(runner === 'direct' || workerPermissionMode(before) === 'auto' ? {} : {
+    addedSetupCommand: runner === 'ao' && ownedSetupCommand && !postCreateBefore.includes(ownedSetupCommand) ? ownedSetupCommand : null,
+    ...(runner === 'direct' || workerPermissionMode(before) === workerMode ? {} : {
+      workerPermissionMode: workerMode!,
       workerExisted: Object.hasOwn(before, 'worker'), workerBefore: before.worker ?? null,
       workerAfterHash: configHash(nextProjectConfig.worker),
     }),

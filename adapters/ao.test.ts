@@ -273,6 +273,21 @@ describe('usageFromAoPayload', () => {
     ]);
   });
 
+  it('does not kill a Claude worker for a recovered refusal in its completion message', async () => {
+    let polls = 0;
+    const command: CommandRunner = async (_file, args) => {
+      if (args.slice(0, 2).join(' ') !== 'session get') throw new Error(`unexpected kill: ${args.join(' ')}`);
+      polls += 1;
+      return { stdout: JSON.stringify({ session: { id: 'claude-recovered', status: polls === 1 ? 'needs_input' : 'idle',
+        activity: { state: polls === 1 ? 'waiting_input' : 'idle', message: 'Earlier command permission denied; completed the edit and tests with the approved script.' },
+        branch: 'ao/claude-recovered/root' } }), stderr: '' };
+    };
+    const adapter = new AoCliAdapter({ command, sleep: async () => {}, pollMs: 0, needsInputGracePolls: 3, idleStablePolls: 2,
+      fetch: async () => ({ ok: true, json: async () => ({ totals: { inputTokens: 100, outputTokens: 20 } }) }) as Response });
+    await expect(adapter.wait('claude-recovered')).resolves.toMatchObject({ status: 'idle', branch: 'ao/claude-recovered/root' });
+    expect(polls).toBe(3);
+  });
+
   it('does not count a needs-input poll as stalled while activity or usage changes', async () => {
     let gets = 0;
     let usagePolls = 0;

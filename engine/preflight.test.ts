@@ -7,6 +7,7 @@ import { validateRealRunConfig, workerAutoModeFixCommand } from './preflight.js'
 import { runTally } from './run.js';
 import { CommandError } from '../adapters/command.js';
 import { claudeAllowList } from './harness.js';
+import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 function writeConfig(extraRepo = '') {
   const dir = mkdtempSync(join(tmpdir(), 'tally-preflight-'));
@@ -22,7 +23,7 @@ test: { command: "npm test" }
 backlog: { source: "file", file: "backlog.yaml" }
 tiers:
   - name: cheap
-    harness: claude-code
+    harness: codex
     sessionMode: tui
     provider: test
     model: test-model
@@ -38,10 +39,35 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 }
 
 describe('real run preflight', () => {
+  it('requires Claude local setup, default launch mode and current script consent before an AO spawn', async () => {
+    const { configPath } = writeConfig(', aoProject: "claude-project"');
+    const config = loadConfig(configPath);
+    config.tiers[0]!.harness = 'claude-code';
+    const project = { worker: { agentConfig: { permissions: 'default' } }, postCreate: [aoClaudeSetupCommand(configPath)] };
+    const runner = async () => ({ stdout: JSON.stringify({ project: { config: project } }), stderr: '' });
+    await expect(validateRealRunConfig(config, configPath, runner)).rejects.toThrow('worker consent is missing');
+    config.claudeCode = { allow: claudeAllowList(config.test) };
+    await expect(validateRealRunConfig(config, configPath, runner)).resolves.toBeUndefined();
+    config.test.command = 'npm test -- --changed';
+    await expect(validateRealRunConfig(config, configPath, runner)).rejects.toThrow('re-run tally init');
+    config.claudeCode = { allow: claudeAllowList(config.test) };
+    project.worker.agentConfig.permissions = 'auto';
+    await expect(validateRealRunConfig(config, configPath, runner)).rejects.toThrow('local dontAsk allow-list is not overridden');
+    project.worker.agentConfig.permissions = 'default';
+    project.postCreate = [];
+    await expect(validateRealRunConfig(config, configPath, runner)).rejects.toThrow('install Tally Claude local settings before');
+    config.test.setupCommand = 'make setup';
+    config.claudeCode = { allow: claudeAllowList(config.test) };
+    project.postCreate = [aoClaudeSetupCommand(configPath)];
+    await expect(validateRealRunConfig(config, configPath, runner)).resolves.toBeUndefined();
+    config.tiers.push({ ...config.tiers[0]!, name: 'codex', harness: 'codex' });
+    await expect(validateRealRunConfig(config, configPath, runner)).rejects.toThrow('Mixed AO harnesses');
+  });
   it('checks the configured direct harness without requiring an AO project or session mode', async () => {
     const { configPath } = writeConfig();
     const config = loadConfig(configPath);
     config.runner = 'direct';
+    config.tiers[0]!.harness = 'claude-code';
     config.claudeCode = { allow: claudeAllowList(config.test) };
     delete config.tiers[0]!.sessionMode;
     const calls: string[] = [];
@@ -57,6 +83,7 @@ describe('real run preflight', () => {
     const { configPath } = writeConfig();
     const config = loadConfig(configPath);
     config.runner = 'direct';
+    config.tiers[0]!.harness = 'claude-code';
     const calls: string[] = [];
     await expect(validateRealRunConfig(config, configPath, async file => {
       calls.push(file);

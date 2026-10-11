@@ -7,8 +7,26 @@ import { loadConfig } from './config.js';
 import { runDoctor, type DoctorRunner } from './doctor.js';
 import { CommandError } from '../adapters/command.js';
 import { claudeAllowList } from './harness.js';
+import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 describe('runDoctor', () => {
+  it('reports mixed AO as not supported yet without proposing a harness substitution', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-mixed-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.repo.aoProject = 'mixed';
+    config.tiers[1]!.harness = 'codex';
+    config.claudeCode = { allow: claudeAllowList(config.test) };
+    config.integrations = { neatlogs: false, entire: false, cfoai: false, slack: false };
+    writeFileSync(configPath, stringify(config));
+    const lines = await runDoctor({ configPath, env: {}, runner: async file => ({
+      stdout: file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT'
+        : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'default' } } } } }), stderr: '' }) });
+    expect(lines.find(line => line.product === 'AO worker auto mode')).toMatchObject({
+      status: 'broken', detail: expect.stringContaining('Mixed AO harnesses are not supported yet'),
+      fix: 'use Claude-only or Codex-only AO tiers, or runner: direct',
+    });
+  });
   it('reports disabled products as off, without checking credentials or optional CLIs', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-off-'));
     const configPath = join(dir, 'tally.yaml');
@@ -18,7 +36,7 @@ describe('runDoctor', () => {
     config.budget.source = 'config';
     config.claudeCode = { allow: claudeAllowList(config.test) };
     writeFileSync(configPath, stringify(config));
-    const runner = vi.fn(async (file: string) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'auto' } } } } }), stderr: '' }));
+    const runner = vi.fn(async (file: string) => ({ stdout: file === 'claude' ? '{"loggedIn":true}' : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'default' } }, postCreate: [aoClaudeSetupCommand(configPath)] } } }), stderr: '' }));
     const check = vi.fn(async () => ({ status: 'missing' as const, detail: 'no token' }));
     const lines = await runDoctor({ runner, configPath, env: {}, cfoaiCheck: check });
     expect(lines.filter(line => ['neatlogs key', 'Entire CLI', 'Entire graph plugin', 'cfo.ai'].includes(line.product)).every(line => line.status === 'off' && line.fix === null)).toBe(true);
@@ -70,7 +88,7 @@ describe('runDoctor', () => {
     });
   });
 
-  it('reports target AO worker auto mode from tally.yaml', async () => {
+  it('reports Claude default launch mode and missing prelaunch local settings separately', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-'));
     mkdirSync(join(dir, 'repo'));
     const configPath = join(dir, 'tally.yaml');
@@ -120,10 +138,11 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
     });
 
     expect(lines.find((line) => line.product === 'AO worker auto mode')).toMatchObject({
-      status: 'broken',
+      status: 'connected',
       detail: expect.stringContaining('worker permission mode is default'),
-      fix: expect.stringContaining('ao project set-config fly-doom-jev --config-json'),
+      fix: null,
     });
+    expect(lines.find(line => line.product === 'AO setup post-create')).toMatchObject({ status: 'broken', fix: expect.stringContaining('tally-worker-settings.js') });
   });
 
   it('reports target AO setup post-create from tally.yaml', async () => {
