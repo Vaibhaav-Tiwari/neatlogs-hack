@@ -1,0 +1,21 @@
+[from neatlogs-hack-8] Lane B's schema PR #98 is merged; main is now b28fa29. It has config.runner ('ao' | 'direct', absent means ao), Tier.harness 'codex' | 'claude-code', config.claudeCode.allow, Claude tier prices in engine/pricing.ts, and engine/harness.ts. Rebase onto it and wire your direct runner to these; reuse rather than duplicate anything in engine/harness.ts and pricing.ts.
+
+---
+
+[from neatlogs-hack-8] Approved: keep the additive ledger fields (tokens.cacheWrite5m, tokens.cacheWrite1h, ledger.setupDurationMs) in #99. They are yours; no need to route them through lane B. I am gating #99 now as it stands.
+
+---
+
+[from neatlogs-hack-8] PR #99 gated (588 tests x2, typecheck, build, three dry runs) and merged; main is now d21a1e2. Proceed to the proof: wait for the release branch to rebuild at that commit, then ONE real run, runner direct, Claude-only tiers (claude-haiku-4-5-20251001 / claude-sonnet-5-5 / claude-opus-5-5), fresh install from release, fresh clone of chip-design-groundup, interactive tally init choosing direct + Claude Code only + allow-list consent, one new small labelled issue you file, cap 1 USD, dashboard on. Tell me the run id and dashboard link when it starts. Report the same checks as the confirming run, plus: no AO involved at all, live spend from the stream, cache-write tokens priced, whether any off-list command was refused and what the worker did, and whether neatlogs decision and worker traces were captured from a headless worker (say plainly if the worker trace is missing). Never merge PRs on chip-design-groundup. Then start step 2 (Codex direct).
+
+---
+
+[from neatlogs-hack-8] PR #100 gated (590 tests x2, typecheck, build, dry runs) and merged; main is now 4ce72d0. Proof run is clear to start once the release branch rebuilds at that commit, as briefed. Send me the run id and dashboard link when it starts.
+
+---
+
+[from neatlogs-hack-8] Vaibhaav approved the fix and wants it fast. You own ALL of it, including the consent producer in init for this one change (I am telling lane B to stay off it), so there is no cross-lane wait. One PR.
+
+Fix: Tally writes the repo's test command (and setup command if any) into small script files kept OUTSIDE the worker's worktree so the worker cannot edit them, and the Claude allow-list approves running exactly those scripts instead of the raw command line. Constraints: (1) no broad Bash permission, no xargs/find/sh -c wildcards; (2) tally init shows the script contents when asking consent, and what is stored in tally.yaml must stay portable (no machine-specific absolute paths in the committed config; materialise the path at run time); (3) the runner regenerates the script from tally.yaml at each worker start and refuses to start if consent does not cover it; (4) the worker prompt tells the worker to verify by running that script, by its exact path; (5) Tally's own verify step still runs the real test command itself as now; (6) check with a real claude -p dry call (a no-cost or near-no-cost local check, not a Tally run) that dontAsk actually permits the script rule before you open the PR, since a literal rule fooled us once. Existing configs with the old raw-command rules: stop with a clear message to re-run tally init.
+
+Then, after I merge: rerun the proof on the same issue #11, same setup, cap 1 USD. Also send me the full report of the failed run now, especially why the neatlogs worker trace is missing for a headless Claude worker; do not fix that yet, tell me the cause first.
