@@ -15,7 +15,7 @@ import { loadConfig } from './config.js';
 import { readPlanBudget } from './plan.js';
 import { formatUsd } from '../schema/money.js';
 import { applyReinit, finishReinit, prepareReinit, readReinit, reinitPath } from './reinit.js';
-import { checkHarness, claudeAllowList, type Harness } from './harness.js';
+import { checkHarness, claudeAllowList, claudeScripts, type Harness } from './harness.js';
 
 export interface InitCommandResult {
   stdout: string;
@@ -253,6 +253,8 @@ async function consentClaude(config: TallyConfig, options: InitOptions, readLine
   const allow = claudeAllowList(config.test);
   print('Claude Code worker allow-list (relative to its worker folder):');
   for (const rule of allow) print(`- ${rule}`);
+  print('Script tokens are portable content-bound consent, replaced with exact paths outside the worker worktree at startup. Workers cannot edit these scripts; no broad Bash permission is granted.');
+  for (const script of claudeScripts(config.test)) print(`${script.name} script contents:\n${script.contents}`);
   print('Test and setup commands execute repository code and may install dependencies. This records repository consent only; worker-local enforcement still needs verification. Never bypass-permissions.');
   if (config.claudeCode && configHash(config.claudeCode.allow) === configHash(allow)) return;
   if (options.dryRun) { print('Preview only: Claude permission consent has not been granted.'); return; }

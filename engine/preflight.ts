@@ -150,7 +150,7 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
     if (resolvedBacklog && !existsSync(resolvedBacklog)) problems.push(`backlog.file does not exist: ${resolvedBacklog}`);
     if (config.repo.workerPublishesPr) problems.push('runner: direct requires repo.workerPublishesPr: false; Tally publishes the verified branch');
     if (problems.length) throw new ConfigError(configPath, problems);
-    if (config.tiers.some(tier => tier.harness === 'claude-code')) requireClaudeConsent(config.claudeCode?.allow);
+    if (config.tiers.some(tier => tier.harness === 'claude-code')) requireClaudeConsent(config.claudeCode?.allow, config.test);
     for (const harness of new Set(config.tiers.map(tier => tier.harness))) await checkDirectHarness(harness, runner);
     return;
   }

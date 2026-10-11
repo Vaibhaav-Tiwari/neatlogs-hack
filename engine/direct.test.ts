@@ -12,6 +12,7 @@ import { GitHubPublisher } from '../adapters/publisher.js';
 import { PriceHistory } from '../agent/history.js';
 import type { TallyConfig } from '../schema/index.js';
 import { runRealTally } from './real.js';
+import { claudeAllowList } from './harness.js';
 
 describe('direct runner through the real loop', () => {
   it('stops, WIP commits, escalates on the same branch, verifies, publishes and cleans up', async () => {
@@ -24,7 +25,7 @@ describe('direct runner through the real loop', () => {
     const base = git(['rev-parse', 'HEAD']);
     const config: TallyConfig = {
       runner: 'direct', version: 1, repo: { path: dir, slug: 'acme/calc', baseBranch: 'main' },
-      claudeCode: { allow: ['Edit(./**)', 'Write(./**)', 'Bash(git add *)', 'Bash(git commit *)', 'Bash(git status)', 'Bash(git diff *)', 'Bash(node --check calc.js)'] },
+      claudeCode: { allow: claudeAllowList({ command: 'node --check calc.js' }) },
       test: { command: 'node --check calc.js' }, backlog: { source: 'file', file: 'backlog.yaml' },
       tiers: ['cheap', 'middle', 'top'].map((name, i) => ({ name, harness: 'claude-code', model: name, provider: 'anthropic', ceilingFraction: [0.2, 0.5, 1][i]!, price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0.1, outputUsdPerMTok: 5 } })),
       ceilings: { bySizeUsd: { small: 1, medium: 2, large: 3 } }, budget: { source: 'config', usd: 2 },
@@ -35,10 +36,15 @@ describe('direct runner through the real loop', () => {
     const paths: string[] = [], branches: string[] = [];
     const command: DirectRunnerOptions['command'] = (file, args, options) => file === 'claude' ? Promise.resolve({ stdout: '{"loggedIn":true}', stderr: '' }) : runCommand(file, file === 'git' && args[0] === 'commit' ? ['-c', 'user.name=Tally Test', '-c', 'user.email=tally-test@example.invalid', ...args] : args, options);
     const runner = new DirectRunner({ repoPath: dir, baseBranch: 'main', requiredBaseCommit: base, test: config.test, approvedRules: config.claudeCode!.allow, command,
-      launch: (_file, _args, options) => {
+      launch: (_file, args, options) => {
         const child = Object.assign(new EventEmitter(), { pid: 10000 + children.length, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough() });
         children.push(child); paths.push(options.cwd); branches.push(git(['branch', '--show-current'], options.cwd));
         child.stdin.once('finish', () => {
+          const scriptRule = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools')).find(rule => rule.endsWith('-test.sh)'))!;
+          const scriptPath = scriptRule.slice(5, -1);
+          expect(scriptPath.startsWith(options.cwd + '/')).toBe(false);
+          expect(readFileSync(scriptPath, 'utf8')).toBe('#!/bin/sh\nset -e\nnode --check calc.js\n');
+          expect(child.stdin.read().toString()).toContain(`run exactly ${scriptPath}`);
           if (children.length === 1) {
             writeFileSync(join(options.cwd, 'calc.js'), 'export const add = (a, b) => a + b;\n');
             child.stdout.write(JSON.stringify({ type: 'assistant', message: { id: 'a', usage: { input_tokens: 1000, output_tokens: 10 } } }) + '\n');

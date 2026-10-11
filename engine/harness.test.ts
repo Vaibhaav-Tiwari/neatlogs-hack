@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { checkHarness, claudeAllowList } from './harness.js';
+import { checkHarness, claudeAllowList, claudeScripts, requireClaudeScriptConsent } from './harness.js';
 
 describe('harness sign-in checks', () => {
   it('requires a real Claude loggedIn flag, not installation or credential-shaped text', async () => {
@@ -30,10 +30,20 @@ describe('harness sign-in checks', () => {
     const allow = claudeAllowList({ command: 'npm test', setupCommand: 'npm ci' });
     expect(allow).toContain('Edit(./**)');
     expect(allow).toContain('Write(./**)');
-    expect(allow).toContain('Bash(npm test)');
-    expect(allow).toContain('Bash(npm ci)');
+    expect(allow).toContain(claudeScripts({ command: 'npm test', setupCommand: 'npm ci' })[0]!.rule);
+    expect(allow.join(' ')).not.toContain('Bash(npm');
     expect(allow).not.toContain('Bash');
     expect(allow.join(' ')).not.toContain('bypass');
     expect(() => claudeAllowList({ command: 'npm test\nrm -rf /' })).toThrow('single-line');
+  });
+  it('binds portable script consent to exact contents and refuses legacy, edited or broad rules', () => {
+    const test = { command: "find js -name '*.js' -print0 | xargs -0 -n1 node --check", setupCommand: 'make setup' };
+    const allow = claudeAllowList(test);
+    expect(() => requireClaudeScriptConsent(allow, test)).not.toThrow();
+    expect(claudeScripts(test)[0]!.contents).toBe(`#!/bin/sh\nset -e\n${test.command}\n`);
+    expect(allow.join(' ')).not.toContain('/tmp/');
+    expect(() => requireClaudeScriptConsent(['Bash(make test)'], test)).toThrow('re-run tally init');
+    expect(() => requireClaudeScriptConsent(allow, { ...test, command: 'make test' })).toThrow('re-run tally init');
+    expect(() => requireClaudeScriptConsent([...allow, 'Bash(*)'], test)).toThrow('re-run tally init');
   });
 });

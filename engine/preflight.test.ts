@@ -6,6 +6,7 @@ import { loadConfig } from './config.js';
 import { validateRealRunConfig, workerAutoModeFixCommand } from './preflight.js';
 import { runTally } from './run.js';
 import { CommandError } from '../adapters/command.js';
+import { claudeAllowList } from './harness.js';
 
 function writeConfig(extraRepo = '') {
   const dir = mkdtempSync(join(tmpdir(), 'tally-preflight-'));
@@ -41,7 +42,7 @@ describe('real run preflight', () => {
     const { configPath } = writeConfig();
     const config = loadConfig(configPath);
     config.runner = 'direct';
-    config.claudeCode = { allow: ['Edit(./**)', 'Write(./**)', 'Bash(npm test)'] };
+    config.claudeCode = { allow: claudeAllowList(config.test) };
     delete config.tiers[0]!.sessionMode;
     const calls: string[] = [];
     await validateRealRunConfig(config, configPath, async (file, args) => {
@@ -61,6 +62,12 @@ describe('real run preflight', () => {
       calls.push(file);
       return { stdout: '{"loggedIn":true}', stderr: '' };
     })).rejects.toThrow('run tally init');
+    expect(calls).toEqual([]);
+    config.claudeCode = { allow: ['Edit(./**)', 'Write(./**)', 'Bash(npm test)'] };
+    await expect(validateRealRunConfig(config, configPath, async file => {
+      calls.push(file);
+      return { stdout: '{"loggedIn":true}', stderr: '' };
+    })).rejects.toThrow('re-run tally init');
     expect(calls).toEqual([]);
   });
   it('reports missing AO executable as a prerequisite error before any run output or worker', async () => {

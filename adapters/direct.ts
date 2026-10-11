@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -9,7 +9,7 @@ import type { WorkerPort, WorkerResult, WorkerStartInput } from '../engine/real.
 import type { TallyConfig, TokenUsage } from '../schema/index.js';
 import { runCommand } from './command.js';
 import type { CommandRunner } from './ao.js';
-import { checkHarness } from '../engine/harness.js';
+import { checkHarness, claudeScripts, requireClaudeScriptConsent } from '../engine/harness.js';
 
 type Json = Record<string, unknown>;
 function record(value: unknown): Json { return value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {}; }
@@ -68,8 +68,9 @@ export async function checkDirectHarness(harness: string, command: CommandRunner
   if (!status.signedIn) throw new Error(`${status.detail}; run ${status.fix} before starting Tally. No harness will be substituted.`);
 }
 
-export function requireClaudeConsent(approvedRules: string[] | undefined): asserts approvedRules is string[] {
+export function requireClaudeConsent(approvedRules: string[] | undefined, test?: TallyConfig['test']): asserts approvedRules is string[] {
   if (!approvedRules?.length) throw new Error('Claude Code worker consent is missing (claudeCode.allow); run tally init to review and approve its allow-list before starting a worker.');
+  if (test) requireClaudeScriptConsent(approvedRules, test);
 }
 
 export function claudeArguments(input: WorkerStartInput, sessionId: string, approvedRules: string[]): string[] {
@@ -109,11 +110,11 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
   private readonly sessions = new Map<string, Session>();
   private readonly command: CommandRunner;
   constructor(private readonly options: DirectRunnerOptions) {
-    this.command = options.command ?? ((file, args, commandOptions) => runCommand(file, args, { ...commandOptions, timeout: file === 'sh' ? (options.test.timeoutSec ?? 600) * 1000 : 30_000 }));
+    this.command = options.command ?? ((file, args, commandOptions) => runCommand(file, args, { ...commandOptions, timeout: file.endsWith('.sh') ? (options.test.timeoutSec ?? 600) * 1000 : 30_000 }));
   }
 
   async start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string; checkoutPath: string; setupDurationMs: number }> {
-    requireClaudeConsent(this.options.approvedRules);
+    requireClaudeConsent(this.options.approvedRules, this.options.test);
     await checkDirectHarness(input.harness, this.command);
     const previous = input.continueSessionId ? this.sessions.get(input.continueSessionId) : undefined;
     if (input.continueBranch && (!previous?.closed || previous.branch !== input.continueBranch)) throw new Error('Direct continuation requires a stopped worker on the same branch.');
@@ -124,6 +125,18 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
     let created = false;
     let setupDurationMs = 0;
     try {
+      const scripts = claudeScripts(this.options.test);
+      const scriptDirectory = join(directory, 'scripts');
+      await mkdir(scriptDirectory, { mode: 0o700, recursive: true });
+      const paths = new Map<string, string>();
+      for (const script of scripts) {
+        const path = join(scriptDirectory, `${sessionId}-${script.name}.sh`);
+        if (!/^[a-zA-Z0-9_./-]+$/.test(path)) throw new Error('Claude script path contains unsupported shell characters; set TMPDIR to a path without spaces or shell metacharacters.');
+        // Exact executable permission only; script edits are explicitly denied below.
+        await writeFile(path, script.contents, { mode: 0o500, flag: 'wx' });
+        paths.set(script.rule, path);
+      }
+      const runtimeRules = this.options.approvedRules.map(rule => paths.has(rule) ? `Bash(${paths.get(rule)})` : rule);
       if (!previous) {
         const base = (await this.command('git', ['rev-parse', '--verify', '--end-of-options', `${this.options.baseBranch}^{commit}`], { cwd: this.options.repoPath })).stdout.trim();
         if (this.options.requiredBaseCommit && base !== this.options.requiredBaseCommit) throw new Error(`Required base commit mismatch: expected ${this.options.requiredBaseCommit}, got ${base}`);
@@ -133,14 +146,17 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
         if (head !== base) throw new Error(`Direct worker base mismatch: expected ${base}, got ${head}`);
         if (this.options.test.setupCommand) {
           const began = Date.now();
-          await this.command('sh', ['-c', this.options.test.setupCommand], { cwd: checkoutPath });
+          await this.command(paths.get(scripts.find(script => script.name === 'setup')!.rule)!, [], { cwd: checkoutPath });
           setupDurationMs = Date.now() - began;
         }
       }
       const env = { ...process.env };
       // Do not attribute the child to the AO session running Tally or trigger nested-Claude detection.
       for (const key of Object.keys(env)) if (key === 'CLAUDECODE' || key.startsWith('AO_') || key.startsWith('ORCA_')) delete env[key];
-      const child = (this.options.launch ?? ((file, args, options) => spawn(file, args, options)))('claude', claudeArguments(input, sessionId, this.options.approvedRules), { cwd: checkoutPath, env, detached: true, stdio: 'pipe' });
+      const args = claudeArguments(input, sessionId, runtimeRules);
+      // Claude uses // for filesystem-root paths; Edit governs both Edit and Write.
+      args.splice(args.indexOf('--tools'), 0, `Edit(/${scriptDirectory}/**)`);
+      const child = (this.options.launch ?? ((file, args, options) => spawn(file, args, options)))('claude', args, { cwd: checkoutPath, env, detached: true, stdio: 'pipe' });
       const meter = new ClaudeUsageMeter();
       let complete!: () => void;
       const session: Session = { child, branch, checkoutPath, directory, meter, completion: new Promise(resolve => { complete = resolve; }), closed: false, stopped: false, error: null, denied: false };
@@ -173,7 +189,8 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
         session.closed = true; complete();
       });
       await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
-      child.stdin.end(input.prompt);
+      const testPath = paths.get(scripts[0]!.rule)!;
+      child.stdin.end(`${input.prompt}\n\nTally verification instruction: run exactly ${testPath} as your verification command, not the raw test command or a shell wrapper. This executable is outside the worktree and approved only for execution. Do not read, edit, replace or delete it. It runs the consented test command in your current worktree. Setup is already complete; do not run setup.\n`);
       return { sessionId, branch, checkoutPath, setupDurationMs };
     } catch (error) {
       if (created) await this.command('git', ['worktree', 'remove', '--force', checkoutPath], { cwd: this.options.repoPath }).catch(() => {});
