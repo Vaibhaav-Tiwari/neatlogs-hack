@@ -1,4 +1,5 @@
 import { loadEnv } from '../engine/env.js';
+import { workerCorrelationPrefix } from '../engine/worker-correlation.js';
 
 export interface WorkerTraceReadContext {
   runId: string;
@@ -20,10 +21,13 @@ interface TraceRecord {
 }
 
 function matches(trace: TraceRecord, context: WorkerTraceReadContext): boolean {
-  const name = trace.workflowName ?? trace.traceName ?? '';
-  const correlation = /Tally run ([^,]+), task ([^,]+), attempt (\d+)(?:[:\s]|$)/.exec(name);
-  return Boolean(trace.sessionId && trace.sessionId !== context.runId) && (!context.nativeSessionId || trace.sessionId === context.nativeSessionId) && correlation?.[1] === context.runId
-    && correlation[2] === context.taskId && Number(correlation[3]) === context.attempt;
+  if (!trace.sessionId || trace.sessionId === context.runId || (context.nativeSessionId && trace.sessionId !== context.nativeSessionId)) return false;
+  return [trace.workflowName, trace.traceName].some(name => {
+    if (!name) return false;
+    if (name.startsWith(workerCorrelationPrefix(context.runId, context.taskId, context.attempt))) return true;
+    const legacy = /Tally run ([^,]+), task ([^,]+), attempt (\d+)(?:[:\s]|$)/.exec(name);
+    return legacy?.[1] === context.runId && legacy[2] === context.taskId && Number(legacy[3]) === context.attempt;
+  });
 }
 
 export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
