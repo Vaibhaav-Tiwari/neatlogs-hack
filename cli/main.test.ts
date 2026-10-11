@@ -46,7 +46,8 @@ describe('parseCli', () => {
     try {
       const { io, out, err } = capture();
       expect(await main(['run'], io)).toBe(0);
-      expect(out.join('\n')).toContain('No matching open issues with label "ready-for-tally" in acme/static-site');
+      expect(out.join('\n')).toContain('No runnable open issues with label "ready-for-tally" in acme/static-site');
+      expect(out.join('\n')).toContain('Issues already linked to open PRs are excluded.');
       expect(out.join('\n')).toContain("gh issue edit <issue-number> --repo 'acme/static-site' --add-label 'ready-for-tally'");
       expect(err).toEqual([]);
     } finally { spy.mockRestore(); }
