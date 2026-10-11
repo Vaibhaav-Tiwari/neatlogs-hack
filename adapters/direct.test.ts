@@ -149,8 +149,11 @@ describe('direct Claude worker', () => {
     await expect(checkDirectHarness('claude-code', async () => { throw new Error('ENOENT'); })).rejects.toThrow('Claude Code is required');
     await expect(checkDirectHarness('claude-code', async () => ({ stdout: '{"loggedIn":false}', stderr: '' }))).rejects.toThrow('claude auth login');
     const command = vi.fn();
-    await expect(checkDirectHarness('codex', command)).rejects.toThrow('codex');
+    await expect(checkDirectHarness('aider', command)).rejects.toThrow('does not support harness "aider"');
     expect(command).not.toHaveBeenCalled();
+    await expect(checkDirectHarness('codex', async () => { throw new Error('ENOENT'); })).rejects.toThrow('Codex is required');
+    await expect(checkDirectHarness('codex', async (_file, args) => ({ stdout: args[0] === '--version' ? '0.160.1' : 'Not logged in', stderr: '' }))).rejects.toThrow('codex login');
+    await expect(checkDirectHarness('codex', async (_file, args) => ({ stdout: args[0] === '--version' ? '0.160.1' : 'Logged in using ChatGPT', stderr: '' }))).resolves.toBeUndefined();
   });
   it('sets up before starting, streams live usage, stops the process group at ceiling and reuses the branch', async () => {
     const fake = processFake();

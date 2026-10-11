@@ -77,7 +77,14 @@ describe('real run preflight', () => {
     });
     expect(calls).toEqual(['claude --version', 'claude auth status']);
     config.tiers[0]!.harness = 'codex';
-    await expect(validateRealRunConfig(config, configPath, async () => ({ stdout: '{}', stderr: '' }))).rejects.toThrow('no harness will be substituted');
+    // Codex direct is supported: signed out stops the run with the fix, signed in passes, and Claude is never checked in its place.
+    await expect(validateRealRunConfig(config, configPath, async () => ({ stdout: 'Not logged in', stderr: '' }))).rejects.toThrow('run codex login before starting Tally. No harness will be substituted');
+    calls.length = 0;
+    await validateRealRunConfig(config, configPath, async (file, args) => {
+      calls.push(`${file} ${args.join(' ')}`);
+      return { stdout: 'Logged in using ChatGPT', stderr: '' };
+    });
+    expect(calls).toEqual(['codex --version', 'codex login status']);
   });
   it('requires direct Claude consent before checking auth or spawning', async () => {
     const { configPath } = writeConfig();

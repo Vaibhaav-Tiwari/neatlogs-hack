@@ -62,9 +62,9 @@ export class ClaudeUsageMeter {
 }
 
 export async function checkDirectHarness(harness: string, command: CommandRunner = runCommand): Promise<void> {
-  if (harness !== 'claude-code') throw new Error(`Direct runner does not support harness "${harness}" yet; no harness will be substituted.`);
+  if (harness !== 'claude-code' && harness !== 'codex') throw new Error(`Direct runner does not support harness "${harness}"; no harness will be substituted.`);
   const status = await checkHarness(harness, command);
-  if (!status.installed) throw new Error(`Claude Code is required for runner: direct; ${status.detail}. ${status.fix}. No harness will be substituted.`);
+  if (!status.installed) throw new Error(`${harness === 'codex' ? 'Codex' : 'Claude Code'} is required for runner: direct; ${status.detail}. ${status.fix}. No harness will be substituted.`);
   if (!status.signedIn) throw new Error(`${status.detail}; run ${status.fix} before starting Tally. No harness will be substituted.`);
 }
 
@@ -81,6 +81,24 @@ export function claudeArguments(input: WorkerStartInput, sessionId: string, appr
     '--tools', 'Read,Edit,Write,Glob,Grep,Bash', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'];
 }
 
+/** Commits a finished direct worker's edits on its branch, leaving out ignored and Tally-owned files. Shared by every direct harness. */
+export async function commitWorkerEdits(command: CommandRunner, session: { checkoutPath: string; branch: string }, repo: { repoPath: string; configPath?: string }): Promise<string | null> {
+    const options = { cwd: session.checkoutPath };
+    const headBranch = (await command('git', ['branch', '--show-current'], options)).stdout.trim();
+    if (headBranch !== session.branch) throw new Error(`Direct worker branch changed: expected ${session.branch}, got ${headBranch}`);
+    const changed = (await command('git', ['diff', '--name-only', '-z', 'HEAD', '--'], options)).stdout;
+    const added = (await command('git', ['ls-files', '--others', '--exclude-standard', '-z'], options)).stdout;
+    const ignored = new Set((await command('git', ['ls-files', '--cached', '--ignored', '--exclude-standard', '-z'], options)).stdout.split('\0').filter(Boolean));
+    const configFile = repo.configPath ? relative(resolve(repo.repoPath), resolve(repo.configPath)).replace(/\\/g, '/') : 'tally.yaml';
+    const files = [...new Set((changed + added).split('\0').filter(Boolean))].filter(path =>
+      !ignored.has(path) && path !== 'tally.yaml' && path !== configFile && path !== '.tally' && !path.startsWith('.tally/') && path !== '.claude/settings.local.json');
+    if (!files.length) return null;
+    await command('git', ['--literal-pathspecs', 'add', '-A', '--', ...files], options);
+    // Commit only these paths, even if the worker pre-staged ignored or Tally-owned files.
+    await command('git', ['--literal-pathspecs', 'commit', '--only', '-m', 'tally: commit completed task edits', '--', ...files], options);
+    return (await command('git', ['rev-parse', 'HEAD'], options)).stdout.trim();
+}
+
 export interface DirectRunnerOptions {
   repoPath: string;
   baseBranch: string;
@@ -92,6 +110,8 @@ export interface DirectRunnerOptions {
   launch?: (file: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; stdio: 'pipe' }) => ChildProcessWithoutNullStreams;
   signal?: (pid: number, signal: NodeJS.Signals) => void;
   stopGraceMs?: number;
+  /** A stopped session started by another harness's runner, so this one can continue its branch. */
+  adopt?: (sessionId: string) => Pick<Session, 'branch' | 'checkoutPath' | 'directory' | 'closed'> | undefined;
 }
 
 interface Session {
@@ -118,7 +138,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
   async start(input: WorkerStartInput): Promise<{ sessionId: string; branch: string; checkoutPath: string; setupDurationMs: number }> {
     requireClaudeConsent(this.options.approvedRules, this.options.test);
     await checkDirectHarness(input.harness, this.command);
-    const previous = input.continueSessionId ? this.sessions.get(input.continueSessionId) : undefined;
+    const previous = input.continueSessionId ? this.sessions.get(input.continueSessionId) ?? this.options.adopt?.(input.continueSessionId) : undefined;
     if (input.continueBranch && (!previous?.closed || previous.branch !== input.continueBranch)) throw new Error('Direct continuation requires a stopped worker on the same branch.');
     const sessionId = randomUUID();
     const branch = input.continueBranch ?? `tally/${input.name.replace(/[^a-zA-Z0-9_-]/g, '-')}-${sessionId.slice(0, 8)}`;
@@ -210,6 +230,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
     }
   }
 
+  continuation(id: string): Pick<Session, 'branch' | 'checkoutPath' | 'directory' | 'closed'> | undefined { return this.sessions.get(id); }
   private session(id: string): Session {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`Unknown direct worker session ${id}; its process cannot be resumed by this Tally process.`);
@@ -251,20 +272,7 @@ export class DirectRunner implements WorkerPort, LiveUsagePort, SessionControlPo
   async commitChanges(id: string): Promise<string | null> {
     const session = this.session(id);
     if (!session.closed || session.error || session.stopped) throw new Error('Cannot commit edits from an active, stopped or errored direct worker');
-    const options = { cwd: session.checkoutPath };
-    const headBranch = (await this.command('git', ['branch', '--show-current'], options)).stdout.trim();
-    if (headBranch !== session.branch) throw new Error(`Direct worker branch changed: expected ${session.branch}, got ${headBranch}`);
-    const changed = (await this.command('git', ['diff', '--name-only', '-z', 'HEAD', '--'], options)).stdout;
-    const added = (await this.command('git', ['ls-files', '--others', '--exclude-standard', '-z'], options)).stdout;
-    const ignored = new Set((await this.command('git', ['ls-files', '--cached', '--ignored', '--exclude-standard', '-z'], options)).stdout.split('\0').filter(Boolean));
-    const configFile = this.options.configPath ? relative(resolve(this.options.repoPath), resolve(this.options.configPath)).replace(/\\/g, '/') : 'tally.yaml';
-    const files = [...new Set((changed + added).split('\0').filter(Boolean))].filter(path =>
-      !ignored.has(path) && path !== 'tally.yaml' && path !== configFile && path !== '.tally' && !path.startsWith('.tally/') && path !== '.claude/settings.local.json');
-    if (!files.length) return null;
-    await this.command('git', ['--literal-pathspecs', 'add', '-A', '--', ...files], options);
-    // Commit only these paths, even if the worker pre-staged ignored or Tally-owned files.
-    await this.command('git', ['--literal-pathspecs', 'commit', '--only', '-m', 'tally: commit completed task edits', '--', ...files], options);
-    return (await this.command('git', ['rev-parse', 'HEAD'], options)).stdout.trim();
+    return commitWorkerEdits(this.command, session, this.options);
   }
   /** Called only after verification, publishing and capture have read the checkout. Stopped branches remain for continuation. */
   async release(id: string): Promise<void> {
