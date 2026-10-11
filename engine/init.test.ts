@@ -9,12 +9,12 @@ import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 import { runUninstall } from './uninstall.js';
 
 describe('runInit', () => {
-  it('stops mixed AO init before consent, integration connection or settings writes', async () => {
+  it('requires Claude consent for mixed AO before integration connection or settings writes', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-mixed-gate-'));
     const onboarding = vi.fn(async () => undefined);
     const command = vi.fn(detectedAgents(repo, ['claude-code', 'codex']));
-    await expect(runInit({ cwd: repo, command, runner: 'ao', harnessChoice: 'mixed', yes: true, allowClaude: true,
-      testCommand: 'true', setupCommand: '', print: () => {}, onboarding })).rejects.toThrow('Mixed AO harnesses are not supported yet');
+    await expect(runInit({ cwd: repo, command, runner: 'ao', harnessChoice: 'mixed', yes: true,
+      testCommand: 'true', setupCommand: '', print: () => {}, onboarding })).rejects.toThrow(/consent|allow-claude/i);
     expect(onboarding).not.toHaveBeenCalled();
     expect(existsSync(join(repo, 'tally.yaml'))).toBe(false);
     expect(command.mock.calls.some(([, args]) => args[0] === 'project')).toBe(false);
@@ -38,8 +38,26 @@ describe('runInit', () => {
     expect(project.postCreate).toEqual(['echo existing', aoClaudeSetupCommand(result.configPath)]);
     const ownership = JSON.parse(readFileSync(installRecordPath(result.configPath), 'utf8'));
     expect(ownership.workerPermissionMode).toBe('default');
+    expect(ownership.aoHarnessPermissions).toEqual({ 'claude-code': 'default' });
     expect(ownership.addedSetupCommand).toBe(project.postCreate[1]);
     expect(project.env).toEqual(original.env);
+    await runUninstall({ configPath: result.configPath, command, readLine: async () => 'y' });
+    expect(project).toEqual(original);
+  });
+  it('records mixed harness modes and restores the original project after a Codex spawn mode switch', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-ao-mixed-'));
+    const original = { worker: { agentConfig: { permissions: 'accept-edits', effort: 'high' } }, postCreate: ['user hook'] };
+    let project = structuredClone(original);
+    const command: InitCommandRunner = async (file, args, options) => {
+      if (file === 'ao' && args[0] === 'project' && args[1] === 'get') return { stdout: JSON.stringify({ project: { config: project } }), stderr: '' };
+      if (file === 'ao' && args[0] === 'project' && args[1] === 'set-config') { project = JSON.parse(args[args.indexOf('--config-json') + 1]!); return { stdout: '{}', stderr: '' }; }
+      return detectedAgents(repo, ['claude-code', 'codex'])(file, args, options);
+    };
+    const result = await runInit({ cwd: repo, command, runner: 'ao', harnessChoice: 'mixed', yes: true, allowClaude: true,
+      testCommand: 'true', setupCommand: '', doctor: async () => [], onboarding: async () => undefined, print: () => {} });
+    const record = JSON.parse(readFileSync(installRecordPath(result.configPath), 'utf8'));
+    expect(record.aoHarnessPermissions).toEqual({ codex: 'auto', 'claude-code': 'default' });
+    project.worker.agentConfig.permissions = 'auto';
     await runUninstall({ configPath: result.configPath, command, readLine: async () => 'y' });
     expect(project).toEqual(original);
   });

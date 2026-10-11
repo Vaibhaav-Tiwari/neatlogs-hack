@@ -26,6 +26,23 @@ function fixture(projectCreated = false) {
 }
 
 describe('uninstall', () => {
+  it('normalizes only owned mode switches and refuses other worker edits or unconsented modes', async () => {
+    const f = fixture();
+    const owned = { agent: 'codex', agentConfig: { permissions: 'default', effort: 'high' } };
+    Object.assign(f.projectConfig, { worker: structuredClone(owned) });
+    const record = JSON.parse(readFileSync(f.recordPath, 'utf8'));
+    Object.assign(record, { workerExisted: true, workerBefore: { agent: 'codex' }, workerAfterHash: configHash(owned),
+      workerPermissionMode: 'default', aoHarnessPermissions: { codex: 'auto', 'claude-code': 'default' } });
+    writeFileSync(f.recordPath, JSON.stringify(record));
+    const current = f.projectConfig.worker as unknown as typeof owned;
+    current.agentConfig.permissions = 'auto';
+    current.agentConfig.effort = 'low';
+    await expect(runUninstall({ configPath: f.configPath, command: f.command, readLine: async () => 'y' })).rejects.toThrow('AO worker settings changed');
+    current.agentConfig.effort = 'high';
+    current.agentConfig.permissions = 'bypass-permissions';
+    await expect(runUninstall({ configPath: f.configPath, command: f.command, readLine: async () => 'y' })).rejects.toThrow('outside the consented harness modes');
+    expect(f.calls.some(args => args[1] === 'set-config')).toBe(false);
+  });
   it.each([false, true])('restores only the owned worker policy, preserving an existing worker: %s', async existed => {
     const f = fixture();
     const before = existed ? { agent: 'codex', agentConfig: { effort: 'high' } } : null;

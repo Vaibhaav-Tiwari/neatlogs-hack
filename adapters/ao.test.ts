@@ -9,9 +9,109 @@ import { GitWorktreeResolver } from '../engine/real.js';
 
 class AoCliAdapter extends RealAoCliAdapter {
   constructor(options: AoAdapterOptions = {}) {
-    super({ ...options, fetch: options.fetch ?? (async () => ({ ok: true, json: async () => ({ totals: { inputTokens: 1, outputTokens: 1 } }) }) as Response) });
+    let config: unknown = {};
+    const original = options.command;
+    super({ project: 'fake-project', ...options,
+      ...(original ? { command: async (file: string, args: string[], opts?: { cwd?: string }) => {
+        if (file === 'ao' && args[0] === 'project') {
+          if (args[1] === 'set-config') config = JSON.parse(args[args.indexOf('--config-json') + 1]!);
+          return { stdout: JSON.stringify({ project: { config } }), stderr: '' };
+        }
+        return original(file, args, opts);
+      } } : {}), fetch: options.fetch ?? (async () => ({ ok: true, json: async () => ({ totals: { inputTokens: 1, outputTokens: 1 } }) }) as Response) });
   }
 }
+
+describe('AO per-harness permission selection', () => {
+  const input = (harness: string, aoProject = 'mixed') => ({ task: {} as never, tier: {} as never, attempt: 1,
+    ceilingNanos: 1, harness, model: 'fake-model', name: harness, prompt: 'implement', aoProject });
+
+  it('locks set+readback+spawn across adapter instances and preserves other project fields', async () => {
+    let config = { worker: { agent: 'codex', agentConfig: { permissions: 'auto', effort: 'high', model: 'existing' } },
+      orchestrator: { agentConfig: { permissions: 'accept-edits' } }, env: { KEEP: 'yes' }, postCreate: ['existing hook'] };
+    const calls: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let firstSet!: () => void;
+    const entered = new Promise<void>(resolve => { firstSet = resolve; });
+    let sets = 0;
+    const command: CommandRunner = async (_file, args) => {
+      calls.push(args.slice(0, 3).join(' '));
+      if (args[0] === 'project') {
+        if (args[1] === 'set-config') {
+          config = JSON.parse(args[args.indexOf('--config-json') + 1]!);
+          if (++sets === 1) { firstSet(); await gate; }
+        }
+        return { stdout: JSON.stringify({ project: { config } }), stderr: '' };
+      }
+      const harness = args[args.indexOf('--harness') + 1];
+      expect(config.worker.agentConfig.permissions).toBe(harness === 'claude-code' ? 'default' : 'auto');
+      expect(config.worker.agentConfig.effort).toBe('high');
+      expect(config.orchestrator.agentConfig.permissions).toBe('accept-edits');
+      expect(config.env).toEqual({ KEEP: 'yes' });
+      expect(config.postCreate).toEqual(['existing hook']);
+      expect(args).not.toContain('--permission');
+      expect(args.join(' ')).not.toContain('bypass-permissions');
+      return { stdout: `spawned session ${harness}`, stderr: '' };
+    };
+    const first = new RealAoCliAdapter({ command }).start(input('claude-code'));
+    await entered;
+    const second = new RealAoCliAdapter({ command }).start(input('codex'));
+    await Promise.resolve();
+    expect(sets).toBe(1);
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(['project get mixed', 'project set-config mixed', 'project get mixed', 'spawn --project mixed',
+      'project get mixed', 'project set-config mixed', 'project get mixed', 'spawn --project mixed']);
+  });
+
+  it('does not spawn on a failed or unapplied mode update, and releases the lock for retry', async () => {
+    let config: unknown = { worker: { agentConfig: { permissions: 'auto' } } };
+    let fail = true, applied = false, spawns = 0;
+    const command: CommandRunner = async (_file, args) => {
+      if (args[0] === 'spawn') { spawns++; return { stdout: 'spawned session ok', stderr: '' }; }
+      if (args[1] === 'set-config') {
+        if (fail) throw new Error('mode update failed');
+        if (applied) config = JSON.parse(args[args.indexOf('--config-json') + 1]!);
+      }
+      return { stdout: JSON.stringify({ project: { config } }), stderr: '' };
+    };
+    const adapter = new RealAoCliAdapter({ command });
+    await expect(adapter.start(input('claude-code'))).rejects.toThrow('mode update failed');
+    fail = false;
+    await expect(adapter.start(input('claude-code'))).rejects.toThrow('expected default');
+    expect(spawns).toBe(0);
+    applied = true;
+    await expect(adapter.start(input('claude-code'))).resolves.toMatchObject({ sessionId: 'ok' });
+    expect(spawns).toBe(1);
+  });
+
+  it('requires an explicit project and known harness before making changes', async () => {
+    const adapter = new RealAoCliAdapter({ command: async () => { throw new Error('must not call AO'); } });
+    await expect(adapter.start({ ...input('claude-code'), aoProject: undefined })).rejects.toThrow('explicit project');
+    await expect(adapter.start(input('other'))).rejects.toThrow('Unsupported AO harness');
+  });
+
+  it('applies Claude default for a same-branch continuation before spawning', async () => {
+    let config: unknown = {};
+    const calls: string[] = [];
+    const adapter = new RealAoCliAdapter({ command: async (file, args) => {
+      calls.push(`${file} ${args.slice(0, 3).join(' ')}`);
+      if (file === 'git') return { stdout: '', stderr: '' };
+      if (args[0] === 'project') {
+        if (args[1] === 'set-config') config = JSON.parse(args[args.indexOf('--config-json') + 1]!);
+        return { stdout: JSON.stringify({ project: { config } }), stderr: '' };
+      }
+      if (args[0] === 'spawn') {
+        expect(config).toEqual({ worker: { agentConfig: { permissions: 'default' } } });
+        return { stdout: 'spawned session next', stderr: '' };
+      }
+      return { stdout: JSON.stringify({ session: { branch: 'task', isTerminated: args[2] === 'old', worktreePath: '/next' } }), stderr: '' };
+    } });
+    await adapter.start({ ...input('claude-code'), attempt: 2, continueBranch: 'task', continueSessionId: 'old' });
+    expect(calls.indexOf('ao project set-config mixed')).toBeLessThan(calls.indexOf('ao spawn --project mixed'));
+  });
+});
 
 describe('AO branch continuation', () => {
   it('launches a clean continuation with its task prompt instead of sending into startup idle', async () => {
