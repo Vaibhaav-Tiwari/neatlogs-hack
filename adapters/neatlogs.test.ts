@@ -64,6 +64,32 @@ describe('NeatlogsTraceAdapter', () => {
     expect(sdk.shutDown).toBe(1);
   });
 
+  it.each(['tally.route', 'tally.baseline.route', 'tally.escalate'])('exposes run/task/attempt in the public name of %s', async name => {
+    const sdk = new FakeNeatlogs();
+    const adapter = new NeatlogsTraceAdapter({ env: { NEATLOGS_API_KEY: 'secret-key' }, sdk });
+    await adapter.span(name, { sessionId: 'run-20261011-092229Z', taskId: '#9', attempt: 2 }, async () => {});
+    expect(sdk.traceCalls[0]).toMatchObject({
+      name: `${name}: Tally run run-20261011-092229Z, task #9, attempt 2`,
+      sessionId: 'run-20261011-092229Z',
+      input: { sessionId: 'run-20261011-092229Z', taskId: '#9', attempt: 2 },
+    });
+  });
+
+  it('keeps history record names unchanged even when they carry attempt context', async () => {
+    const sdk = new FakeNeatlogs();
+    const adapter = new NeatlogsTraceAdapter({ env: { NEATLOGS_API_KEY: 'secret-key' }, sdk });
+    const name = 'tally.history.record {"size":"small","tier":"cheap"}';
+    await adapter.span(name, { sessionId: 'run-1', taskId: '#9', attempt: 1 }, async () => {});
+    expect(sdk.traceCalls[0]?.name).toBe(name);
+  });
+
+  it('does not invent missing decision attempt context', async () => {
+    const sdk = new FakeNeatlogs();
+    const adapter = new NeatlogsTraceAdapter({ env: { NEATLOGS_API_KEY: 'secret-key' }, sdk });
+    await adapter.span('tally.route', { sessionId: 'run-1', taskId: '#9' }, async () => {});
+    expect(sdk.traceCalls[0]?.name).toBe('tally.route');
+  });
+
   it('turns off when the SDK cannot be loaded', async () => {
     const adapter = new NeatlogsTraceAdapter({
       env: { NEATLOGS_API_KEY: 'secret-key' },

@@ -76,7 +76,13 @@ export class NeatlogsTraceAdapter implements TracePort {
     };
     const sessionId = typeof attributes.sessionId === 'string' ? attributes.sessionId : undefined;
     const safeAttributes = serialisable(attributes);
-    return sdk.trace({ name, kind: 'CHAIN', ...(sessionId ? { sessionId } : {}), input: safeAttributes, attributes: safeAttributes }, async () => {
+    // Public trace summaries expose names but not custom input/attributes.
+    const decision = ['tally.route', 'tally.baseline.route', 'tally.escalate'].includes(name);
+    const correlatedName = decision && sessionId && typeof attributes.taskId === 'string'
+      && typeof attributes.attempt === 'number' && Number.isInteger(attributes.attempt) && attributes.attempt > 0
+      ? `${name}: Tally run ${sessionId}, task ${attributes.taskId}, attempt ${attributes.attempt}`
+      : name;
+    return sdk.trace({ name: correlatedName, kind: 'CHAIN', ...(sessionId ? { sessionId } : {}), input: safeAttributes, attributes: safeAttributes }, async () => {
       const carrier: Record<string, string> = {};
       sdk.injectTraceContext?.(carrier);
       this.lastTraceIdValue = traceIdFromCarrier(carrier);
