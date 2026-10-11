@@ -168,13 +168,24 @@ tally dashboard   <span class="c"># watch the ledger fill in</span></code></pre>
   </div>
 </section>
 
-<section class="stub" id="orchestrator" aria-labelledby="ao-title">
-  <!-- Artwork slot "mascots": site/art/mascots.webp -->
-  <div class="art art-mascots" aria-hidden="true"></div>
-  <div class="wrap reveal">
-    <h2 id="ao-title">With Agent Orchestrator, or without</h2>
-    <p>With Agent Orchestrator, Tally runs agents in parallel. Without it, Tally runs Claude Code or Codex directly, one task at a time. <code>tally init</code> detects which you have.</p>
-    <p class="stub-note">The scene with the Agent Orchestrator mascot is being built.</p>
+<section class="ao" id="orchestrator" aria-labelledby="ao-title">
+  <div class="wrap">
+    <h2 id="ao-title" class="reveal">Better with a conductor.</h2>
+    <p class="ao-lede reveal">With <a href="https://github.com/OrchestratorInc/agent-orchestrator">Agent Orchestrator</a>, Tally runs agents in parallel. Without it, Tally runs Claude Code or Codex directly, one task at a time.</p>
+  </div>
+  <figure class="stage" data-stage>
+    <div class="stage-plate" role="img" aria-label="The blue Agent Orchestrator mascot raises its conductor's baton; a row of small tally marks rises through the air towards the large Tally mark">
+      <i class="veil v1"></i><i class="veil v2"></i><i class="veil v3"></i><i class="veil v4"></i>
+      <i class="spark"></i>
+      <i class="star t1"></i><i class="star t2"></i><i class="star t3"></i><i class="star t4"></i><i class="star t5"></i>
+    </div>
+  </figure>
+  <div class="wrap">
+    <div class="modes reveal">
+      <div class="mode"><h3>With Agent Orchestrator</h3><p>Several tasks at once, each agent in its own worktree. <code>tally init</code> finds Agent Orchestrator and sets it up as the runner.</p></div>
+      <div class="mode"><h3>Without it</h3><p>Tally starts Claude Code or Codex itself and works through the tasks one at a time. No Agent Orchestrator needed.</p></div>
+    </div>
+    <p class="credit">The mascot is Agent Orchestrator's, from <a href="https://github.com/OrchestratorInc/agent-orchestrator">OrchestratorInc/agent-orchestrator</a> (Apache-2.0), shown here in a painted scene.</p>
   </div>
 </section>
 

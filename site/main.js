@@ -46,6 +46,17 @@ if (plates.length && !still.matches) {
   slide();
 }
 
+// ---------- Agent Orchestrator stage: the baton's spark wakes each small tally in turn ----------
+
+const stage = document.querySelector('[data-stage]');
+if (stage && 'IntersectionObserver' in window && !still.matches) {
+  stage.classList.add('armed');
+  const conduct = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) { conduct.disconnect(); stage.classList.add('go'); }
+  }, { threshold: 0.55 });
+  conduct.observe(stage);
+}
+
 // ---------- copy the install command ----------
 
 for (const button of document.querySelectorAll('[data-copy]')) {
