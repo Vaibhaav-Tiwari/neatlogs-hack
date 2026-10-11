@@ -37,7 +37,7 @@ function quoteShell(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function withWorkerAutoMode(config: unknown): Record<string, unknown> {
+export function withWorkerAutoMode(config: unknown): Record<string, unknown> {
   const base = isRecord(config) ? { ...config } : {};
   const worker = isRecord(base.worker) ? { ...base.worker } : {};
   const agentConfig = isRecord(worker.agentConfig) ? { ...worker.agentConfig } : {};

@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { CommandError } from '../adapters/command.js';
 import { configHash, contentHash, type InstallRecord } from './install-record.js';
 import type { InitCommandRunner } from './init.js';
+import { withWorkerAutoMode } from './preflight.js';
 
 export interface InitTransaction {
   version: 1;
@@ -70,7 +71,7 @@ export async function applyInitTransaction(transaction: InitTransaction, command
     if (!record.projectCreated && hash !== transaction.beforeProjectConfigHash && hash !== record.projectConfigHash) {
       throw new CommandError('AO project settings changed since init was proposed; refusing to overwrite them.');
     }
-    const next = { ...current };
+    const next = record.workerAfterHash ? withWorkerAutoMode(current) : { ...current };
     if (record.addedSetupCommand) {
       const commands = Array.isArray(next.postCreate) ? next.postCreate as string[] : [];
       next.postCreate = commands.includes(record.addedSetupCommand) ? commands : [...commands, record.addedSetupCommand];
@@ -80,6 +81,11 @@ export async function applyInitTransaction(transaction: InitTransaction, command
       record.projectConfigHash = configHash(next);
       record.postCreateExisted = Array.isArray(current?.postCreate);
       record.postCreateAfterHash = configHash(next.postCreate ?? []);
+      if (record.workerAfterHash) {
+        record.workerExisted = Object.hasOwn(current ?? {}, 'worker');
+        record.workerBefore = current?.worker ?? null;
+        record.workerAfterHash = configHash(next.worker);
+      }
       if (record.addedSetupCommand && Array.isArray(current?.postCreate) && current.postCreate.includes(record.addedSetupCommand)) record.addedSetupCommand = null;
       transaction.newProjectInitialized = true;
       save();

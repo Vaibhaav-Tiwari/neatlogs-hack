@@ -29,22 +29,32 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<{ re
   if (!record.projectCreated && record.addedSetupCommand && configHash(current.postCreate ?? []) !== record.postCreateAfterHash) {
     throw new Error('AO post-create hooks changed after init; refusing to overwrite them.');
   }
+  if (!record.projectCreated && record.workerAfterHash && configHash(current.worker) !== record.workerAfterHash) throw new Error('AO worker settings changed after init; refusing to overwrite them.');
   if (record.projectCreated) {
     const sessions = JSON.parse((await command('ao', ['session', 'ls', '--project', record.projectId, '--json'], { cwd })).stdout) as { sessions?: unknown[] } | unknown[];
     const active = Array.isArray(sessions) ? sessions : sessions.sessions;
     if (!Array.isArray(active) || active.length) throw new Error('AO project still has active sessions, or session status is unavailable; stop them before uninstalling.');
   }
   const items = [configPath, recordPath,
-    ...(record.projectCreated ? [`AO project registration: ${record.projectId}`] : record.addedSetupCommand ? [`AO post-create hook: ${record.addedSetupCommand}`] : [])];
+    ...(record.projectCreated ? [`AO project registration: ${record.projectId}`] : [
+      ...(record.addedSetupCommand ? [`AO post-create hook: ${record.addedSetupCommand}`] : []),
+      ...(record.workerAfterHash ? ['AO project worker auto mode (restore previous worker settings)'] : []),
+    ])];
   for (const item of items) options.print?.(`Remove: ${item}`);
   if (!/^y(?:es)?$/i.test((await (options.readLine ?? defaultReadLine)('Remove the listed Tally installation items? y/N', 'N')).trim())) return { removed: false, items };
   if (record.projectCreated) {
     await command('ao', ['project', 'rm', record.projectId, '--yes', '--json'], { cwd });
-  } else if (record.addedSetupCommand) {
+  } else if (record.addedSetupCommand || record.workerAfterHash) {
     const next = { ...current };
-    const kept = (current.postCreate as string[]).filter((hook) => hook !== record.addedSetupCommand);
-    if (record.postCreateExisted) next.postCreate = kept;
-    else delete next.postCreate;
+    if (record.addedSetupCommand) {
+      const kept = (current.postCreate as string[]).filter((hook) => hook !== record.addedSetupCommand);
+      if (record.postCreateExisted) next.postCreate = kept;
+      else delete next.postCreate;
+    }
+    if (record.workerAfterHash) {
+      if (record.workerExisted) next.worker = record.workerBefore;
+      else delete next.worker;
+    }
     await command('ao', ['project', 'set-config', record.projectId, '--config-json', JSON.stringify(next), '--json'], { cwd });
   }
   if (existsSync(configPath)) unlinkSync(configPath);

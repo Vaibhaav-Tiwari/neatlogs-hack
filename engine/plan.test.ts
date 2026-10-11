@@ -1,8 +1,10 @@
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { planTally } from './plan.js';
+import { describe, expect, it, vi } from 'vitest';
+import { planTally, readPlanBudget } from './plan.js';
+import { CfoaiBudgetAdapter } from '../adapters/cfoai.js';
+import { loadConfig } from './config.js';
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'tally-plan-'));
@@ -45,6 +47,16 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 }
 
 describe('planTally', () => {
+  it.each([false, true])('closes the read-only budget client even after an error: %s', async failure => {
+    const config = loadConfig(fixture());
+    config.budget.source = 'cfoai';
+    const read = vi.spyOn(CfoaiBudgetAdapter.prototype, 'budgetLimitNanos').mockImplementation(async () => { if (failure) throw new Error('read failed'); return 5_000_000_000; });
+    const close = vi.spyOn(CfoaiBudgetAdapter.prototype, 'close').mockResolvedValue();
+    try {
+      expect((await readPlanBudget(config, {})).source).toBe(failure ? 'config' : 'cfoai');
+      expect(close).toHaveBeenCalledOnce();
+    } finally { read.mockRestore(); close.mockRestore(); }
+  });
   it('shows the deliberate first attempt override and rejects invalid values', async () => {
     const configPath = fixture();
     const path = join(dirname(configPath), 'backlog.yaml');

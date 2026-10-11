@@ -42,6 +42,11 @@ export interface CliOptions {
   /** Use live read-only integrations for `tally demo`. */
   live: boolean;
   yes?: boolean;
+  testCommand?: string;
+  setupCommand?: string;
+  issueLabel?: string;
+  verbose?: boolean;
+  integrations?: Partial<Record<'neatlogs' | 'entire' | 'cfoai', boolean>>;
   repeats?: number;
   /** Integration to authenticate for `tally login`. */
   loginTarget: 'cfoai' | undefined;
@@ -97,6 +102,11 @@ Options:
   --plan            Size and route tasks, but do not spawn workers
   --live            For demo: use live read-only integrations with fake workers
   --yes             For init: approve the final change summary without prompting
+  --test-command <cmd> For init: verification shell command
+  --setup-command <cmd> For init: setup shell command (empty means none)
+  --issue-label <label> For init: GitHub issue label (default: tally)
+  --neatlogs <yes|no> --entire <yes|no> --cfoai <yes|no> Init product opt-ins
+  --verbose         For init: include the full proposed YAML
   --output <dir>    Output directory for tally market (default: .tally/market/latest)
   --limit <number>  Result limit for tally market (default: 10)
   --keyword <text>  CrustData keyword for tally market (default: AI coding)
@@ -124,6 +134,13 @@ export function parseCli(argv: string[]): ParsedCli {
         plan: { type: 'boolean', default: false },
         live: { type: 'boolean', default: false },
         yes: { type: 'boolean', default: false },
+        'test-command': { type: 'string' },
+        'setup-command': { type: 'string' },
+        'issue-label': { type: 'string' },
+        neatlogs: { type: 'string' },
+        entire: { type: 'string' },
+        cfoai: { type: 'string' },
+        verbose: { type: 'boolean', default: false },
         output: { type: 'string' },
         limit: { type: 'string' },
         keyword: { type: 'string' },
@@ -158,6 +175,14 @@ export function parseCli(argv: string[]): ParsedCli {
   }
 
   let budgetUsd: number | undefined;
+  const integrations: Partial<Record<'neatlogs' | 'entire' | 'cfoai', boolean>> = {};
+  for (const name of ['neatlogs', 'entire', 'cfoai'] as const) {
+    if (values[name] === undefined) continue;
+    if (!['yes', 'no'].includes(values[name])) return { kind: 'error', message: `--${name} must be yes or no` };
+    integrations[name] = values[name] === 'yes';
+  }
+  if (values['test-command'] !== undefined && !values['test-command'].trim()) return { kind: 'error', message: '--test-command cannot be empty; Tally needs a verification command' };
+  if (values['issue-label'] !== undefined && !values['issue-label'].trim()) return { kind: 'error', message: '--issue-label cannot be empty' };
   if (values.budget !== undefined) {
     budgetUsd = Number(values.budget);
     if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
@@ -197,6 +222,11 @@ export function parseCli(argv: string[]): ParsedCli {
       plan: values.plan,
       live: values.live,
       ...(values.yes ? { yes: true } : {}),
+      ...(values['test-command'] === undefined ? {} : { testCommand: values['test-command'] }),
+      ...(values['setup-command'] === undefined ? {} : { setupCommand: values['setup-command'] }),
+      ...(values['issue-label'] === undefined ? {} : { issueLabel: values['issue-label'] }),
+      ...(values.verbose ? { verbose: true } : {}),
+      ...(Object.keys(integrations).length ? { integrations } : {}),
       ...(repeats === undefined ? {} : { repeats }),
       loginTarget: name === 'login' ? 'cfoai' : undefined,
       output: values.output,
@@ -258,7 +288,10 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
 
 async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
   try {
-    const result = await runInit({ configPath: options.config, yes: options.yes, dryRun: options.dryRun, print: io.stdout });
+    if (!process.stdin.isTTY && !options.yes && !options.dryRun) throw new InitError('Interactive init needs a terminal; use --yes with --test-command, --setup-command, --budget, --issue-label and product flags for scripted input.');
+    const result = await runInit({ configPath: options.config, yes: options.yes, dryRun: options.dryRun, print: io.stdout,
+      testCommand: options.testCommand, setupCommand: options.setupCommand, budgetUsd: options.budgetUsd,
+      issueLabel: options.issueLabel, integrations: options.integrations, verbose: options.verbose });
     if (!result.applied) {
       io.stdout(options.dryRun ? 'Dry run: no changes made.' : 'Init cancelled: no changes made.');
       return 0;

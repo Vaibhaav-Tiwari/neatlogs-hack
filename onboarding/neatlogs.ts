@@ -87,6 +87,7 @@ export class NeatlogsOnboarding implements IntegrationOnboarding {
     let key = this.env().NEATLOGS_API_KEY ?? null;
     ui.print('neatlogs needs a US project API key; sign up at https://app.neatlogs.com or skip. Verification exports only SDK-generated probe spans, not repository data.');
     if (!await ui.confirm(key ? 'Verify the configured neatlogs key with the SDK probe?' : 'Open the neatlogs API keys page and connect?')) {
+      if (key) { this.key = key; return { status: 'ok', detail: 'neatlogs key is configured; optional probe skipped (connection not verified).' }; }
       return { status: 'off', detail: 'neatlogs skipped; decisions remain in the local ledger.' };
     }
     try {

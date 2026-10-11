@@ -313,6 +313,12 @@ export class CfoaiBudgetAdapter implements BudgetPort {
     return budget - spend;
   }
 
+  async close(): Promise<void> {
+    await this.client.close();
+    this.connected = false;
+    this.usable = false;
+  }
+
   async writeCumulativeActualSpend(runSpendNanos: number): Promise<void> {
     await this.ensureReady();
     try {

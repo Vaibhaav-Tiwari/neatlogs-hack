@@ -26,6 +26,29 @@ function fixture(projectCreated = false) {
 }
 
 describe('uninstall', () => {
+  it.each([false, true])('restores only the owned worker policy, preserving an existing worker: %s', async existed => {
+    const f = fixture();
+    const before = existed ? { agent: 'codex', agentConfig: { effort: 'high' } } : null;
+    const worker = { agent: 'codex', agentConfig: { effort: 'high', permissions: 'auto' } };
+    Object.assign(f.projectConfig, { worker });
+    const record = JSON.parse(readFileSync(f.recordPath, 'utf8'));
+    Object.assign(record, { workerExisted: existed, workerBefore: before, workerAfterHash: configHash(worker) });
+    writeFileSync(f.recordPath, JSON.stringify(record));
+    await runUninstall({ configPath: f.configPath, command: f.command, readLine: async () => 'y' });
+    const args = f.calls.find(args => args[1] === 'set-config')!;
+    const restored = JSON.parse(args[args.indexOf('--config-json') + 1]!);
+    if (existed) expect(restored.worker).toEqual(before);
+    else expect(restored).not.toHaveProperty('worker');
+    expect(restored.env).toEqual(f.projectConfig.env);
+  });
+  it('refuses to restore a worker policy the user edited', async () => {
+    const f = fixture();
+    const record = JSON.parse(readFileSync(f.recordPath, 'utf8'));
+    Object.assign(record, { workerExisted: false, workerBefore: null, workerAfterHash: configHash({ agentConfig: { permissions: 'auto' } }) });
+    writeFileSync(f.recordPath, JSON.stringify(record));
+    await expect(runUninstall({ configPath: f.configPath, command: f.command, readLine: async () => 'y' })).rejects.toThrow('AO worker settings changed');
+    expect(f.calls.some(args => args[1] === 'set-config')).toBe(false);
+  });
   it('lists changes, restores only the added hook, preserves settings and run data', async () => {
     const f = fixture();
     const listed: string[] = [];

@@ -7,6 +7,28 @@ import { defaultCommand, runInit, type InitCommandRunner } from './init.js';
 import { installRecordPath } from './install-record.js';
 
 describe('runInit', () => {
+  it('initializes a static repo non-interactively from flags and prints a compact summary', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-flags-'));
+    const output: string[] = [];
+    const readLine = vi.fn(async () => { throw new Error('unexpected prompt'); });
+    const result = await runInit({ cwd: repo, command: detectedAgents(repo), doctor: async () => [], onboarding: async () => undefined,
+      yes: true, testCommand: 'node --check js/app.js', setupCommand: '', budgetUsd: 5, issueLabel: 'ready',
+      integrations: { neatlogs: false, entire: false, cfoai: false }, readLine, print: line => output.push(line) });
+    expect(result.applied).toBe(true);
+    expect(readLine).not.toHaveBeenCalled();
+    const config = parseYaml(readFileSync(result.configPath, 'utf8'));
+    expect(config.test).not.toHaveProperty('setupCommand');
+    expect(config.budget.usd).toBe(5);
+    expect(config.backlog.issueLabel).toBe('ready');
+    expect(output.join('\n')).toContain('Test: node --check js/app.js');
+    expect(output.join('\n')).not.toContain('priceNote:');
+  });
+  it('shows full YAML only in verbose proposals', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'tally-init-verbose-'));
+    const output: string[] = [];
+    await runInit({ cwd: repo, command: detectedAgents(repo), dryRun: true, testCommand: 'true', setupCommand: '', verbose: true, print: line => output.push(line) });
+    expect(output.join('\n')).toContain('priceNote:');
+  });
   function detectedAgents(repo: string, installed = ['claude-code']): InitCommandRunner {
     return async (file, args) => {
       if (file === 'git') return { stdout: args[0] === 'rev-parse' ? repo : args[0] === 'branch' ? 'main' : '', stderr: '' };
@@ -217,7 +239,7 @@ describe('runInit', () => {
     expect(config.tiers.every((tier: { priceNote: string }) => tier.priceNote.includes('Verified base list price'))).toBe(true);
     expect(calls.some((call) => call.file === 'ao' && call.args.join(' ') === `project add --path ${repo} --id ${result.projectId}`)).toBe(true);
     const setConfig = calls.find((call) => call.file === 'ao' && call.args[0] === 'project' && call.args[1] === 'set-config');
-    expect(setConfig?.args).toContain(JSON.stringify({ postCreate: ['make setup'] }));
+    expect(setConfig?.args).toContain(JSON.stringify({ worker: { agentConfig: { permissions: 'auto' } }, postCreate: ['make setup'] }));
     expect(result.doctor[0]).toMatchObject({ product: 'AO daemon', status: 'connected' });
     expect(JSON.parse(readFileSync(installRecordPath(result.configPath), 'utf8'))).toMatchObject({ projectCreated: true, addedSetupCommand: 'make setup', version: 1 });
     expect((await runInit({ cwd: repo, command, yes: true, print: () => {} })).applied).toBe(false);
