@@ -1,0 +1,15 @@
+Tally run-20261012-162757Z #157 a1: Detect a missing Agent Orchestrator project in doctor and repair it in init
+Neatlogs correlation: runId=run-20261012-162757Z taskId=#157 attempt=1.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+If the Agent Orchestrator project recorded in `.tally/install.json` no longer exists (for example after `tally uninstall` in another shell, or the project was removed in AO), `tally doctor` still reports AO as connected, `tally run` fails with only `ao command failed (1)`, and `tally init` answers `No changes proposed` because it compares the answers with `tally.yaml` and never checks the project. Fix all three: (1) `tally doctor` must check that the recorded project id exists in AO and fail that line with `Agent Orchestrator project <id> not found; run tally init`; (2) `tally run` and `tally run --plan` must turn the PROJECT_NOT_FOUND case into that same message instead of the generic one; (3) `tally init` on an existing config must detect the missing project and propose re-registering it with the recorded settings, asking for the usual confirmation. Use the existing AO adapter and its fakes; the test suite guard forbids real adapters. Add tests for each of the three behaviours, including that a healthy project still yields `No changes proposed`. Typecheck, build and the full suite must stay green.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier cheap (codex/gpt-5.6-luna).
