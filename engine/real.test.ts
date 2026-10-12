@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as environment from './env.js';
 import { stringify as stringifyYaml } from 'yaml';
 import { execFileSync } from 'node:child_process';
 import { loadConfig } from './config.js';
@@ -17,10 +18,19 @@ import { runRealTally as runRealTallyImpl, type RealRunOptions, type CfoaiBudget
 
 // Loop tests never consult hosted Entire history; adapter behavior has dedicated fakes.
 function runRealTally(options: RealRunOptions) {
-  return runRealTallyImpl({ ...options, ports: { recall: { recallFor: async () => null }, ...options.ports } });
+  return runRealTallyImpl({ ...options, ports: {
+    recall: { recallFor: async () => null },
+    publisher: {
+      commitsAhead: async () => { throw new Error('Test must supply a publisher before verifying work'); },
+      changedFiles: async () => { throw new Error('Test must supply a publisher before checking files'); },
+      publishPr: async () => { throw new Error('Test must supply a publisher before publishing'); },
+    },
+    ...options.ports,
+  } });
 }
 
 const fixedNow = () => new Date('2026-10-11T03:00:00.000Z');
+afterEach(() => vi.restoreAllMocks());
 
 function fixture(integrations = 'neatlogs: false, entire: false, cfoai: false, slack: false') {
   const dir = mkdtempSync(join(tmpdir(), 'tally-real-'));
@@ -1318,7 +1328,9 @@ describe('runRealTally', () => {
     expect(validateLedger(result.ledger).ok).toBe(true);
   });
 
-  it('adds Entire, Neatlogs, and cfo.ai links to the PR after evidence read-back', async () => {
+  it.each([false, true])('adds Entire, Neatlogs, and cfo.ai links to the PR after evidence read-back (update fails: %s)', async (updateFails) => {
+    const network = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unit test must not use the network'));
+    const credentials = vi.spyOn(environment, 'loadEnv').mockImplementation(() => { throw new Error('Unit test must not read real credentials'); });
     const { dir, configPath } = fixture('neatlogs: true, entire: true, cfoai: true, slack: false');
     const config = loadConfig(configPath);
     config.tiers = config.tiers.map(tier => ({ ...tier, harness: 'codex', provider: 'openai', model: 'gpt-5.6-luna' }));
@@ -1333,7 +1345,10 @@ describe('runRealTally', () => {
       commitsAhead: worker.commitsAhead.bind(worker),
       changedFiles: worker.changedFiles.bind(worker),
       publishPr: worker.publishPr.bind(worker),
-      updatePrEvidence: async (input: typeof evidenceUpdates[number]) => { evidenceUpdates.push(input); },
+      updatePrEvidence: async (input: typeof evidenceUpdates[number]) => {
+        evidenceUpdates.push(input);
+        if (updateFails) throw new Error('GitHub evidence edit timed out');
+      },
     };
     const result = await runRealTally({
       configPath,
@@ -1351,6 +1366,9 @@ describe('runRealTally', () => {
         publisher,
         verifier: new SequenceVerifier([{ passed: true, reason: null }]),
         trace: new FakeTrace(),
+        cfoai: new FakeCfoaiBudget(),
+        handoff: { summaryFor: async () => null },
+        worktrees: { checkoutPathFor: async () => null },
         history: { lookup: async () => null, record: async () => {}, status: () => ({ status: 'ok' as const, detail: null }) },
         checkpoints: { checkpointFor: async () => ({ checkpointId: '01M4PROOF', checkpointUrl: 'https://entire.io/gh/acme/payments-service/session/native-session-1', entireSessionId: 'native-session-1' }) },
         workerTraceDrain: { drainWorker: async () => {} },
@@ -1368,6 +1386,17 @@ describe('runRealTally', () => {
     ]));
     expect(result.ledger[0]?.checkpointUrl).toBe('https://entire.io/gh/acme/payments-service/session/native-session-1');
     expect(result.ledger[0]?.workerTraceUrl).toBe('https://app.neatlogs.com/traces/' + 'b'.repeat(32));
+    expect(result.ledger[0]).toMatchObject({ result: 'passed', prUrl: evidenceUpdates[0]!.prUrl });
+    const savedLedger = JSON.parse(readFileSync(result.ledgerPath, 'utf8'));
+    expect(savedLedger[0]).toMatchObject({ result: 'passed', prUrl: evidenceUpdates[0]!.prUrl });
+    expect(result.runState.tasks[0]?.status).toBe('passed');
+    expect(result.runState.integrations.github.status).toBe(updateFails ? 'error' : 'off');
+    const savedRun = JSON.parse(readFileSync(result.runStatePath, 'utf8'));
+    expect(savedRun.tasks[0].status).toBe('passed');
+    expect(savedRun.integrations.github.status).toBe(updateFails ? 'error' : 'off');
+    if (updateFails) expect(result.runState.integrations.github.detail).toContain('GitHub evidence edit timed out');
+    expect(network).not.toHaveBeenCalled();
+    expect(credentials).not.toHaveBeenCalled();
   });
 
   it('lowers routing confidence when Entire recalls a prior failure on the same files', async () => {

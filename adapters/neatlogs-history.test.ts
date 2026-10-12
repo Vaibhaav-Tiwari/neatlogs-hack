@@ -258,7 +258,7 @@ describe('NeatlogsPriceHistory', () => {
 
   it('continues recording to the local fallback', async () => {
     const fallback = new FakeHistory();
-    const history = new NeatlogsPriceHistory({ fallback, env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' } });
+    const history = new NeatlogsPriceHistory({ fallback, env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' }, fetch: async () => { throw new Error('record must not fetch'); } });
     await history.record({ size: 'small', tier: 'cheap', result: 'passed', costNanos: 7 });
     expect(fallback.records).toEqual([{ size: 'small', tier: 'cheap', result: 'passed', costNanos: 7 }]);
   });
