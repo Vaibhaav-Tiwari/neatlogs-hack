@@ -9,6 +9,9 @@ export async function aoProjectCommand(args: string[], fetchImpl: typeof fetch =
     ...(editing ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ config: JSON.parse(args[args.indexOf('--config-json') + 1]!) }) } : {}),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => { throw new CommandError('AO project API could not be reached; start AO and retry.'); });
-  if (!response.ok) throw new CommandError(`AO project ${args[1]} failed: HTTP ${response.status}; check AO is running before retrying.`);
+  if (!response.ok) {
+    if (response.status === 404) throw new CommandError(`AO project ${args[2]} not found`, 'PROJECT_NOT_FOUND');
+    throw new CommandError(`AO project ${args[1]} failed: HTTP ${response.status}; check AO is running before retrying.`);
+  }
   return { stdout: JSON.stringify(await response.json()), stderr: '' };
 }

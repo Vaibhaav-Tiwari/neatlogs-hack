@@ -8,6 +8,17 @@ import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 export type PreflightRunner = (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 
+export function isAoProjectNotFound(error: unknown): boolean {
+  const value = error as { code?: unknown; message?: unknown; stderr?: unknown };
+  return value.code === 'PROJECT_NOT_FOUND' || /PROJECT_NOT_FOUND|project .*not found|missing project|HTTP 404/i.test(
+    `${typeof value.message === 'string' ? value.message : ''} ${typeof value.stderr === 'string' ? value.stderr : ''}`,
+  );
+}
+
+export function missingAoProjectMessage(projectId: string): string {
+  return `Agent Orchestrator project ${projectId} not found; run tally init`;
+}
+
 function configRelative(configPath: string, path: string): string {
   return isAbsolute(path) ? path : resolve(dirname(configPath), path);
 }
@@ -201,8 +212,10 @@ export async function validateRealRunConfig(config: TallyConfig, configPath: str
     try {
       project = parseAoProject((await runner('ao', ['project', 'get', config.repo.aoProject, '--json'])).stdout);
     } catch (error) {
-      if (error instanceof CommandError) throw error;
-      problems.push(
+      if (isAoProjectNotFound(error)) {
+        problems.push(missingAoProjectMessage(config.repo.aoProject));
+      } else if (error instanceof CommandError) throw error;
+      else problems.push(
         `repo.aoProject "${config.repo.aoProject}" is not registered in AO; fix: ao project add --path ${resolvedRepo} --id ${config.repo.aoProject}`,
       );
     }

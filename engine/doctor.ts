@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadConfig } from './config.js';
 import { loadEnv } from './env.js';
-import { checkClaudePostCreate, checkConfiguredWorkerMode, checkSetupPostCreate } from './preflight.js';
+import { checkClaudePostCreate, checkConfiguredWorkerMode, checkSetupPostCreate, isAoProjectNotFound, missingAoProjectMessage } from './preflight.js';
 import { checkHarness, claudeAllowList } from './harness.js';
 import { configHash } from './install-record.js';
 import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
@@ -89,6 +89,7 @@ async function aoWorkerModeLine(configPath: string, runner: DoctorRunner): Promi
     };
   } catch (error) {
     if (error instanceof CommandError && error.code === 'ENOENT') return { product: 'AO worker auto mode', status: 'missing', detail: error.message, fix: 'set TALLY_AO_BIN to the installed AO executable path' };
+    if (isAoProjectNotFound(error)) return { product: 'AO worker auto mode', status: 'broken', detail: missingAoProjectMessage(projectId), fix: 'run tally init' };
     return {
       product: 'AO worker auto mode',
       status: 'missing',
@@ -124,6 +125,7 @@ async function aoSetupPostCreateLine(configPath: string, runner: DoctorRunner): 
     };
   } catch (error) {
     if (error instanceof CommandError && error.code === 'ENOENT') return { product: 'AO setup post-create', status: 'missing', detail: error.message, fix: 'set TALLY_AO_BIN to the installed AO executable path' };
+    if (isAoProjectNotFound(error)) return { product: 'AO setup post-create', status: 'broken', detail: missingAoProjectMessage(projectId), fix: 'run tally init' };
     return {
       product: 'AO setup post-create',
       status: 'missing',
