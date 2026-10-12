@@ -23,7 +23,7 @@ import { createTerminalStyle, formatDoctorLine, formatInitLine } from '../ui/ter
 export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces', 'logo'] as const;
 export type Command = (typeof COMMANDS)[number];
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.2.1';
 
 export interface CliOptions {
   /** Path to tally.yaml. */
