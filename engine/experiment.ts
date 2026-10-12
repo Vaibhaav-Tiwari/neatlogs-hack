@@ -106,6 +106,9 @@ export class ExperimentWorker implements WorkerPort, FinalUsagePort, SessionCont
     this.costs.set(started.sessionId, 0);
     return started;
   }
+  async commitChanges(sessionId: string): Promise<string | null> {
+    return await this.ports.worker.commitChanges?.(sessionId) ?? null;
+  }
   private record(sessionId: string, usage: Awaited<ReturnType<LiveUsagePort['usageFor']>>) {
     const input = this.inputs.get(sessionId);
     if (usage && input) this.costs.set(sessionId, Math.max(this.costs.get(sessionId) ?? 0, checkCeiling(usage, { sessionId, tier: input.tier, ceilingNanos: null }).costNanos));
