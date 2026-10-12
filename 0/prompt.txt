@@ -184,3 +184,11 @@ okay so with this latest, can you do one final live test? the test repo, and one
 ---
 
 forget project trails. and im guessing hosted search/recall doesnt impact the ability of tally right?
+
+---
+
+so after this pr, anything else left? if yes raise an issue for it with enough context. also raise another issue for: i feel cfo.ai integration can be improved. like it's ari agent doesnt have enough context to answer questions like "what would happen if we did this or used this model", etc. you know? we should make it more context rich so an actual cfo of the organization can just talk to ari cfo agent and have a good idea there as well
+
+---
+
+raise pr for simplest issue first afterwards
