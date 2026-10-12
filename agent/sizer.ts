@@ -190,6 +190,8 @@ export async function sizeTask(
       signals = null;
     }
     const rules = sizeFromSignals(task, signals);
+    const detail = ports.signals.detailFor?.(task);
+    if (detail) rules.summary += `; ${detail}`;
     const estimate = ports.llm ? await refine(task, rules, ports.llm, options.llmModel) : rules;
     span.set({
       size: estimate.size,

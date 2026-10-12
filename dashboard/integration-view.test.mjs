@@ -18,6 +18,24 @@ test('the dashboard summarizes successful Entire graph and checkpoint checks', (
   assert.equal(entire.detail, 'Graph sizing and checkpoint search are available.');
 });
 
+test('the dashboard preserves connected graph fallback detail for empty or mixed searches', () => {
+  for (const detail of [
+    'Graph sizing: ok (No code symbols matched this task; sized by repository search.); checkpoint search available',
+    'Graph sizing: ok (Graph search available; tasks without matching code symbols are sized by repository search.); checkpoint search available',
+  ]) {
+    const [entire] = integrationView({ integrations: { entire: { status: 'ok', detail } } });
+    assert.equal(entire.statusLabel, 'connected');
+    assert.equal(entire.detail, detail);
+    assert.doesNotMatch(entire.detail, /Fix:/);
+  }
+});
+
+test('the dashboard still reports absent graph tooling as not connected', () => {
+  const [entire] = integrationView({ integrations: { entire: { status: 'missing', detail: 'Graph plugin missing. Fix: entire plugin install graph' } } });
+  assert.equal(entire.statusLabel, 'not connected');
+  assert.match(entire.detail, /Fix:/);
+});
+
 test('the dashboard shows CFO status, Ari context, and a safe table link together', () => {
   const [cfoai] = integrationView({ budget: { cfoai: {
     pageUrl: 'https://app.cfo.ai/s/scenario', tableUrl: 'https://app.cfo.ai/s/budget-table',

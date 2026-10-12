@@ -8,7 +8,7 @@ import { RepositorySizingAdapter } from '../adapters/repository-sizing.js';
 import { CfoaiBudgetAdapter } from '../adapters/cfoai.js';
 import { ConfigBacklogIntake } from '../adapters/github.js';
 import { usdToNanos } from '../schema/index.js';
-import type { BudgetSource, TallyConfig, TaskSize } from '../schema/index.js';
+import type { BudgetSource, IntegrationState, TallyConfig, TaskSize } from '../schema/index.js';
 import { loadConfig } from './config.js';
 import { createDryRunPorts } from './dry-run.js';
 import { createPriceHistory } from './price-history.js';
@@ -28,6 +28,7 @@ export interface PlannedTask {
   historySources: PriceHistorySource[];
   /** Read-only integration issue surfaced once by the CLI plan view. */
   historyDetail?: string;
+  entire?: IntegrationState;
   skipped: boolean;
 }
 
@@ -105,7 +106,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
   if (!options.dryRun) await validateRealRunConfig(config, options.configPath, options.preflightRunner);
   const configDir = dirname(options.configPath);
   const dryRunPorts = options.dryRun ? createDryRunPorts({ config, configPath: options.configPath }) : {};
-  const signals =
+  const signals: SizingSignalsPort =
     options.signals ??
     dryRunPorts.signals ??
     (config.integrations.entire ? new EntireSizingAdapter({ repoPath: resolve(configDir, config.repo.path) }) : new RepositorySizingAdapter({ repoPath: resolve(configDir, config.repo.path) }));
@@ -122,6 +123,8 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
   for (const task of tasks) {
     const taskInput = { taskId: task.taskId, title: task.title, body: task.body };
     const estimate = await sizeTask(taskInput, { signals });
+    const graph = (signals as SizingSignalsPort & { status?: () => IntegrationState }).status?.();
+    const entire = config.integrations.entire && graph ? { ...graph, detail: signals.detailFor ? signals.detailFor(taskInput) : graph.detail } : undefined;
     const historySources = new Set<PriceHistorySource>();
     const route = options.baseline
       ? await routeBaseline({ task: taskInput, estimate, config, ports: { budget, history: trackHistorySources(historyPort, historySources) } })
@@ -145,6 +148,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         ceilingNanos: ceiling,
         decision: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.reason : `${route.reason} Deliberate first-attempt ceiling override: $${task.firstAttemptCeilingUsd.toFixed(3)} (normal ceiling remains an upper bound).`,
         historySources: sources,
+        ...(entire ? { entire } : {}),
         ...(historyDetail ? { historyDetail } : {}),
         skipped: false,
       });
@@ -160,6 +164,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         ceilingNanos: null,
         decision: route.reason,
         historySources: sources,
+        ...(entire ? { entire } : {}),
         ...(historyDetail ? { historyDetail } : {}),
         skipped: true,
       });

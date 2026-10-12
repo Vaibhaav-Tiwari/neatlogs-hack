@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CommandResult, CommandRunner } from './entire.js';
 import { EntireSizingAdapter } from './entire.js';
-import { sizeFromSignals } from '../agent/sizer.js';
+import { sizeFromSignals, sizeTask } from '../agent/sizer.js';
 import { RepositorySizingAdapter } from './repository-sizing.js';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,6 +21,39 @@ class FakeRunner implements CommandRunner {
 const task = { taskId: 'T1', title: 'Fix refund validator', body: 'Edit src/refund/validator.ts and tests/refund.test.ts. Calling `refund.validate(-5)` should fail.' };
 
 describe('EntireSizingAdapter', () => {
+  it.each([null, { filesTouched: 1, dependents: 0, testsPresent: false, source: 'code-search' as const }])('keeps a successful empty graph search connected with fallback %j', async (evidence) => {
+    const runner = new FakeRunner((_command, args) => ({ stdout: args.includes('search') ? '{"results":[]}' : '' }));
+    const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner, fallback: { signalsFor: async () => evidence } });
+    const estimate = await sizeTask(task, { signals: adapter });
+    expect(estimate.signals).toEqual(evidence ? { ...evidence, contextFiles: [] } : null);
+    expect(adapter.status().status).toBe('ok');
+    expect(adapter.status().detail).not.toContain('Fix:');
+    expect(estimate.summary).toContain('No code symbols matched this task; sized by repository search.');
+    expect(runner.calls.some(call => call.args.includes('impact'))).toBe(false);
+  });
+
+  it('treats a failed graph command as unavailable rather than an empty search', async () => {
+    const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner: new FakeRunner(() => new Error('plugin missing')), fallback: { signalsFor: async () => null } });
+    const estimate = await sizeTask(task, { signals: adapter });
+    expect(adapter.status()).toMatchObject({ status: 'missing', detail: expect.stringContaining('plugin missing') });
+    expect(estimate.summary).toContain('Fix:');
+  });
+
+  it('keeps mixed graph and repository searches connected and remembers each task detail', async () => {
+    const runner = new FakeRunner((_command, args) => ({ stdout: args.includes('search')
+      ? JSON.stringify({ results: args.at(-1)?.includes('refund') ? [{ file_path: 'src/refund/validator.ts', symbol: 'refund.validate' }] : [] }) : '{}' }));
+    const adapter = new EntireSizingAdapter({ repoPath: '/repo', runner, fallback: { signalsFor: async () => null } });
+    const matched = { ...task, body: 'Fix `refund.validate`.' };
+    expect((await adapter.signalsFor(matched))?.source).toBe('entire-graph');
+    const empty = { taskId: 'T2', title: 'Add documentation', body: 'Create a guide.' };
+    await adapter.signalsFor(empty);
+    expect(adapter.status().status).toBe('ok');
+    expect(adapter.detailFor(matched)).toBeNull();
+    expect(adapter.detailFor(empty)).toContain('No code symbols');
+    await adapter.signalsFor(matched);
+    expect(adapter.status().detail).toContain('repository search');
+  });
+
   it('uses entire-graph search and impact to count files, callers and co-change files', async () => {
     const runner = new FakeRunner((_command, args) => {
       const text = args.join(' ');
