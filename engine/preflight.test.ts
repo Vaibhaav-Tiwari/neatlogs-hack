@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig } from './config.js';
 import { validateRealRunConfig, workerAutoModeFixCommand } from './preflight.js';
 import { runTally } from './run.js';
+import { planTally } from './plan.js';
 import { CommandError } from '../adapters/command.js';
 import { claudeAllowList } from './harness.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
@@ -124,6 +125,19 @@ describe('real run preflight', () => {
         throw new Error('not found');
       }),
     ).rejects.toThrow('ao project add');
+  });
+
+  it('turns a missing AO project into the init repair message for runs and plans', async () => {
+    const { configPath } = writeConfig(', aoProject: "missing-project"');
+    const missingProject = async () => {
+      throw new CommandError('AO project missing-project not found', 'PROJECT_NOT_FOUND');
+    };
+    await expect(runTally({ configPath, dryRun: false, baseline: false, preflightRunner: missingProject })).rejects.toThrow(
+      'Agent Orchestrator project missing-project not found; run tally init',
+    );
+    await expect(planTally({ configPath, dryRun: false, baseline: false, preflightRunner: missingProject })).rejects.toThrow(
+      'Agent Orchestrator project missing-project not found; run tally init',
+    );
   });
 
   it('requires the target AO project worker to run in auto mode before spawning', async () => {

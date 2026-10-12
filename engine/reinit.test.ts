@@ -28,6 +28,7 @@ function fixture(owned = true) {
     commands.push(`${file} ${args.join(' ')}`);
     if (file === 'claude') return { stdout: '{"loggedIn":true}', stderr: '' };
     if (file === 'ao' && args[0] === 'status') return { stdout: '{"state":"running"}', stderr: '' };
+    if (file === 'ao' && args[0] === 'project' && args[1] === 'get') return { stdout: JSON.stringify({ project: { path: cwd, config: {} } }), stderr: '' };
     if (file === 'ao' && args[0] === 'project') throw new Error('Re-init must not mutate or replace AO configuration');
     return { stdout: file === 'git' && args[0] === 'rev-parse' ? cwd : 'ok', stderr: '' };
   };
@@ -63,7 +64,7 @@ describe('consented integration re-init', () => {
     expect(loadConfig(f.path)).toEqual({ ...f.config, integrations: { ...f.config.integrations, neatlogs: true } });
     if (owned) expect(JSON.parse(readFileSync(installRecordPath(f.path), 'utf8'))).toEqual({ ...f.record, configHash: contentHash(readFileSync(f.path, 'utf8')) });
     else expect(existsSync(installRecordPath(f.path))).toBe(false);
-    expect(f.commands.some((line) => line.startsWith('ao project'))).toBe(false);
+    expect(f.commands.some((line) => /^ao project (?:add|set-config)/.test(line))).toBe(false);
     expect(existsSync(reinitPath(f.path))).toBe(false);
   });
 
@@ -74,7 +75,27 @@ describe('consented integration re-init', () => {
     expect((await runInit({ cwd: f.cwd, command: f.command, yes: true, print: (line) => output.push(line) })).applied).toBe(false);
     expect(output.join('\n')).toContain('No changes proposed');
     expect(readFileSync(f.path, 'utf8')).toBe(before);
-    expect(f.commands).toEqual(['git rev-parse --show-toplevel']);
+    expect(f.commands).toEqual(['git rev-parse --show-toplevel', 'ao project get preserved-project --json']);
+  });
+
+  it('proposes and restores an AO project missing from an existing installation', async () => {
+    const f = fixture();
+    const command: InitCommandRunner = async (file, args, options) => {
+      if (file === 'ao' && args.join(' ') === 'project get preserved-project --json') {
+        throw new Error('AO project preserved-project not found');
+      }
+      if (file === 'ao' && args[0] === 'project' && ['add', 'set-config'].includes(args[1]!)) {
+        f.commands.push(`${file} ${args.join(' ')}`);
+        return { stdout: 'ok', stderr: '' };
+      }
+      return f.command(file, args, options);
+    };
+    const output: string[] = [];
+    const result = await runInit({ cwd: f.cwd, command, yes: true, print: line => output.push(line), doctor: async () => [] });
+    expect(result.applied).toBe(true);
+    expect(output.join('\n')).toContain('Re-register AO project preserved-project');
+    expect(f.commands).toContain(`ao project add --path ${f.cwd} --id preserved-project`);
+    expect(f.commands.some(line => /^ao project set-config preserved-project --config-json /.test(line))).toBe(true);
   });
 
   it('refreshes enabled integrations on interactive re-init even when YAML settings are unchanged', async () => {
