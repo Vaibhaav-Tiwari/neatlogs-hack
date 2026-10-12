@@ -3,6 +3,7 @@ import { runCommand } from '../adapters/command.js';
 import { dirname, resolve } from 'node:path';
 import { routeBaseline } from '../agent/baseline.js';
 import { decideEscalation } from '../agent/escalation.js';
+import { diagnoseAttempt, type FailureTracePort } from '../agent/failure.js';
 import type {
   BudgetPort,
   CheckpointRecallPort,
@@ -103,7 +104,8 @@ export interface CfoaiBudgetPort extends BudgetPort {
 
 export interface RealRunPorts {
   workerTraceDrain?: WorkerTraceDrainPort;
-  workerTraceReader?: WorkerTraceReaderPort;
+  workerTraceReader?: WorkerTraceReaderPort & Partial<FailureTracePort>;
+  failureTrace?: FailureTracePort;
   intake: BacklogIntakePort;
   signals: SizingSignalsPort;
   worker: WorkerPort;
@@ -190,9 +192,14 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
   const handoff = overrides.handoff ?? entireCheckpoints;
   const checkpoints = overrides.checkpoints ?? entireCheckpoints;
   const recall = overrides.recall ?? (config.integrations.entire ? new EntireCheckpointRecallAdapter({ repoPath }) : undefined);
+  const workerTraceReader = hasPort(overrides, 'workerTraceReader') ? overrides.workerTraceReader
+    : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? new NeatlogsWorkerTraceReader() : undefined;
+  const failureTrace = hasPort(overrides, 'failureTrace') ? overrides.failureTrace
+    : workerTraceReader?.failureFor ? { failureFor: workerTraceReader.failureFor.bind(workerTraceReader) } : undefined;
   return {
     ...(hasPort(overrides, 'workerTraceDrain') ? { workerTraceDrain: overrides.workerTraceDrain } : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? { workerTraceDrain: new NeatlogsWorkerSpoolAdapter() } : {}),
-    ...(hasPort(overrides, 'workerTraceReader') ? { workerTraceReader: overrides.workerTraceReader } : config.integrations.neatlogs && !hasPort(overrides, 'trace') ? { workerTraceReader: new NeatlogsWorkerTraceReader() } : {}),
+    ...(workerTraceReader ? { workerTraceReader } : {}),
+    ...(failureTrace ? { failureTrace } : {}),
     intake: overrides.intake ?? new ConfigBacklogIntake(),
     signals: overrides.signals ?? (config.integrations.entire ? new EntireSizingAdapter({ repoPath }) : new RepositorySizingAdapter({ repoPath })),
     worker: overrides.worker ?? runner,
@@ -1054,7 +1061,13 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   };
   const initialRun = writeCurrent('running', null);
   options.onEvent?.({ type: 'budget', budget: initialRun.budget });
-  const finishAttempt = (row: LedgerRow) => {
+  const assessFailure = async (row: LedgerRow) => {
+    if (row.result !== 'passed' && !row.failureAssessment) {
+      row.failureAssessment = await diagnoseAttempt(row, !options.dryRun && config.integrations.neatlogs ? ports.failureTrace : undefined);
+    }
+  };
+  const finishAttempt = async (row: LedgerRow) => {
+    await assessFailure(row);
     ledger.push(row);
     if (concurrency > 1) reservations.settle(row.taskId, row.estimatedCostNanos);
     liveCosts.delete(row.taskId);
@@ -1064,7 +1077,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     options.onEvent?.({ type: 'result', row });
   };
   const onStartupError = async (row: LedgerRow) => {
-    finishAttempt(row);
+    await finishAttempt(row);
     await recordSpend(row);
     writeCurrent('running', null);
     if (row.ceilingNanos !== null && row.ceilingNanos > await ledgerBudget.remainingNanos()) throw new Error('worker never started; no budget for startup retry');
@@ -1117,6 +1130,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       }
       const interrupted = existingRows[existingRows.length - 1];
       if (interrupted && interrupted.result !== 'passed' && interrupted.attempt === 1) {
+        await assessFailure(interrupted);
+        writeCurrent('running', null);
         task.size = interrupted.size;
         let latest = interrupted;
         if (interrupted.result !== 'error' || shouldFallbackModelAccess(interrupted, config)) {
@@ -1132,10 +1147,12 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
               branch: interrupted.branch,
               checkpointId: interrupted.checkpointId,
               resultReason: interrupted.resultReason,
+              workerTraceId: interrupted.workerTraceId,
             },
             task,
             config,
-            ports: { budget, handoff: ports.handoff, trace: ports.trace },
+            ports: { budget, handoff: ports.handoff, trace: ports.trace, history: ports.history },
+            failureAssessment: interrupted.failureAssessment,
             traceAttributes: { sessionId: runId, taskId: interrupted.taskId, attempt: interrupted.attempt + 1 },
           }));
           const escalationTraceId = lastTraceId(ports.trace, runId, task.taskId, 2);
@@ -1170,7 +1187,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
               onProgress: progressFor(index, 2, escalation.tier),
               onEvent: options.onEvent,
             });
-            finishAttempt(latest);
+            await finishAttempt(latest);
             await recordHistory({ ports, row: latest, dryRun: options.dryRun });
             await recordSpend(latest);
           } else {
@@ -1252,8 +1269,8 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         onProgress: progressFor(index, 1, route.tier),
         onEvent: options.onEvent,
       });
-      finishAttempt(first);
       if (first.result === 'stopped' && stopRequested()) first.resultReason = stopRequested()!;
+      await finishAttempt(first);
       await recordHistory({ ports, row: first, dryRun: options.dryRun });
       await recordSpend(first);
       let latest = first;
@@ -1270,10 +1287,12 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             branch: first.branch,
             checkpointId: first.checkpointId,
             resultReason: first.resultReason,
+            workerTraceId: first.workerTraceId,
           },
           task,
           config,
-          ports: { budget, handoff: ports.handoff, trace: ports.trace },
+          ports: { budget, handoff: ports.handoff, trace: ports.trace, history: ports.history },
+          failureAssessment: first.failureAssessment,
           traceAttributes: { sessionId: runId, taskId: first.taskId, attempt: 2 },
         }));
         const escalationTraceId = lastTraceId(ports.trace, runId, task.taskId, 2);
@@ -1308,7 +1327,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
             onProgress: progressFor(index, 2, escalation.tier),
             onEvent: options.onEvent,
           });
-          finishAttempt(latest);
+          await finishAttempt(latest);
           await recordHistory({ ports, row: latest, dryRun: options.dryRun });
           await recordSpend(latest);
         } else {

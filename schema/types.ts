@@ -16,6 +16,19 @@ export type TaskSize = 'small' | 'medium' | 'large';
 /** Outcome of one attempt. `stopped` means the watcher killed it at its ceiling. */
 export type AttemptResult = 'passed' | 'failed' | 'stopped' | 'error';
 
+export type FailureKind = 'ceiling' | 'tool-failure' | 'tests-failed' | 'permission-refused' | 'model-unavailable' | 'unknown';
+
+export interface FailureAssessment {
+  kind: FailureKind;
+  source: 'neatlogs' | 'ledger';
+  traceId: string | null;
+  evidence: string[];
+  spans: string[];
+  /** Whether escalation could help, not permission to retry the same tier. */
+  retryable: boolean;
+  detail: string;
+}
+
 /** How the cost on a row was obtained. */
 export type CostSource =
   /** tokens x list price from tally.yaml (the default, comparable across harnesses) */
@@ -77,6 +90,8 @@ export interface LedgerRow {
   result: AttemptResult;
   /** Short explanation of the result, e.g. "2 tests failing" or "ceiling crossed". */
   resultReason: string | null;
+  /** Ended-attempt diagnosis; ledger fallback is explicit when the trace adds no evidence. */
+  failureAssessment?: FailureAssessment;
   scopeWarnings?: string[];
   /** Refused worker tool calls; warnings unless the worker errored or made no commit. */
   permissionWarnings?: string[];

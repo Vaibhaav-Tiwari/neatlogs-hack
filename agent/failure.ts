@@ -1,16 +1,5 @@
-import type { AttemptResult } from '../schema/types.js';
-
-export type FailureKind = 'ceiling' | 'tool-failure' | 'tests-failed' | 'permission-refused' | 'model-unavailable' | 'unknown';
-
-export interface FailureAssessment {
-  kind: FailureKind;
-  source: 'neatlogs' | 'ledger';
-  traceId: string | null;
-  evidence: string[];
-  spans: string[];
-  retryable: boolean;
-  detail: string;
-}
+import type { AttemptResult, FailureAssessment, FailureKind } from '../schema/types.js';
+export type { FailureAssessment, FailureKind } from '../schema/types.js';
 
 export interface FailureSpan {
   id: string;
