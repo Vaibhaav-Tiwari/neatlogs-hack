@@ -18,7 +18,15 @@ import { runRealTally as runRealTallyImpl, type RealRunOptions, type CfoaiBudget
 
 // Loop tests never consult hosted Entire history; adapter behavior has dedicated fakes.
 function runRealTally(options: RealRunOptions) {
-  return runRealTallyImpl({ ...options, ports: { recall: { recallFor: async () => null }, ...options.ports } });
+  return runRealTallyImpl({ ...options, ports: {
+    recall: { recallFor: async () => null },
+    publisher: {
+      commitsAhead: async () => { throw new Error('Test must supply a publisher before verifying work'); },
+      changedFiles: async () => { throw new Error('Test must supply a publisher before checking files'); },
+      publishPr: async () => { throw new Error('Test must supply a publisher before publishing'); },
+    },
+    ...options.ports,
+  } });
 }
 
 const fixedNow = () => new Date('2026-10-11T03:00:00.000Z');

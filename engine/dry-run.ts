@@ -162,6 +162,11 @@ export function createDryRunPorts(options: { config?: TallyConfig; configPath?: 
     verifier: dryRun,
     usage: dryRun,
     sessions: dryRun,
+    publisher: {
+      commitsAhead: async () => 0,
+      changedFiles: async () => [],
+      publishPr: async () => { throw new Error('Dry runs must not publish'); },
+    },
     history: new PriceHistory(),
     handoff: dryRun,
   };

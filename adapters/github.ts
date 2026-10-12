@@ -129,10 +129,10 @@ export class GithubIssueIntake implements BacklogIntakePort {
 }
 
 export class ConfigBacklogIntake implements BacklogIntakePort {
-  constructor(private readonly github = new GithubIssueIntake()) {}
+  constructor(private readonly github?: GithubIssueIntake) {}
 
   async tasks(config: TallyConfig, configPath: string): Promise<BacklogTask[]> {
     if (config.backlog.source === 'file') return loadFileBacklog(config, configPath);
-    return this.github.tasks(config, configPath);
+    return (this.github ?? new GithubIssueIntake()).tasks(config, configPath);
   }
 }

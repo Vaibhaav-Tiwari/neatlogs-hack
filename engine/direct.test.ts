@@ -63,7 +63,10 @@ describe('direct runner through the real loop', () => {
         return child as unknown as ChildProcessWithoutNullStreams;
       }, signal: pid => children.find(child => child.pid === -pid)?.emit('close', null, 'SIGTERM'),
     });
-    const publisher = new GitHubPublisher();
+    const publisher = new GitHubPublisher(async (file, args, options) => {
+      if (file !== 'git') throw new Error('No GitHub calls allowed in this test');
+      return { stdout: git(args, options?.cwd), stderr: '' };
+    });
     let publishedBranch: string | undefined;
     try {
       const result = await runRealTally({ configPath, outputDir: join(dir, 'runs', 'test'), latestRunDir: join(dir, 'runs', 'latest'), dryRun: false, baseline: false, requiredBaseCommit: base,
