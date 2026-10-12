@@ -16,7 +16,9 @@ export interface TaskEvidence {
   filesTouched: number | null;
   issueLength: number | null;
   filesNamed: number | null;
-  textSource: 'run-query' | 'current-issue' | 'missing';
+  textSource: 'run-query' | 'current-issue' | 'plan-query' | 'missing';
+  signalSource?: 'comparison-plan';
+  comparisonPass?: 'A' | 'B' | 'C';
   models: string[];
   source: string;
 }
@@ -66,7 +68,7 @@ function cohort(run: RunState, first?: LedgerRow): RoutingCohort {
   if (!first) return 'unattributed';
   const name = first.tier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const selected = first.decision.split(';').find(part => new RegExp(`^\\s*${name} (?:neatlogs|local): \\d+ observations`).test(part));
-  if (selected?.includes('neatlogs:') && selected.includes('observed statistics') && selected.includes('P90')) return 'trace-driven';
+  if (selected?.includes('neatlogs:') && selected.includes('observed statistics')) return 'trace-driven';
   if (selected?.includes('local:') && selected.includes('observed statistics')) return 'local-history';
   if (first.decision.includes(`No usable history exists for ${first.tier} on ${first.size}`)
     || new RegExp(`History has only \\d+ ${name} attempts? for ${first.size}, so it uses the prior`).test(first.decision)) return 'prior-only';
