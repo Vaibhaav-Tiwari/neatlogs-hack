@@ -25,7 +25,7 @@ describe('NeatlogsPriceHistory', () => {
   it('falls back to the local history when service-account credentials are missing', async () => {
     const fallback = new FakeHistory({ attempts: 2, passRate: 0.5, avgCostNanos: 123 });
     const history = new NeatlogsPriceHistory({ fallback, env: {}, fetch: async () => response([]) });
-    await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 123 });
+    await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 123, source: 'local' });
   });
 
   it('reads pass rate and average cost from neatlogs history traces when credentials are present', async () => {
@@ -55,7 +55,7 @@ describe('NeatlogsPriceHistory', () => {
       },
     });
 
-    await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: usdToNanos(0.2) });
+    await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: usdToNanos(0.2), source: 'neatlogs', successfulCostsNanos: [usdToNanos(0.12)] });
     expect(calls[0]).toContain('workflowName=tally-cfo-agent');
   });
 
@@ -88,7 +88,7 @@ describe('NeatlogsPriceHistory', () => {
       },
     });
 
-    await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 1, avgCostNanos: 200 });
+    await expect(history.lookup('small', 'cheap')).resolves.toEqual({ attempts: 2, passRate: 1, avgCostNanos: 200, source: 'neatlogs', successfulCostsNanos: [100, 300] });
     expect(traceUrls).toHaveLength(2);
     expect(traceUrls[0]!.searchParams.get('limit')).toBe('50');
     expect(traceUrls[1]!.searchParams.get('cursor')).toBe('opaque/cursor+one=');
@@ -113,7 +113,7 @@ describe('NeatlogsPriceHistory', () => {
         return response({ code: 'TRACE_PROCESSING' }, false);
       },
     });
-    await expect(history.lookup('medium', 'middle')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 400 });
+    await expect(history.lookup('medium', 'middle')).resolves.toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 400, source: 'neatlogs', successfulCostsNanos: [200] });
   });
 
   it('only reads span details for old history traces that need attribute fallback', async () => {
@@ -137,7 +137,7 @@ describe('NeatlogsPriceHistory', () => {
       },
     });
 
-    await expect(history.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 1000 });
+    await expect(history.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 1000, source: 'neatlogs', successfulCostsNanos: [1000] });
     expect(calls.some((call) => call.includes('/route-trace/spans'))).toBe(false);
     expect(calls.some((call) => call.includes('/old-history-trace/spans'))).toBe(true);
   });
@@ -149,7 +149,7 @@ describe('NeatlogsPriceHistory', () => {
       env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
       fetch: async () => response({}, false, 400),
     });
-    await expect(failing.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 55 });
+    await expect(failing.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 55, source: 'local' });
     expect(failing.status()).toMatchObject({ status: 'error', detail: expect.stringContaining('traces read failed: 400') });
 
     const empty = new NeatlogsPriceHistory({
@@ -157,7 +157,7 @@ describe('NeatlogsPriceHistory', () => {
       env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
       fetch: async (input) => (`${input}`.includes('/traces?') ? response({ traces: [{ id: 'trace-1' }] }) : response({ spans: [] })),
     });
-    await expect(empty.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 55 });
+    await expect(empty.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 55, source: 'local' });
     expect(empty.status()).toMatchObject({ status: 'ok', detail: expect.stringContaining('No usable Neatlogs price-history observations') });
   });
 

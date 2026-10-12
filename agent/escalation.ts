@@ -4,9 +4,9 @@
  * stronger tier is given the earlier attempt's handoff summary when there is
  * one.
  */
-import { ceilingNanos } from '../schema/money.js';
 import type { AttemptResult, CostSource, Handoff, TallyConfig, TaskSize, Tier, TokenUsage } from '../schema/types.js';
-import type { BudgetPort, HandoffPort, TaskInput, TraceAttributes, TracePort } from './ports.js';
+import type { BudgetPort, HandoffPort, PriceHistoryPort, TaskInput, TraceAttributes, TracePort } from './ports.js';
+import { planFromHistory, type HistoryPlan } from './history-plan.js';
 import { usd } from './router.js';
 import { traceDecision } from './trace.js';
 
@@ -46,6 +46,7 @@ export interface EscalateDecision {
   handoffSummaryTokens: TokenUsage;
   checkpointId: string | null;
   checkpointUrl: string | null;
+  history?: HistoryPlan;
   /** One plain-English sentence for the dashboard and the ledger row. */
   reason: string;
 }
@@ -64,7 +65,7 @@ export interface EscalationInput {
   previous: FinishedAttempt;
   task?: TaskInput;
   config: TallyConfig;
-  ports: { budget: BudgetPort; handoff?: HandoffPort; trace?: TracePort };
+  ports: { budget: BudgetPort; handoff?: HandoffPort; trace?: TracePort; history?: PriceHistoryPort };
   traceAttributes?: TraceAttributes;
 }
 
@@ -131,7 +132,8 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
   if (modelAccessRejected && next.harness === config.tiers[index]?.harness && next.model === config.tiers[index]?.model) {
     return giveUp('failed: model-access fallback is the rejected tier', `The configured fallback tier "${next.name}" uses the rejected model; choose a different tier in tally.yaml.`);
   }
-  const ceiling = ceilingNanos(config, previous.size, next);
+  const history = await planFromHistory(config, input.ports.history, previous.size, next.name);
+  const ceiling = history.ceilingNanos;
   const remaining = Math.max(0, await input.ports.budget.remainingNanos());
   if (ceiling > remaining) {
     return giveUp(
@@ -195,6 +197,7 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
     handoffSummaryTokens,
     checkpointId,
     checkpointUrl,
+    history,
     reason: modelAccessRejected
       ? `${from} was rejected for model access, so Tally will try configured fallback tier ${next.name} once, capped at ${usd(ceiling)}, with ${usd(remaining)} of budget left.`
       : `${from} attempt ${outcome}, so it escalates one tier to ${next.name} capped at ${usd(ceiling)}, ${how} with ${usd(remaining)} of budget left.`,
@@ -215,12 +218,23 @@ export async function decideEscalation(input: EscalationInput): Promise<Escalati
     },
     async (span) => {
       const decision = await decideEscalationCore(input);
+      if (decision.action === 'escalate' && input.ports.history && decision.history) {
+        const h = decision.history;
+        const cap = h.capSource === 'successful-p90'
+          ? `P90 ${usd(h.p90CostNanos!)} x 1.5 over ${h.successfulSamples} successful samples, max ${usd(h.configuredCeilingNanos)}`
+          : `configured cap (${h.successfulSamples} successful samples; 5 needed)`;
+        const stats = h.observedPassRate === null
+          ? `0 observations, prior ${Math.round(h.passRate * 100)}% pass rate and ${usd(h.avgCostNanos)} average cost`
+          : `${h.attempts} observations, ${Math.round(h.observedPassRate * 100)}% pass rate, ${usd(h.observedAvgCostNanos!)} average cost`;
+        decision.reason = `${decision.reason.replace(/\.$/, '')}; ${h.source} history: ${stats}, ${h.usedPrior ? 'uses the prior' : 'observed statistics'}, ${cap}.`;
+      }
       span.set({
         action: decision.action,
         tier: decision.action === 'escalate' ? decision.tier.name : null,
         handoff: decision.action === 'escalate' ? decision.handoff : null,
         checkpointId: decision.action === 'escalate' ? decision.checkpointId : null,
         reason: decision.reason,
+        history: JSON.stringify(decision.action === 'escalate' ? decision.history ?? null : null),
       });
       return decision;
     },

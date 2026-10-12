@@ -159,6 +159,8 @@ function aggregate(observations: Observation[], size: TaskSize, tier: string): P
     attempts: matches.length,
     passRate: matches.filter((row) => row.result === 'passed').length / matches.length,
     avgCostNanos: Math.round(matches.reduce((sum, row) => sum + row.costNanos, 0) / matches.length),
+    successfulCostsNanos: matches.filter((row) => row.result === 'passed').map((row) => row.costNanos),
+    source: 'neatlogs',
   };
 }
 
@@ -219,7 +221,7 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
   private async fallbackLookup(size: TaskSize, tier: string): Promise<PriceStats | null> {
     const stats = await this.fallback.lookup(size, tier);
     this.lastLookupSource = stats ? 'local' : 'none';
-    return stats;
+    return stats ? { ...stats, source: 'local' } : null;
   }
 
   async record(outcome: AttemptOutcome): Promise<void> {

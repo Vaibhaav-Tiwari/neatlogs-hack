@@ -79,6 +79,7 @@ interface Cell {
   attempts: number;
   passes: number;
   totalCostNanos: number;
+  successfulCostsNanos?: number[];
 }
 
 export interface PriceHistorySnapshot {
@@ -103,7 +104,12 @@ export class PriceHistory implements PriceHistoryPort, PriceHistoryWriterPort {
   constructor(snapshot?: PriceHistorySnapshot) {
     if (snapshot?.version !== 1 || typeof snapshot.cells !== 'object' || snapshot.cells === null) return;
     for (const [key, cell] of Object.entries(snapshot.cells)) {
-      if (isCell(cell)) this.cells.set(key, { ...cell });
+      if (isCell(cell)) this.cells.set(key, {
+        attempts: cell.attempts, passes: cell.passes, totalCostNanos: cell.totalCostNanos,
+        ...(Array.isArray(cell.successfulCostsNanos) ? {
+          successfulCostsNanos: cell.successfulCostsNanos.filter((cost) => Number.isSafeInteger(cost) && cost >= 0).slice(-200),
+        } : {}),
+      });
     }
   }
 
@@ -114,6 +120,7 @@ export class PriceHistory implements PriceHistoryPort, PriceHistoryWriterPort {
       attempts: cell.attempts,
       passRate: cell.passes / cell.attempts,
       avgCostNanos: Math.round(cell.totalCostNanos / cell.attempts),
+      ...(cell.successfulCostsNanos?.length ? { successfulCostsNanos: [...cell.successfulCostsNanos] } : {}),
     };
   }
 
@@ -123,7 +130,10 @@ export class PriceHistory implements PriceHistoryPort, PriceHistoryWriterPort {
     const key = `${outcome.size}:${outcome.tier}`;
     const cell = this.cells.get(key) ?? { attempts: 0, passes: 0, totalCostNanos: 0 };
     cell.attempts += 1;
-    if (outcome.result === 'passed') cell.passes += 1;
+    if (outcome.result === 'passed') {
+      cell.passes += 1;
+      cell.successfulCostsNanos = [...(cell.successfulCostsNanos ?? []), outcome.costNanos].slice(-200);
+    }
     cell.totalCostNanos += outcome.costNanos;
     this.cells.set(key, cell);
   }

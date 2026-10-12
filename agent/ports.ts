@@ -61,6 +61,9 @@ export interface PriceStats {
   /** Share of those attempts that passed, in [0, 1]. */
   passRate: number;
   avgCostNanos: number;
+  /** Uncensored costs from successful attempts, for percentile-based caps. */
+  successfulCostsNanos?: number[];
+  source?: PriceHistorySource;
 }
 
 export type PriceHistorySource = 'neatlogs' | 'local' | 'none';

@@ -74,11 +74,11 @@ describe('PriceHistory', () => {
   it('updates pass rate and average cost after every attempt', async () => {
     const history = new PriceHistory();
     await history.record({ size: 'small', tier: 'bronze', result: 'passed', costNanos: 100 });
-    expect(await history.lookup('small', 'bronze')).toEqual({ attempts: 1, passRate: 1, avgCostNanos: 100 });
+    expect(await history.lookup('small', 'bronze')).toEqual({ attempts: 1, passRate: 1, avgCostNanos: 100, successfulCostsNanos: [100] });
     await history.record({ size: 'small', tier: 'bronze', result: 'failed', costNanos: 300 });
-    expect(await history.lookup('small', 'bronze')).toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 200 });
+    expect(await history.lookup('small', 'bronze')).toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 200, successfulCostsNanos: [100] });
     await history.record({ size: 'small', tier: 'bronze', result: 'stopped', costNanos: 500 });
-    expect(await history.lookup('small', 'bronze')).toEqual({ attempts: 3, passRate: 1 / 3, avgCostNanos: 300 });
+    expect(await history.lookup('small', 'bronze')).toEqual({ attempts: 3, passRate: 1 / 3, avgCostNanos: 300, successfulCostsNanos: [100] });
   });
 
   it('keeps each size and tier apart', async () => {
@@ -98,7 +98,7 @@ describe('PriceHistory', () => {
     const history = new PriceHistory();
     await history.record({ size: 'large', tier: 'gold', result: 'passed', costNanos: 700 });
     const restored = new PriceHistory(JSON.parse(JSON.stringify(history.snapshot())));
-    expect(await restored.lookup('large', 'gold')).toEqual({ attempts: 1, passRate: 1, avgCostNanos: 700 });
+    expect(await restored.lookup('large', 'gold')).toEqual({ attempts: 1, passRate: 1, avgCostNanos: 700, successfulCostsNanos: [700] });
   });
 
   it('starts empty from a snapshot it cannot read', async () => {
