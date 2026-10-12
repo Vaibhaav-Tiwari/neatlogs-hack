@@ -391,6 +391,30 @@ The job snapshot embeds that secondary evidence, so `--replay <job-query.json>`
 later renders both tables with no API calls. Query match counts remain database
 counts, never adoption or market size.
 
+## Routing Evidence
+
+From a source checkout, build and analyze an audited list of real run directories:
+
+```sh
+npm run build
+node scripts/routing-evidence.mjs --manifest runs.json --out /tmp/routing-evidence
+```
+
+`runs.json` is a JSON array of paths containing `run.json` and `ledger.json`.
+The script writes a Markdown report, task CSV, JSON provenance and three SVG
+charts. It excludes simulations and active runs, keeps skipped/interrupted
+outcomes in the denominator, and labels missing historical signals as missing.
+Unattributed historical decisions are not silently assigned to prior or
+trace-driven cohorts. Correlations are descriptive, not cost predictions.
+
+Add `--live-traces` for bounded read-only neatlogs verification using Tally's
+read token and project id. Without that flag it only replays the output folder's
+cached `trace-readback.json`, making no API call. Optional `--issues issues.json`
+accepts a URL-keyed map of current issue titles/bodies for historical runs;
+these are labelled current text, not run-start snapshots. No paid workers or
+cfo.ai writes are performed. Before/after savings require matched measured
+tasks; missing baseline or v2 cohorts are reported as **not measured**.
+
 ## Layout
 
 Experiment summaries are atomically updated after each completed run at
