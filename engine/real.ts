@@ -633,11 +633,11 @@ async function runSingleAttempt(input: {
     if (input.stopRequested?.()) {
       result = workerResult.status === 'experiment_stop' || input.stopRequested()!.startsWith('stopped:') ? 'stopped' : 'error';
       resultReason = input.stopRequested()!;
-    } else if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated') && !(completionUsage?.tokens.total)))) {
+    } else if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated' || workerResult.status === 'needs_input') && !(completionUsage?.tokens.total)))) {
       result = 'error';
       const startupReason = workerResult.permissionWarnings?.length
         ? `permission failure: worker produced no commit after refused commands: ${workerResult.permissionWarnings.join('; ')}`
-        : workerResult.resultReason ?? 'worker never started';
+        : workerResult.status === 'needs_input' ? 'worker never started' : workerResult.resultReason ?? 'worker never started';
       resultReason = modelAccessConfigurationError(startupReason, input.tier)
         ?? (workerResult.status === 'never_started' && startupReason !== 'worker never started' ? 'worker never started' : startupReason);
     } else if (workerResult.status === 'experiment_stop') {

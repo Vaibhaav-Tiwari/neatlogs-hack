@@ -1521,6 +1521,20 @@ describe('runRealTally', () => {
     expect(worker.published).toHaveLength(1);
   });
 
+  it('never verifies inherited work for a zero-token AO input request', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new NeedsInputWorker();
+    worker.usageFor = async () => null;
+    const verifier = new SequenceVerifier([]);
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false,
+      outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier, usage: worker, sessions: worker, publisher: worker } });
+    expect(verifier.calls).toBe(0);
+    expect(worker.published).toEqual([]);
+    expect(worker.starts).toHaveLength(2);
+    expect(result.ledger.every(row => row.result === 'error' && row.resultReason === 'worker never started')).toBe(true);
+  });
+
   it('resumes from an existing successful ledger row without spawning again', async () => {
     const { dir, configPath } = fixture();
     const outputDir = join(dir, 'resume');
