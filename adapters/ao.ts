@@ -170,7 +170,10 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     if (project) args.push('--project', project);
     if (input.sessionMode) args.push('--mode', input.sessionMode);
     args.push('--harness', input.harness, '--model', input.model, '--name', input.name);
-    if (!this.options.requiredBaseCommit) args.push('--prompt', input.prompt);
+    // Attach the prompt to the initial spawn even for experiments. Sending it
+    // after spawn races the worker's startup and can leave the first attempt
+    // with no work; the base preflight below still gates accepting the worker.
+    args.push('--prompt', input.prompt);
     const { stdout } = await this.spawnWithPermissions(input, args);
     const sessionId = parseSpawn(stdout);
     if (!this.options.requiredBaseCommit) return { sessionId, branch: null, checkoutPath: null };
@@ -187,7 +190,6 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
       if (!checkoutPath) throw new Error('experiment could not locate worker checkout before sending task');
       const head = (await this.command('git', ['rev-parse', 'HEAD'], { cwd: checkoutPath })).stdout.trim();
       if (head !== this.options.requiredBaseCommit) throw new Error(`experiment worker base mismatch: expected ${this.options.requiredBaseCommit}, got ${head}`);
-      await this.command('ao', ['send', '--session', sessionId, '--message', input.prompt], { cwd: this.options.cwd });
       return { sessionId, branch, checkoutPath };
     } catch (error) {
       await this.stop(sessionId, 'experiment base preflight failed');

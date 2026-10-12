@@ -258,7 +258,7 @@ describe('AO branch continuation', () => {
 });
 
 describe('usageFromAoPayload', () => {
-  it.each([true, false])('checks the worktree base before task delivery; match=%s', async (matches) => {
+  it.each([true, false])('checks the worktree base before accepting the spawned task; match=%s', async (matches) => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
     const base = 'a'.repeat(40);
     const command: CommandRunner = async (file, args, options) => {
@@ -275,10 +275,27 @@ describe('usageFromAoPayload', () => {
       ceilingNanos: null, harness: 'codex', model: 'model', name: 'test', prompt: 'implement task' };
     if (matches) await expect(adapter.start(input)).resolves.toMatchObject({ checkoutPath: '/worker' });
     else await expect(adapter.start(input)).rejects.toThrow('experiment worker base mismatch');
-    expect(calls[0]?.args).not.toContain('--prompt');
-    expect(calls.some((call) => call.args[0] === 'send')).toBe(matches);
+    expect(calls[0]?.args).toContain('--prompt');
+    expect(calls.some((call) => call.args[0] === 'send')).toBe(false);
     expect(calls.some((call) => call.args[0] === 'session' && call.args[1] === 'kill')).toBe(!matches);
     expect(calls.find((call) => call.file === 'git' && call.args[0] === 'rev-parse')?.cwd).toBe('/worker');
+  });
+
+  it('keeps ordinary spawns prompt-attached without experiment preflight', async () => {
+    const calls: string[][] = [];
+    const adapter = new AoCliAdapter({ command: async (_file, args) => {
+      calls.push(args);
+      return { stdout: args[0] === 'spawn' ? 'spawned session ordinary' : '', stderr: '' };
+    } });
+
+    await expect(adapter.start({ task: {} as never, tier: {} as never, attempt: 1, ceilingNanos: 1,
+      harness: 'codex', model: 'fake-model', name: 'ordinary', prompt: 'ordinary task', aoProject: 'fake-project' })).resolves.toEqual({
+      sessionId: 'ordinary', branch: null, checkoutPath: null,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls.at(-1)).toContain('--prompt');
+    expect(calls.at(-1)).toContain('ordinary task');
+    expect(calls.some((args) => args[0] === 'send')).toBe(false);
   });
   it('does not kill twice when adapter and engine both close the session', async () => {
     let kills = 0;
