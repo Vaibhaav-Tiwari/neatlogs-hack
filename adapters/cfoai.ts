@@ -605,6 +605,24 @@ function openInBrowser(url: URL): Promise<void> {
   });
 }
 
+function isCfoaiAuthError(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (typeof current === 'object') {
+      const value = current as { name?: unknown; message?: unknown; status?: unknown; statusCode?: unknown; cause?: unknown };
+      if (value.status === 401 || value.statusCode === 401) return true;
+      if (typeof value.name === 'string' && /unauthorized|oauth/i.test(value.name)) return true;
+      if (typeof value.message === 'string' && /\b(unauthori[sz]ed|authentication|auth(?:entication)? failed|invalid (?:access |refresh )?token|token expired)\b/i.test(value.message)) return true;
+      current = value.cause;
+    } else {
+      return typeof current === 'string' && /\b(unauthori[sz]ed|authentication|auth(?:entication)? failed|invalid (?:access |refresh )?token|token expired)\b/i.test(current);
+    }
+  }
+  return false;
+}
+
 export async function loginCfoai(options: {
   config?: CfoaiBudgetConfig;
   tokenPath?: string;
@@ -638,13 +656,30 @@ export async function loginCfoai(options: {
   });
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('could not start local cfo.ai OAuth callback server');
-  const provider = new CfoaiOAuthProvider(tokenStore, `http://127.0.0.1:${address.port}/callback`, options.openUrl ?? openInBrowser);
-  const client = new SdkCfoaiMcpClient(normalized.serverUrl, provider);
+  const redirect = `http://127.0.0.1:${address.port}/callback`;
+  const openUrl = options.openUrl ?? openInBrowser;
+  let provider = new CfoaiOAuthProvider(tokenStore, redirect, openUrl);
+  let client = new SdkCfoaiMcpClient(normalized.serverUrl, provider);
   try {
-    await client.connect().catch((error: unknown) => {
-      if (provider.authorizationUrl) return;
-      throw error;
-    });
+    try {
+      await client.connect();
+    } catch (error) {
+      if (provider.authorizationUrl) {
+        // The SDK has already opened the browser; connect remains pending until the callback.
+      } else if (tokenStore.read().tokens && isCfoaiAuthError(error)) {
+        // A cached refresh/access token can be revoked while its OAuth client registration
+        // remains valid. Retry without that token so the SDK starts a new browser flow.
+        tokenStore.write({ ...tokenStore.read(), tokens: undefined });
+        await client.close().catch(() => undefined);
+        provider = new CfoaiOAuthProvider(tokenStore, redirect, openUrl);
+        client = new SdkCfoaiMcpClient(normalized.serverUrl, provider);
+        await client.connect().catch((retryError: unknown) => {
+          if (!provider.authorizationUrl) throw retryError;
+        });
+      } else {
+        throw error;
+      }
+    }
     if (!provider.authorizationUrl) {
       await client.listTools();
       await client.close();
