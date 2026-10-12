@@ -15,6 +15,16 @@ const impact = { source: 'entire-graph' as const, query: 'exact task text', node
 const input = { run: { ...run, baseCommit, mode: 'tally' as const, tasks: [{ ...run.tasks.find(task => task.taskId === taskId)!, impact }] }, ledger: [ledger[0]!], path: 'fake-run', pass: 'B' as const };
 
 describe('comparison plan evidence', () => {
+  it('separates linked zero-token startup retries while retaining every recorded cost', () => {
+    const first = { ...ledger[0]!, result: 'error' as const, tokens: { uncachedInput: 0, cachedInput: 0, output: 0, total: 0 }, estimatedCostNanos: 7 };
+    const retry = { ...ledger[0]!, attemptId: `${first.attemptId}:startup-retry`, result: 'passed' as const, estimatedCostNanos: 123 };
+    const result = comparisonEvidence(plan, [{ ...input, ledger: [first, retry] }]);
+    expect(result.rows[0]?.B[0]).toMatchObject({ attempts: 1, startupRetries: 1, passed: true, errored: false, costNanos: 130 });
+    expect(result.summaries[1]).toMatchObject({ attempts: 1, startupRetries: 1, successRate: 1 });
+    expect(comparisonEvidence(plan, [{ ...input, ledger: [first] }]).rows[0]?.B[0]).toMatchObject({ attempts: 1, startupRetries: 0, errored: true });
+    expect(comparisonEvidence(plan, [{ ...input, ledger: [{ ...first, tokens: { ...first.tokens, total: 1 } }, retry] }]).rows[0]?.B[0]).toMatchObject({ attempts: 2, startupRetries: 0 });
+  });
+
   it('keeps both modes pending with measured signals but no paid results', () => {
     const result = comparisonEvidence(plan, []);
     expect(result.rows[0]).toMatchObject({ size: 'small', filesTouched: 2, dependents: 26, graphNodes: 12, A: [], B: [], C: [] });
