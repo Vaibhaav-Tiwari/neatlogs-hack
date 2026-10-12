@@ -254,6 +254,27 @@ describe('main', () => {
       expect(out.join('\n')).toContain('    - related files were found by a local repository search');
       expect(out.join('\n')).toContain('observed cost is below the configured ceiling (0 successful samples, 5 needed).');
       expect(out.join('\n')).not.toContain(';');
+      expect(out.join('\n')).not.toContain('Parallel reservation');
+    } finally { budget.mockRestore(); plan.mockRestore(); }
+  });
+
+  it.each([
+    [3, false, 'First-wave reservation: $2.40 of $3.00 available run cap'],
+    [2, true, 'Warning: first-wave reservation does not fit the available run cap'],
+  ])('shows the first-wave parallel reservation (%s)', async (cap, warning, expected) => {
+    const budget = vi.spyOn(planModule, 'readPlanBudget').mockResolvedValue({
+      source: 'config', limitSource: 'cli', limitNanos: cap * 1_000_000_000,
+      monthlyLimitNanos: cap * 1_000_000_000, monthlySpentNanos: 0, monthlyRemainingNanos: cap * 1_000_000_000,
+    });
+    const plan = vi.spyOn(planModule, 'planTally').mockResolvedValue([
+      { taskId: 'T1', title: 'one', size: 'small', confidence: 1, tier: 'cheap', model: 'cheap', harness: 'codex', ceilingNanos: 1, reservationNanos: 1_200_000_000, decision: 'start', historySources: ['none'], skipped: false },
+      { taskId: 'T2', title: 'two', size: 'small', confidence: 1, tier: 'cheap', model: 'cheap', harness: 'codex', ceilingNanos: 1, reservationNanos: 1_200_000_000, decision: 'start', historySources: ['none'], skipped: false },
+    ]);
+    try {
+      const { io, out } = capture();
+      expect(await main(['run', '--plan', '--parallel', '2', '--config', new URL('../demo/tally.yaml', import.meta.url).pathname], io)).toBe(0);
+      expect(out.join('\n')).toContain(expected);
+      expect(out.join('\n').includes('Warning:')).toBe(warning);
     } finally { budget.mockRestore(); plan.mockRestore(); }
   });
 
