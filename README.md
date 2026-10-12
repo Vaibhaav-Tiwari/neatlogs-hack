@@ -222,7 +222,10 @@ repository you want Tally to work on:
    local URL showing the run as it happens.
 
 More on `tally init`: neatlogs, Entire and cfo.ai are separate opt-in prompts,
-defaulting to No. It displays a compact proposal (full YAML with `--verbose`), install record in
+defaulting to No. Model-access fallback is a separate opt-in: choose a named
+configured tier for one budget-checked retry after explicit model denial, or
+leave it blank to keep fail-fast behavior. Scripted setup can pass
+`--model-access-fallback-tier <name>`. It displays a compact proposal (full YAML with `--verbose`), install record in
 `.tally/`, AO project registration/configuration and setup hook, then asks for
 final confirmation (default No) before applying changes. Use `tally init
 --dry-run` to preview without applying, or `--yes` only when you consent to

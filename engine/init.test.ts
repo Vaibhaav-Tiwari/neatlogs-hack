@@ -324,7 +324,7 @@ describe('runInit', () => {
       throw new Error(`unexpected command: ${joined}`);
     };
     let prompt = 0;
-    const answers = ['bug', 'y', 'y', 'n', 'n', '12.5', 'y'];
+    const answers = ['bug', 'y', 'y', 'n', 'n', 'middle', '12.5', 'y'];
 
     const result = await runInit({
       cwd: repo,
@@ -340,6 +340,7 @@ describe('runInit', () => {
     expect(config.repo).toMatchObject({ path: '.', slug: 'acme/widgets', baseBranch: 'main', aoProject: result.projectId });
     expect(config.test).toMatchObject({ setupCommand: 'make setup', command: 'make test', timeoutSec: 900 });
     expect(config.backlog).toMatchObject({ source: 'github-issues', issueLabel: 'bug' });
+    expect(config.modelAccessFallbackTier).toBe('middle');
     expect(config.budget).toMatchObject({ source: 'config', usd: 12.5 });
     expect(config.concurrency).toBe(1);
     expect(config.integrations).toMatchObject({ neatlogs: true, entire: true, cfoai: false, slack: false });

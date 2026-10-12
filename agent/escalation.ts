@@ -76,11 +76,18 @@ function capitalise(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function isModelAccessRejection(previous: FinishedAttempt): boolean {
+  if (previous.result !== 'error' || !previous.resultReason) return false;
+  return previous.resultReason.startsWith(`Model configuration error for tier "${previous.tier}"`)
+    && previous.resultReason.includes('the active harness account rejected the configured model');
+}
+
 async function decideEscalationCore(input: EscalationInput): Promise<EscalationDecision> {
   const { previous, config } = input;
   const index = config.tiers.findIndex((tier) => tier.name === previous.tier);
   if (index < 0) throw new Error(`Tier "${previous.tier}" is not in tally.yaml`);
   const from = capitalise(previous.tier);
+  const modelAccessRejected = isModelAccessRejection(previous);
   const giveUp = (statusReason: string | null, reason: string): GiveUpDecision => ({
     action: 'give-up',
     taskId: previous.taskId,
@@ -91,32 +98,49 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
   if (previous.result === 'passed') {
     return giveUp(null, `${from} attempt passed, so there is nothing to escalate.`);
   }
-  if (previous.result === 'error') {
+  if (previous.result === 'error' && !modelAccessRejected) {
     return giveUp(
       'failed: attempt errored',
       `${from} attempt broke for a reason outside the model, so a stronger tier would not help and it is not escalated.`,
     );
   }
-  const outcome = previous.result === 'stopped' ? 'was stopped at its ceiling' : 'failed its tests';
+  const outcome = modelAccessRejected
+    ? 'was rejected for model access'
+    : previous.result === 'stopped' ? 'was stopped at its ceiling' : 'failed its tests';
   if (previous.attempt >= 2) {
     return giveUp(
-      'failed: already escalated once',
-      `${from} attempt ${outcome} and the task has already been escalated once, so it is marked failed.`,
+      modelAccessRejected ? 'failed: fallback model was also rejected for model access' : 'failed: already escalated once',
+      `${from} attempt ${outcome} and the task has already used its one retry, so it is marked failed.`,
     );
   }
-  const next = config.tiers[index + 1];
+  const next = modelAccessRejected && config.modelAccessFallbackTier
+    ? config.tiers.find(tier => tier.name === config.modelAccessFallbackTier)
+    : config.tiers[index + 1];
   if (!next) {
+    if (modelAccessRejected && config.modelAccessFallbackTier) {
+      return giveUp('failed: configured model-access fallback tier was not found', `The configured model-access fallback tier "${config.modelAccessFallbackTier}" is not available, so Tally did not retry.`);
+    }
+    if (modelAccessRejected) {
+      return giveUp('failed: model access rejected and no fallback tier is configured', `${from} was rejected for model access; set modelAccessFallbackTier in tally.yaml to opt into one budget-checked retry.`);
+    }
     return giveUp(
       'failed: no stronger tier',
       `${from} attempt ${outcome} and there is no stronger tier to hand it to, so it is marked failed.`,
     );
   }
+  if (modelAccessRejected && next.harness === config.tiers[index]?.harness && next.model === config.tiers[index]?.model) {
+    return giveUp('failed: model-access fallback is the rejected tier', `The configured fallback tier "${next.name}" uses the rejected model; choose a different tier in tally.yaml.`);
+  }
   const ceiling = ceilingNanos(config, previous.size, next);
   const remaining = Math.max(0, await input.ports.budget.remainingNanos());
   if (ceiling > remaining) {
     return giveUp(
-      `failed: no budget to escalate (next ceiling ${usd(ceiling)}, budget left ${usd(remaining)})`,
-      `${from} attempt ${outcome}, but the ${usd(ceiling)} ceiling on ${next.name} does not fit the ${usd(remaining)} of budget left, so it is not escalated.`,
+      modelAccessRejected
+        ? `failed: no budget for model-access fallback (fallback ceiling ${usd(ceiling)}, budget left ${usd(remaining)})`
+        : `failed: no budget to escalate (next ceiling ${usd(ceiling)}, budget left ${usd(remaining)})`,
+      modelAccessRejected
+        ? `${from} was rejected for model access, but the ${usd(ceiling)} fallback ceiling on ${next.name} does not fit the ${usd(remaining)} of budget left, so Tally did not retry.`
+        : `${from} attempt ${outcome}, but the ${usd(ceiling)} ceiling on ${next.name} does not fit the ${usd(remaining)} of budget left, so it is not escalated.`,
     );
   }
 
@@ -128,7 +152,7 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
   let handoffSummaryTokens: TokenUsage = { uncachedInput: 0, cachedInput: 0, output: 0, total: 0 };
   let checkpointId: string | null = previous.checkpointId ?? null;
   let checkpointUrl: string | null = null;
-  if (previous.sessionId && input.ports.handoff) {
+  if (previous.sessionId && input.ports.handoff && !modelAccessRejected) {
     try {
       const found = await input.ports.handoff.summaryFor(previous.sessionId, {
         branch: previous.branch,
@@ -171,7 +195,9 @@ async function decideEscalationCore(input: EscalationInput): Promise<EscalationD
     handoffSummaryTokens,
     checkpointId,
     checkpointUrl,
-    reason: `${from} attempt ${outcome}, so it escalates one tier to ${next.name} capped at ${usd(ceiling)}, ${how} with ${usd(remaining)} of budget left.`,
+    reason: modelAccessRejected
+      ? `${from} was rejected for model access, so Tally will try configured fallback tier ${next.name} once, capped at ${usd(ceiling)}, with ${usd(remaining)} of budget left.`
+      : `${from} attempt ${outcome}, so it escalates one tier to ${next.name} capped at ${usd(ceiling)}, ${how} with ${usd(remaining)} of budget left.`,
   };
 }
 

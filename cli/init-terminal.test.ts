@@ -54,6 +54,8 @@ describe('init process lifecycle', () => {
         send -- "n\\r"
         expect -exact "Coding agents:"
         send -- "codex\\r"
+        expect -exact "Optional fallback tier"
+        send -- "\\r"
         expect -exact "Monthly budget"
         send -- "5\\r"
         expect -exact "Apply these changes?"

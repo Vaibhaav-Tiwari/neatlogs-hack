@@ -43,7 +43,7 @@ async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
 
 describe('parseCli', () => {
   it('parses scripted init flags and rejects invalid product opt-ins', () => {
-    expect(parseCli(['init', '--runner', 'direct', '--harness', 'mixed', '--allow-claude'])).toMatchObject({ kind: 'command', options: { runner: 'direct', harnessChoice: 'mixed', allowClaude: true } });
+    expect(parseCli(['init', '--runner', 'direct', '--harness', 'mixed', '--model-access-fallback-tier', 'middle', '--allow-claude'])).toMatchObject({ kind: 'command', options: { runner: 'direct', harnessChoice: 'mixed', modelAccessFallbackTier: 'middle', allowClaude: true } });
     expect(parseCli(['init', '--runner', 'other'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['init', '--harness', 'other'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['init', '--yes', '--test-command', 'node --check app.js', '--setup-command', '', '--budget', '5', '--issue-label', 'tally', '--neatlogs', 'yes', '--entire', 'no', '--cfoai', 'yes', '--verbose'])).toMatchObject({ kind: 'command', options: {
@@ -52,6 +52,8 @@ describe('parseCli', () => {
     } });
     expect(parseCli(['init', '--neatlogs', 'maybe'])).toMatchObject({ kind: 'error' });
     expect(parseCli(['init', '--test-command', ''])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['init', '--model-access-fallback-tier', ''])).toMatchObject({ kind: 'error' });
+    expect(parseCli(['run', '--model-access-fallback-tier', 'middle'])).toMatchObject({ kind: 'error' });
   });
   it('explains an empty GitHub intake with the repo, label and labeling command without a stack', async () => {
     const state = JSON.parse(readFileSync(new URL('../schema/fixtures/finished-run/run.json', import.meta.url), 'utf8')) as RunState;

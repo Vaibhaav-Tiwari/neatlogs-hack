@@ -47,6 +47,7 @@ describe('NeatlogsWorkerSpoolAdapter', () => {
     await adapter.drainWorker({ checkoutPath: null, entireSessionId: 'native' });
     expect(readFileSync(path, 'utf8')).toBe(original);
     expect(adapter.status().status).toBe('missing');
+    expect(adapter.status().detail).toContain(failure === 'terminal' ? 'rejected a worker batch' : 'did not acknowledge a worker batch');
   });
 
   it('retains malformed and unrelated batches and respects another drain lock', async () => {

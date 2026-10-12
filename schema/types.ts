@@ -94,6 +94,8 @@ export interface LedgerRow {
   /** Verified worker-session trace, distinct from the CFO decision trace. */
   workerTraceId?: string | null;
   workerTraceUrl?: string | null;
+  /** Why worker trace delivery or read-back could not be verified, when applicable. */
+  workerTraceDetail?: string;
   checkpointId: string | null;
   checkpointUrl: string | null;
   /** The CFO agent's one-sentence reason for choosing this tier. */
@@ -240,6 +242,8 @@ export interface TallyConfig {
   };
   /** Ordered from cheapest to strongest. Escalation moves one step right. */
   tiers: Tier[];
+  /** Optional tier to try once after an explicit model-access rejection. */
+  modelAccessFallbackTier?: string;
   ceilings: {
     /** What the strongest tier may spend on a task of each size, in USD. */
     bySizeUsd: Record<TaskSize, number>;

@@ -52,6 +52,7 @@ export interface InitOptions {
   runner?: 'ao' | 'direct';
   harnessChoice?: 'claude-code' | 'codex' | 'mixed';
   allowClaude?: boolean;
+  modelAccessFallbackTier?: string;
 }
 
 export interface InitResult {
@@ -192,6 +193,7 @@ function printSummary(config: TallyConfig, print: (line: string) => void): void 
   print(config.budget.source === 'cfoai' ? `Budget: cfo.ai live account budget (local fallback: $${config.budget.usd})` : `Budget: $${config.budget.usd} from config`);
   for (const tier of config.tiers) print(`Tier ${tier.name}: ${tier.harness}/${tier.model} (${tier.sessionMode})`);
   print(`Products: ${(['neatlogs', 'entire', 'cfoai'] as const).map(name => `${name} ${config.integrations[name] ? 'on' : 'off'}`).join(', ')}`);
+  print(`Model-access fallback: ${config.modelAccessFallbackTier ?? 'off (fail fast)'}`);
   print(`Workers: ${config.runner === 'direct' ? 1 : config.parallelWorkers ?? 1} (${config.runner ?? 'ao'})`);
 }
 
@@ -428,6 +430,12 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
   const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Enable cfo.ai budget integration? y/N', 'N'));
   const { runner, concurrency, tiers } = await chooseSetup(options, command, repoRoot, readLine, print);
+  const fallbackTierInput = options.modelAccessFallbackTier ?? (!options.yes && !options.dryRun
+    ? (await readLine(`Optional fallback tier after explicit model-access rejection (${tiers.map(tier => tier.name).join(', ')}; blank disables)`, '')).trim() || undefined
+    : undefined);
+  if (fallbackTierInput && !tiers.some(tier => tier.name === fallbackTierInput)) {
+    throw new InitError(`Model-access fallback tier must be one of ${tiers.map(tier => tier.name).join(', ')}; nothing was changed.`);
+  }
   if (runner === 'ao') aoWorkerMode({ tiers });
   const projectId = runner === 'ao' ? basename(repoRoot) : '';
   const config: TallyConfig = {
@@ -449,6 +457,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
       issueLabel,
     },
     tiers,
+    ...(fallbackTierInput ? { modelAccessFallbackTier: fallbackTierInput } : {}),
     ceilings: {
       bySizeUsd: { small: 1.5, medium: 4, large: 10 },
     },
