@@ -276,6 +276,13 @@
           </ul>
         </div>
       </div>
+      <div class="evidence reveal">
+        <div class="ev">
+          <h4>A ceiling set from trace history</h4>
+          <p>On a real run on 12 October, Tally set a task's ceiling from its neatlogs history: 6 similar attempts, all passed, at about 1 cent on average. The ceiling was <b>$0.0228</b> where the configured one was $0.30, and the task passed at <b>$0.0182</b>.</p>
+          <p class="note">One task, one run. It is a separate run from the three-pass comparison above, where trace history changed no ceiling.</p>
+        </div>
+      </div>
       <div class="thumbs">
         <figure class="thumb"><a href="shots/dashboard-budget.png"><span class="tag">A1</span><img src="shots/dashboard-budget.png" alt="Tally dashboard for the real run: one cent spent of a one dollar cap, neatlogs and cfo.ai on" width="1360" height="640" loading="lazy"></a><figcaption>Dashboard of the PR #18 run: $0.01 of a $1.00 cap</figcaption></figure>
         <figure class="thumb"><a href="shots/dashboard-decision.png"><span class="tag">A2</span><img src="shots/dashboard-decision.png" alt="The ledger entry for issue 17 with the routing decision in a sentence and the code graph" width="1360" height="740" loading="lazy"></a><figcaption>The decision in one sentence, and the code graph</figcaption></figure>
@@ -285,7 +292,7 @@
         <ul class="plain">
           <li>Run ids: <code>run-20261011-092229Z</code>, <code>run-20261011-123546Z</code>, <code>run-20261011-123814Z</code>, <code>run-20261011-130259Z</code>.</li>
           <li>Tally verifies each change by running the repository's test command itself, then opens the pull request. It never merges.</li>
-          <li>724 automated tests pass on the branch this page was built from.</li>
+          <li>882 automated tests pass on the branch this page was built from.</li>
           <li>Not proven in a real run yet: escalation on the direct runner. Parallel runs are through Agent Orchestrator only. The <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack#real-run-evidence">README keeps the list</a>.</li>
         </ul>
       </details>
@@ -295,8 +302,8 @@
       <header><p class="weight">25%</p><div><h3>Use of neatlogs, Entire and cfo.ai</h3><p class="quote">“How effectively you used neatlogs, Entire and cfo.ai to build, improve and plan a business around the agent.”</p></div></header>
       <div class="evidence three reveal">
         <div class="ev"><h4>neatlogs</h4><p>Every ledger row carries a decision trace and a worker trace, read back from neatlogs after the run.</p><p class="ids">decision <code>0d5826efa109e27125df7ce43b766572</code><br>worker <code>028d92600350d1be5cc76b4cc35d10be</code></p><p class="note">From the PR #18 run. Trace pages need a neatlogs login.</p></div>
-        <div class="ev"><h4>Entire</h4><p><b class="figure">153 of 322</b> commits on <code>main</code> carry an Entire checkpoint. The stop-and-escalate run handed the stopped attempt to the next model through an Entire handoff.</p><p class="note">Counted from <code>git log</code> at commit <code>4d42683</code>.</p></div>
-        <div class="ev"><h4>cfo.ai</h4><p>The monthly budget, $40.00, was read live from cfo.ai at the start of the run. Spend was written back after it and matched the ledger to the cent on each run.</p><p>A page named “Tally business plan” now sits beside the budget in cfo.ai: share-of-savings pricing, unit economics, a funnel and a measured price gap, with every assumption labelled as one.</p><p class="slot"><span>Not here yet</span>A public link to that page.</p></div>
+        <div class="ev"><h4>Entire</h4><p><b class="figure">185 of 377</b> commits on <code>main</code> carry an Entire checkpoint. The stop-and-escalate run handed the stopped attempt to the next model through an Entire handoff.</p><p class="note">Counted from <code>git log</code> at commit <code>fdfc743</code>.</p></div>
+        <div class="ev"><h4>cfo.ai</h4><p>The monthly budget, $40.00, was read live from cfo.ai at the start of the run. Spend was written back after it and matched the ledger to the cent on each run.</p><p>The business plan is public: <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/blob/main/docs/BUSINESS_PLAN.md">docs/BUSINESS_PLAN.md</a>. It also sits beside the budget in cfo.ai as “Tally business plan”: share-of-savings pricing, unit economics, a funnel and a measured price gap, with every assumption labelled as one. The measured comparison table is on that cfo.ai page too.</p></div>
       </div>
     </article>
 
@@ -308,7 +315,7 @@
     <article class="criterion" id="j-public">
       <header><p class="weight">15%</p><div><h3>Building in public</h3><p class="quote">“How you shared your project with other people while you built it.”</p></div></header>
       <div class="evidence two reveal">
-        <div class="ev"><h4>The repository, in the open from the first commit</h4><p><b class="figure">322</b> commits and <b class="figure">123</b> merged pull requests on <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a>, the first on 10 October 2026 at 13:57 IST. <code>tally-agents</code> 0.1.0 is on <a href="https://www.npmjs.com/package/tally-agents">npm</a>.</p></div>
+        <div class="ev"><h4>The repository, in the open from the first commit</h4><p><b class="figure">377</b> commits and <b class="figure">143</b> merged pull requests on <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a>, the first on 10 October 2026 at 13:57 IST. <code>tally-agents</code> 0.2.0 is on <a href="https://www.npmjs.com/package/tally-agents">npm</a>, with direct runners, parallel runs through Agent Orchestrator, routing driven by trace history with learned ceilings, and evidence links on the pull requests it opens.</p></div>
         <div class="ev"><p class="slot"><span>Not here yet</span>Links to the posts tagged #neatHack.</p></div>
       </div>
     </article>
