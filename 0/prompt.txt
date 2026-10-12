@@ -1,0 +1,29 @@
+Tally run-20261012-211342Z #170 a2: Ask separately before sending per-attempt reports to the cfo.ai workspace
+Neatlogs correlation: runId=run-20261012-211342Z taskId=#170 attempt=2.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+Since 0.2.1, enabling cfo.ai also enables per-attempt reports written to the cfo.ai workspace memory (`publishRunContext`), covered on a fresh init only by the combined question "Use cfo.ai for budget, spend and Ari context?" and on re-init by "Enable cfo.ai integration?" with no mention of reports. Make it a separate, explicit choice: (1) a dedicated init question, asked on fresh init and on re-init whenever the setting is not already recorded, that says what is sent (repository, run and task ids, task title and issue URL, size, model, tokens, cost, ceiling, outcome, decision text) and that it is visible to workspace members; default answer no; (2) a matching flag for non-interactive init; (3) an existing config that never answered the question must NOT send reports until the user answers yes, while budget read and spend write-back keep working; (4) `tally doctor` shows whether reports are on. Update `docs/GETTING_STARTED.md`. Use the existing fakes; the suite guard forbids real adapters. Add tests for fresh init yes and no, re-init on a config without the answer, the non-interactive flag, and that a run with reports off writes no memory documents. Typecheck, build and the full suite must stay green.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier middle (codex/gpt-5.6-terra).
+
+Handoff from the previous attempt:
+Continue from failed branch ao/tally-live-1/root.
+
+Metadata-only handoff; no generated summary or transcript export was requested.
+Checkpoint: 01M4RZHRK1XAZR6KH3FC6GNAZ0; native session: 01a131f7-e4a1-78a2-b35c-1059176bbd09.
+Branch: ao/tally-live-1/root.
+Checkpoint files: cli/main.ts, engine/init.ts.
+Changed files: cli/main.ts, engine/init.ts.
+Attempt verdict: stopped - ceiling crossed: $0.0279 spent against a $0.0273 ceiling; work in progress committed as 678c956ca2a4cf2530067572ca6a22780e193df9.
+Task #170: Ask separately before sending per-attempt reports to the cfo.ai workspace
+Since 0.2.1, enabling cfo.ai also enables per-attempt reports written to the cfo.ai workspace memory (`publishRunContext`), covered on a fresh init only by the combined question "Use cfo.ai for budget, spend and Ari context?" and on re-init by "Enable cfo.ai integration?" with no mention of reports. Make it a separate, explicit choice: (1) a dedicated init question, asked on fresh init and on re-init whenever the setting is not already recorded, that says what is sent (repository, run and task ids, task title and issue URL, size, model, tokens, cost, ceiling, outcome, decision text) and that it is visible to workspace members; default answer no; (2) a matching flag for non-interactive init; (3) an existing config that never answered the question must NOT send reports until the user answers yes, while budget read and spend write-back keep working; (4) `tally doctor` shows whether reports are on. Update `docs/GETTING_STARTED.md`. Use the existing fakes; the suite guard forbids real adapters. Add tests for fresh init yes and no, re-init on a config without the answer, the non-interactive flag, and that a run with reports off writes no memory documents. Typecheck, build and the full suite must stay green.
+Inspect the branch changes and rerun the failed tests before continuing.
+Preserve all inherited commits, including Tally work-in-progress commits. Add a new commit for your changes; do not amend, squash, reset, or rebase the inherited history.

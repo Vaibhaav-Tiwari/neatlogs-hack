@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4S073V3MCR9MRBVYSD9AP2P",
+  "session_id": "01a131fa-2646-77f1-addf-da6c43bb7a33",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-12T21:27:38.378566Z",
+  "branch": "ao/tally-live-1/root",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cli/main.test.ts",
+    "docs/GETTING_STARTED.md",
+    "engine/doctor.test.ts",
+    "engine/doctor.ts",
+    "engine/init.test.ts",
+    "engine/init.ts",
+    "engine/real.test.ts",
+    "engine/reinit.test.ts",
+    "onboarding/cfoai.test.ts",
+    "onboarding/cfoai.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-terra",
+  "turn_id": "a9833b24ccee",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 97481,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2052864,
+    "output_tokens": 12636,
+    "api_call_count": 33
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-12T21:27:38.314431Z",
+    "agent_lines": 94,
+    "agent_removed": 27,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 94,
+    "total_lines_changed": 121,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
