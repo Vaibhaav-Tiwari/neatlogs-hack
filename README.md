@@ -417,6 +417,10 @@ counts, never adoption or market size.
 
 ## Routing Evidence
 
+See the [Tally business plan](docs/BUSINESS_PLAN.md) for share-of-savings pricing,
+the measured three-task comparison, explicitly labelled unit-economics and
+pilot-funnel assumptions, cfo.ai usage and the remaining commercial risks.
+
 From a source checkout, build and analyze an audited list of real run directories:
 
 ```sh
