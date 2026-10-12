@@ -1,0 +1,15 @@
+Tally run-20261012-162757Z #158 a1: Make cfo.ai spend write-back safe when two Tally runs write at the same time
+Neatlogs correlation: runId=run-20261012-162757Z taskId=#158 attempt=1.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+Today the cfo.ai adapter reads Agent spend once at run start (`runBaseSpendNanos`), then repeatedly writes `base + this run so far` to the Agent spend cell, the tier rows and Run spend - cumulative. Two Tally processes writing to the same cfo.ai model at once overwrite each other: this was observed on 12 Oct 2026, when overlapping writers lost an increment (see the audit summary in the pull request history for #151). Redesign the write-back in `adapters/cfoai.ts` so concurrent runs converge on the correct total: each write must be a verified read-modify-write of the delta since this process last wrote (re-read the cell immediately before writing, add only the unwritten delta, read back, and retry with bounded backoff when the read-back shows another writer interleaved), applied consistently to Agent spend, the per-tier rows and the cumulative row so that cheap + middle + top always equals Agent spend after any interleaving. Persist the per-run written amount in the run folder so a crashed and resumed run does not double count. Keep the current behaviour for a single writer byte-for-byte in its final values. Tests, using the fake cfo.ai port extended to simulate interleaved writers: two runs interleaving at every step converge to the exact sum; a lost update is detected and retried; a read-back mismatch after the retry budget is reported as an integration error without corrupting the ledger; resume after a crash does not double count; single-writer results are unchanged. Update `docs/GETTING_STARTED.md` to describe the guarantee and its limit (it is optimistic concurrency, not a server-side lock). Typecheck, build and the full suite, including the external-services guard, must stay green.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier cheap (codex/gpt-5.6-luna).
