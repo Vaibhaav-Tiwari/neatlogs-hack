@@ -22,7 +22,7 @@ import { logoFrame, logoSeen, processTerminal, SETTLED, showLogo, type LogoInten
 export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces', 'logo'] as const;
 export type Command = (typeof COMMANDS)[number];
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 export interface CliOptions {
   /** Path to tally.yaml. */

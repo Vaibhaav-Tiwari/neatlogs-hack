@@ -1,6 +1,6 @@
 {
   "name": "tally-agents",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A CFO for a fleet of coding agents: budgets, routing, ceilings and a ledger per task.",
   "type": "module",
   "license": "MIT",

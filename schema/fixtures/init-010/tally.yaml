@@ -1,0 +1,33 @@
+# Published tally-agents 0.1.0 init shape (Codex-only AO, integrations declined).
+# Preserve the legacy concurrency: 3 field: it must not enable parallel workers.
+version: 1
+runner: ao
+repo: { path: ., slug: acme/payments-service, baseBranch: main, aoProject: payments-service }
+test: { command: npm test, setupCommand: npm ci, timeoutSec: 900 }
+backlog: { source: github-issues, issueLabel: tally }
+tiers:
+  - name: cheap
+    harness: codex
+    sessionMode: tui
+    provider: openai
+    model: gpt-5.6-luna
+    price: { inputUsdPerMTok: 0.2, cachedInputUsdPerMTok: 0.02, outputUsdPerMTok: 1.2 }
+    ceilingFraction: 0.2
+  - name: middle
+    harness: codex
+    sessionMode: tui
+    provider: openai
+    model: gpt-5.6-terra
+    price: { inputUsdPerMTok: 2, cachedInputUsdPerMTok: 0.2, outputUsdPerMTok: 12 }
+    ceilingFraction: 0.5
+  - name: top
+    harness: codex
+    sessionMode: tui
+    provider: openai
+    model: gpt-5.6-sol
+    price: { inputUsdPerMTok: 4, cachedInputUsdPerMTok: 0.4, outputUsdPerMTok: 20 }
+    ceilingFraction: 1
+ceilings: { bySizeUsd: { small: 1.5, medium: 4, large: 10 } }
+budget: { source: config, usd: 40 }
+concurrency: 3
+integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
