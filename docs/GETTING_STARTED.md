@@ -323,6 +323,8 @@ Direct Codex uses a workspace-write sandbox with network disabled and no bypass/
 
 ## Troubleshooting
 
+See the [failure-message troubleshooting guide](TROUBLESHOOTING.md) for exact diagnostics and fixes.
+
 | Symptom | What to do |
 | --- | --- |
 | Agent missing or signed out | Install the selected CLI and run `claude auth login` or `codex login`, then doctor. Tally stops rather than substituting another harness. Login alone does not establish entitlement to a particular model. |
