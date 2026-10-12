@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4RFPANQ8KW83BXSB4XFPRS0",
+  "session_id": "01a130f8-1619-73d3-abc1-42bf6adbfc27",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-12T16:38:51.281897Z",
+  "branch": "ao/tally-selfhost-6/root",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cli/main.ts",
+    "engine/output.test.ts",
+    "engine/output.ts",
+    "engine/real.ts",
+    "schema/run-state.schema.json",
+    "schema/types.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-luna",
+  "turn_id": "d5f68f310975",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 70752,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1264384,
+    "output_tokens": 4751,
+    "api_call_count": 30
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-12T16:38:51.208619Z",
+    "agent_lines": 39,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 39,
+    "total_lines_changed": 40,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

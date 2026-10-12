@@ -1,0 +1,15 @@
+Tally run-20261012-162757Z #154 a1: Print why a task was skipped when its budget reservation does not fit
+Neatlogs correlation: runId=run-20261012-162757Z taskId=#154 attempt=1.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+When a parallel run cannot start a task because its reservation does not fit the run cap or the monthly budget, the terminal summary only says `N skipped`. The reason (`not started: reservation does not fit the run cap and monthly budget`) is written to `run.json` but never printed. Print one line per skipped task in the terminal, with the task id, the reservation amount, the cap it was checked against and what the user can do (raise `--budget` or lower ceilings). Keep the existing summary line. The change belongs in the terminal output code (`engine/output.ts`) fed from the run state; do not change admission logic. Add a unit test for the new line and keep all existing tests, typecheck and build green.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier cheap (codex/gpt-5.6-luna).
