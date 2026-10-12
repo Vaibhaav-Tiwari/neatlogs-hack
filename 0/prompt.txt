@@ -1,0 +1,29 @@
+Tally run-20261012-162757Z #155 a2: Show the parallel reservation per task in tally run --plan
+Neatlogs correlation: runId=run-20261012-162757Z taskId=#155 attempt=2.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+`tally run --plan` prints each task with its attempt ceiling (for example `ceiling $0.30`). With parallel workers enabled, admission actually reserves the attempt ceiling plus the next escalation (for example $1.05 with the default config), so a plan can look affordable and then run nothing. When `parallelWorkers` is greater than 1 or `--parallel` is passed, the plan should also print, per task, the reservation that admission will use, and at the end the total reservation for the first wave against the run cap, with a clear warning when it does not fit. Reuse the reservation calculation the engine already uses (see `engine/concurrency.ts` and the admission code in `engine/real.ts`) rather than duplicating the arithmetic, so plan and run cannot disagree. Sequential plans must print exactly what they print today. Add tests for: parallel plan that fits, parallel plan that does not fit, sequential plan unchanged. Typecheck, build and the full suite must stay green.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier middle (codex/gpt-5.6-terra).
+
+Handoff from the previous attempt:
+Continue from failed branch ao/tally-selfhost-2/root.
+
+Metadata-only handoff; no generated summary or transcript export was requested.
+Checkpoint: 01M4RF933E2MPZHXDDJ56E81VF; native session: 01a130f2-2946-7f01-b310-720593975dca.
+Branch: ao/tally-selfhost-2/root.
+Checkpoint files: cli/main.test.ts, cli/main.ts, engine/concurrency.test.ts, engine/concurrency.ts, engine/plan.test.ts, engine/plan.ts, engine/real.ts.
+Changed files: cli/main.test.ts, cli/main.ts, engine/concurrency.test.ts, engine/concurrency.ts, engine/plan.test.ts, engine/plan.ts, engine/real.ts.
+Attempt verdict: stopped - ceiling crossed: $0.0282 spent against a $0.0273 ceiling; work in progress committed as 704b91113bcda19217de9fe529e645ed4a1d28ad.
+Task #155: Show the parallel reservation per task in tally run --plan
+`tally run --plan` prints each task with its attempt ceiling (for example `ceiling $0.30`). With parallel workers enabled, admission actually reserves the attempt ceiling plus the next escalation (for example $1.05 with the default config), so a plan can look affordable and then run nothing. When `parallelWorkers` is greater than 1 or `--parallel` is passed, the plan should also print, per task, the reservation that admission will use, and at the end the total reservation for the first wave against the run cap, with a clear warning when it does not fit. Reuse the reservation calculation the engine already uses (see `engine/concurrency.ts` and the admission code in `engine/real.ts`) rather than duplicating the arithmetic, so plan and run cannot disagree. Sequential plans must print exactly what they print today. Add tests for: parallel plan that fits, parallel plan that does not fit, sequential plan unchanged. Typecheck, build and the full suite must stay green.
+Inspect the branch changes and rerun the failed tests before continuing.
+Preserve all inherited commits, including Tally work-in-progress commits. Add a new commit for your changes; do not amend, squash, reset, or rebase the inherited history.
