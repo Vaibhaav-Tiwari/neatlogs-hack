@@ -448,3 +448,7 @@ monthly budget: $1.00 from cfo.ai; run cap: $5.00 (CLI --budget)
 ---
 
 how do you plan to fix this properly? devise the complete fix. and then get to it. make sure you do proper tests, check all integrations, document things which will require human approval no matter what and how. basically the process has to be smooth right. also check how the current npm package released (not the latest main) behaves for situations.
+
+---
+
+But here is the thing alright I have allowed the hooks and first of all the tally in it also does neatlogs good at all because as you can see it's like semicolons and all of that and it doesn't look good it doesn't look presentable it doesn't look readable to a user that is the one thing the other thing is that where dodo make these changes the sh time out and the CFO monthly budget because if these require to be included in tally, which is what it will be so you have to create a PR for it, right? So we can do that other than that, can you please now check since I've allowed the hook from my side what all is required now? How does it work now because you have to understand that it has to be a good easy experience and it is right now not being that
