@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4QQ1HT3JQPW2PRR31CHQS9N",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-12T09:28:14.219585Z",
+  "branch": "ao/neatlogs-hack-5/trace-failure-diagnosis",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "adapters/neatlogs-worker-traces.test.ts",
+    "adapters/neatlogs-worker-traces.ts",
+    "agent/escalation.ts",
+    "agent/failure.test.ts",
+    "agent/failure.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "99f71b2df0c6",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5711961,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 214012800,
+    "output_tokens": 718651,
+    "api_call_count": 1604
+  },
+  "session_metrics": {
+    "turn_count": 21
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-12T09:28:13.102748Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 238,
+    "human_modified": 19,
+    "human_removed": 0,
+    "total_committed": 238,
+    "total_lines_changed": 257,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
