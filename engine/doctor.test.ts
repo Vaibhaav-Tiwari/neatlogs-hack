@@ -45,7 +45,34 @@ describe('runDoctor', () => {
       detail: expect.stringContaining('Hosted recall is optional. Local capture and normal task runs remain available.'),
       fix: expect.stringContaining('Optional:'),
     });
+    expect(lines.find(line => line.product === 'Entire Web mirror')).toMatchObject({
+      status: 'unavailable',
+      detail: expect.stringContaining('Local checkpoint capture and Git-remote checkpoint sync are separate.'),
+      fix: expect.stringContaining('entire repo mirror add'),
+    });
     expect(doctorHasFailures(lines.filter(line => line.product === 'Entire checkpoint recall'))).toBe(false);
+  });
+  it('reports a ready Entire Web mirror separately from local capture and checkpoint recall', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-entire-mirror-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'direct';
+    config.repo.slug = 'acme/widgets';
+    config.integrations = { entire: true, neatlogs: false, cfoai: false, slack: false };
+    config.budget.source = 'config';
+    writeFileSync(configPath, stringify(config));
+    const lines = await runDoctor({ configPath, env: {}, runner: async (_file, args) => ({
+      stdout: args[0] === 'repo' && args[1] === 'mirror'
+        ? JSON.stringify([{ repo: '/gh/acme/widgets', placements: [{ cluster: 'aws-ap-south-1.entire.io', status: 'ready' }] }])
+        : '{"enabled":true,"loggedIn":true}',
+      stderr: '',
+    }) });
+    expect(lines.find(line => line.product === 'Entire Web mirror')).toMatchObject({
+      status: 'connected',
+      detail: 'GitHub repository mirror is ready on aws-ap-south-1.entire.io.',
+      fix: null,
+    });
+    expect(doctorHasFailures(lines.filter(line => line.product === 'Entire Web mirror'))).toBe(false);
   });
   it('reports mixed AO per-harness permission selection without substituting a harness', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-mixed-'));

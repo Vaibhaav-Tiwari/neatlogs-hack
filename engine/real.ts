@@ -34,6 +34,8 @@ import { type BacklogIntakePort, ConfigBacklogIntake } from '../adapters/github.
 import { historyAttributes, historyTraceName } from '../adapters/neatlogs-history.js';
 import { NeatlogsTraceAdapter } from '../adapters/neatlogs.js';
 import { GitHubPublisher, type PublishPort } from '../adapters/publisher.js';
+import { neatlogsTraceUrl } from '../adapters/evidence-links.js';
+import { prEvidenceLinks } from './pr-evidence.js';
 import { outOfScopeFiles } from './scope.js';
 import { CommandVerifier, EntireGraphVerifier, type VerifierPort } from '../adapters/verifier.js';
 import { attemptId, ceilingNanos, SCHEMA_VERSION, usdToNanos, validateLedger, validateRunState } from '../schema/index.js';
@@ -187,7 +189,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
       : undefined;
   const entireCheckpoints =
     config.integrations.entire && (!hasPort(overrides, 'handoff') || !hasPort(overrides, 'checkpoints'))
-      ? new EntireCheckpointAdapter({ repoPath, generatedSummaries: config.entire?.generatedSummaries })
+      ? new EntireCheckpointAdapter({ repoPath, repoSlug: config.repo.slug, generatedSummaries: config.entire?.generatedSummaries })
       : undefined;
   const handoff = overrides.handoff ?? entireCheckpoints;
   const checkpoints = overrides.checkpoints ?? entireCheckpoints;
@@ -731,8 +733,8 @@ async function runSingleAttempt(input: {
     try {
       const checkpoint = await input.ports.checkpoints.checkpointFor({ sessionId: started.sessionId, branch, checkoutPath });
       checkpointId = checkpoint?.checkpointId ?? null;
-      checkpointUrl = checkpoint?.checkpointUrl ?? null;
       entireSessionId = checkpoint?.entireSessionId ?? null;
+      checkpointUrl = checkpoint?.checkpointUrl ?? null;
     } catch {
       checkpointId = null;
       checkpointUrl = null;
@@ -838,9 +840,9 @@ async function runSingleAttempt(input: {
     handoffText: input.handoffSummary,
     prUrl: input.dryRun ? null : prUrl,
     traceId: input.traceId,
-    traceUrl: null,
+    traceUrl: input.config.integrations.neatlogs ? neatlogsTraceUrl(input.traceId) : null,
     workerTraceId,
-    workerTraceUrl: null,
+    workerTraceUrl: input.config.integrations.neatlogs ? neatlogsTraceUrl(workerTraceId) : null,
     ...(workerTraceDetail ? { workerTraceDetail } : {}),
     checkpointId,
     checkpointUrl,
@@ -1403,9 +1405,34 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     }
   }
 
+  await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
+  for (const row of ledger) {
+    if (config.integrations.neatlogs) {
+      row.traceUrl ??= neatlogsTraceUrl(row.traceId);
+      row.workerTraceUrl ??= neatlogsTraceUrl(row.workerTraceId);
+    }
+  }
+
+  let evidenceUpdateFailure: string | null = null;
+  if (!options.dryRun && ports.publisher.updatePrEvidence) {
+    const publishedRows = new Map(ledger.filter(row => row.prUrl).map(row => [row.prUrl!, row]));
+    for (const [prUrl, row] of publishedRows) {
+      const links = prEvidenceLinks(row, config);
+      if (!links.length) continue;
+      try {
+        await ports.publisher.updatePrEvidence({ config, prUrl, links });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        evidenceUpdateFailure ??= `PR evidence links could not be attached to ${prUrl}: ${detail}`;
+      }
+    }
+  }
+
   const endedAt = now().toISOString();
   const runState = writeCurrent(stopRequested() ? 'interrupted' : 'finished', endedAt);
-  await (ports.trace as (TracePort & { flush?: () => Promise<void> }) | undefined)?.flush?.();
+  if (evidenceUpdateFailure) {
+    runState.integrations.github = { status: 'error', detail: evidenceUpdateFailure };
+  }
   const paths = writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
   return { runState, ledger, ...paths };
 }

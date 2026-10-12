@@ -498,10 +498,20 @@ named by its new commits to `origin` and to an `entire` remote when configured.
 Checkpoint upload failures are reported as publishing failures. Dry runs do
 not publish branches or checkpoints.
 
-Entire documents commit links as
-`https://entire.io/gh/<org>/<repo>/commit/<commit-sha>`. Tally keeps
-`checkpointUrl` null unless the CLI returns a URL; a local checkpoint does not
-by itself establish that a hosted link works.
+Entire checkpoint records live in separate Git refs, not on the task branch.
+Tally keeps the checkpoint ID and native session ID, and attaches a clickable
+Entire session link only when the Entire CLI confirms that the GitHub repo has
+a ready mirror. The link opens the session that contains the checkpoint; a
+reviewer still needs access to that repo in Entire. Without a ready mirror,
+Tally keeps the checkpoint ID available in the local ledger rather than adding
+a link that may not open.
+
+After each run has completed its Neatlogs read-back, Tally adds an evidence
+section to the generated PR body when links are available: Entire session and
+checkpoint, Neatlogs routing and worker traces, and the configured cfo.ai
+budget and spend tables. Worker trace links are added only after Tally verifies
+their read-back. These dashboard links use the viewer's existing account
+access; Tally does not publish public trace shares.
 
 Tally assumes nothing about the repository it works on. The repository, test
 command, model tiers, list prices, ceilings and budget all come from

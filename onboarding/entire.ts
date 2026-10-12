@@ -32,6 +32,26 @@ export interface EntireOnboardingOptions {
   command?: EntireOnboardingCommand;
 }
 
+interface EntireMirrorPlacement {
+  cluster?: unknown;
+  status?: unknown;
+}
+
+interface EntireMirrorRecord {
+  repo?: unknown;
+  status?: unknown;
+  placements?: EntireMirrorPlacement[];
+}
+
+function mirrorRecords(output: string): EntireMirrorRecord[] {
+  const parsed: unknown = JSON.parse(output);
+  if (Array.isArray(parsed)) return parsed as EntireMirrorRecord[];
+  if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { items?: unknown }).items)) {
+    return (parsed as { items: EntireMirrorRecord[] }).items;
+  }
+  throw new Error('Unreadable Entire mirror status');
+}
+
 export class EntireOnboarding implements IntegrationOnboarding {
   private cwd: string;
   private readonly command: EntireOnboardingCommand;
@@ -50,6 +70,48 @@ export class EntireOnboarding implements IntegrationOnboarding {
   }
   private async status(): Promise<Record<string, unknown>> {
     return json(await this.run('entire', ['status', '--json']));
+  }
+  private async ensureMirror(context: OnboardingContext): Promise<string | null> {
+    const slug = context.config.repo.slug;
+    if (!slug) return null;
+    const repoRef = `/gh/${slug}`;
+    let records: EntireMirrorRecord[];
+    try {
+      records = mirrorRecords(await this.run('entire', ['repo', 'mirror', 'list', '--json', '--mirrored', '--name', slug]));
+    } catch {
+      const detail = `Could not check Entire mirror status. If you want a browser mirror, run \`entire repo mirror add ${repoRef}\` after onboarding.`;
+      context.ui.print(detail);
+      return detail;
+    }
+    const existing = records.find(record => record.repo === repoRef);
+    const placements = existing?.placements ?? [];
+    if (placements.some(placement => placement.status === 'ready')) {
+      const clusters = placements.filter(placement => placement.status === 'ready')
+        .map(placement => typeof placement.cluster === 'string' ? placement.cluster : null).filter(Boolean);
+      const detail = `Entire mirror ready${clusters.length ? ` on ${clusters.join(', ')}` : ''}.`;
+      context.ui.print(detail);
+      return detail;
+    }
+    context.ui.print('Optional Entire browser mirror');
+    context.ui.print(`  This creates a copy of ${slug} in Entire so checkpoint sessions can open in its web app.`);
+    context.ui.print('  The Entire CLI will ask which region or regions should store the copy. You can skip this.');
+    if (!await context.ui.confirm('Mirror this repository in Entire?')) {
+      context.ui.print('Entire mirror skipped. Graph sizing and local checkpoint capture remain enabled.');
+      return 'Entire mirror skipped.';
+    }
+    try {
+      await this.run('entire', ['repo', 'mirror', 'add', repoRef, '--timeout', '5m'], true);
+      const view = json(await this.run('entire', ['repo', 'view', repoRef, '--json']));
+      const ready = Array.isArray(view.placements) && view.placements.some(placement =>
+        !!placement && typeof placement === 'object' && (placement as EntireMirrorPlacement).status === 'ready');
+      if (!ready) throw new Error('Entire mirror is not ready yet');
+      context.ui.print(`Entire mirror ready for ${slug}.`);
+      return 'Entire mirror ready.';
+    } catch {
+      const detail = `Entire capture remains enabled, but the mirror could not be verified. Retry with \`entire repo mirror add ${repoRef}\`.`;
+      context.ui.print(detail);
+      return detail;
+    }
   }
   async check(): Promise<IntegrationState> {
     try {
@@ -151,7 +213,8 @@ export class EntireOnboarding implements IntegrationOnboarding {
       if (required.includes('codex') && !await context.ui.confirm('Have you trusted the Entire hooks via /hooks in Codex for this repository?')) {
         return off('Codex hook trust is not confirmed. Entire remains off until you trust the hooks.');
       }
-      return { enabled: true, state: { status: 'ok', detail: 'Entire login, graph and repository capture are configured. Generated summaries remain off by default.' } };
+      const mirror = await this.ensureMirror(context);
+      return { enabled: true, state: { status: 'ok', detail: ['Entire login, graph and repository capture are configured.', mirror, 'Generated summaries remain off by default.'].filter(Boolean).join(' ') } };
     } catch { return off('Entire setup could not be verified. Any generated files remain for review. No further changes were attempted.'); }
   }
 }

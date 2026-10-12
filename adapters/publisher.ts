@@ -1,5 +1,6 @@
 import { runCommand } from './command.js';
 import type { BacklogTask } from '../engine/backlog.js';
+import type { PrEvidenceLink } from '../engine/pr-evidence.js';
 import type { TallyConfig } from '../schema/index.js';
 
 const execFileAsync = runCommand;
@@ -20,10 +21,35 @@ export interface PublishPrInput extends WorkerBranchInput {
   scopeWarnings?: string[];
 }
 
+export interface UpdatePrEvidenceInput {
+  config: TallyConfig;
+  prUrl: string;
+  links: PrEvidenceLink[];
+}
+
 export interface PublishPort {
   commitsAhead(input: WorkerBranchInput): Promise<number>;
   changedFiles(input: WorkerBranchInput): Promise<string[]>;
   publishPr(input: PublishPrInput): Promise<string>;
+  updatePrEvidence?(input: UpdatePrEvidenceInput): Promise<void>;
+}
+
+const EVIDENCE_START = '<!-- tally-run-evidence:start -->';
+const EVIDENCE_END = '<!-- tally-run-evidence:end -->';
+
+function evidenceMarkdown(links: PrEvidenceLink[]): string {
+  if (!links.length) return '';
+  const lines = [EVIDENCE_START, '### Tally run evidence', ...links.map(({ label, url, note }) =>
+    `- [${label}](${url.replaceAll('(', '%28').replaceAll(')', '%29')})${note ? ` — ${note.replace(/[\r\n]/g, ' ')}` : ''}`), EVIDENCE_END];
+  return lines.join('\n');
+}
+
+export function replacePrEvidence(body: string, links: PrEvidenceLink[]): string {
+  const evidence = evidenceMarkdown(links);
+  const existing = new RegExp(`${EVIDENCE_START}[\\s\\S]*?${EVIDENCE_END}`, 'm');
+  if (!evidence) return body.replace(existing, '').trimEnd();
+  if (existing.test(body)) return body.replace(existing, () => evidence);
+  return `${body.trimEnd()}${body.trim() ? '\n\n' : ''}${evidence}`;
 }
 
 function defaultCommand(file: string, args: string[], options?: { cwd?: string }) {
@@ -92,6 +118,14 @@ export class GitHubPublisher implements PublishPort {
       });
       return stdout.trim();
     }
+  }
+
+  async updatePrEvidence(input: UpdatePrEvidenceInput): Promise<void> {
+    if (!input.config.repo.slug) throw new Error('repo.slug is required to update a GitHub pull request');
+    if (!input.links.length) return;
+    const { stdout } = await this.command('gh', ['pr', 'view', input.prUrl, '--repo', input.config.repo.slug, '--json', 'body', '-q', '.body']);
+    const body = replacePrEvidence(stdout.replace(/\r?\n$/, ''), input.links);
+    await this.command('gh', ['pr', 'edit', input.prUrl, '--repo', input.config.repo.slug, '--body', body]);
   }
 
   private async pushCheckpoints(input: PublishPrInput): Promise<void> {

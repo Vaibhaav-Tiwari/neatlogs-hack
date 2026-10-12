@@ -6,7 +6,8 @@ import type { OnboardingContext } from './types.js';
 function fixture(answers: boolean[] = [true]) {
   const cwd = '/tmp/tally-onboarding-target';
   const state = { loggedIn: true, graph: true, enabled: true, agents: ['Codex'], dirty: '', generated: '', branch: 'main',
-    local: 'base-sha', remote: 'base-sha', published: true, remoteHooks: true, fail: '', loginWorks: true, pluginWorks: true };
+    local: 'base-sha', remote: 'base-sha', published: true, remoteHooks: true, fail: '', loginWorks: true, pluginWorks: true,
+    mirrors: [] as Array<{ repo: string; status: string; placements: Array<{ cluster: string; status: string }> }>, mirrorAdded: false };
   const calls: { file: string; args: string[]; cwd: string; interactive?: boolean }[] = [];
   const command: EntireOnboardingCommand = async (file, args, options) => {
     calls.push({ file, args, ...options });
@@ -22,6 +23,9 @@ function fixture(answers: boolean[] = [true]) {
       else if (args[0] === 'status') stdout = JSON.stringify({ enabled: state.enabled, agents: state.agents });
       else if (args[0] === 'enable') { state.enabled = true; state.agents = [args[args.indexOf('--agent') + 1]! === 'codex' ? 'Codex' : 'Claude Code']; state.generated = '?? .entire/settings.json\n?? .codex/hooks.json'; }
       else if (args[0] === 'agent') { state.agents.push(args[2] === 'codex' ? 'Codex' : 'Claude Code'); state.generated = ' M .codex/hooks.json'; }
+      else if (args[0] === 'repo' && args[1] === 'mirror' && args[2] === 'list') stdout = JSON.stringify(state.mirrors);
+      else if (args[0] === 'repo' && args[1] === 'mirror' && args[2] === 'add') state.mirrorAdded = true;
+      else if (args[0] === 'repo' && args[1] === 'view') stdout = JSON.stringify({ placements: state.mirrorAdded ? [{ cluster: 'aws-ap-south-1.entire.io', status: 'ready' }] : [] });
       else throw new Error(`Unexpected ${name}`);
     } else if (file === 'git') {
       if (args[0] === 'rev-parse') stdout = args[1] === '--show-toplevel' ? cwd : args[1] === 'HEAD' ? state.local : state.remote;
@@ -60,6 +64,32 @@ describe('Entire onboarding', () => {
     expect(vi.mocked(f.context.ui.print).mock.calls.join('\n')).not.toContain(';');
     expect(vi.mocked(f.context.ui.confirm).mock.calls.join('\n')).not.toContain(';');
     expect(f.calls.every(call => call.cwd === f.context.repoRoot)).toBe(true);
+  });
+  it('reports an existing mirror without asking or changing it', async () => {
+    const f = fixture([true]);
+    f.context.config.repo.slug = 'acme/widgets';
+    f.state.mirrors = [{ repo: '/gh/acme/widgets', status: 'ready', placements: [{ cluster: 'aws-ap-south-1.entire.io', status: 'ready' }] }];
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(f.calls.some(c => c.args.join(' ') === 'repo mirror add /gh/acme/widgets --timeout 5m')).toBe(false);
+    expect(vi.mocked(f.context.ui.confirm).mock.calls).toHaveLength(1);
+    expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('Entire mirror ready on aws-ap-south-1.entire.io.');
+  });
+  it('asks before creating an Entire mirror and lets the Entire CLI collect region choice', async () => {
+    const f = fixture([true, true]);
+    f.context.config.repo.slug = 'acme/widgets';
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    const add = f.calls.find(c => c.args.join(' ') === 'repo mirror add /gh/acme/widgets --timeout 5m');
+    expect(add?.interactive).toBe(true);
+    expect(f.calls.some(c => c.args.join(' ') === 'repo view /gh/acme/widgets --json')).toBe(true);
+    expect(vi.mocked(f.context.ui.confirm).mock.calls[1]![0]).toBe('Mirror this repository in Entire?');
+    expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('Entire mirror ready for acme/widgets.');
+  });
+  it('keeps Entire enabled when the user skips the optional mirror', async () => {
+    const f = fixture([true, false]);
+    f.context.config.repo.slug = 'acme/widgets';
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(f.state.mirrorAdded).toBe(false);
+    expect(f.calls.some(c => c.args[0] === 'repo' && c.args[1] === 'mirror' && c.args[2] === 'add')).toBe(false);
   });
   it('keeps Entire off when hook trust is skipped', async () => {
     const f = fixture([false]);

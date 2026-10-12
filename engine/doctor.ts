@@ -190,6 +190,49 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
         ? 'Optional: make this repository accessible to Entire to enable hosted checkpoint recall.'
         : 'Check Entire checkpoint search and account access.',
     });
+    if (!config.repo.slug) {
+      lines.push({
+        product: 'Entire Web mirror',
+        status: 'unavailable',
+        detail: 'repo.slug is not configured, so Tally cannot check whether this GitHub repository is mirrored in Entire Web. Local checkpoint capture is separate.',
+        fix: 'Set repo.slug in tally.yaml if you want Tally to check or create an Entire Web mirror.',
+      });
+    } else {
+      try {
+        const output = await runner('entire', ['repo', 'mirror', 'list', '--json', '--mirrored', '--name', config.repo.slug], { cwd });
+        const parsed: unknown = JSON.parse(output.stdout);
+        const records = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && Array.isArray((parsed as { items?: unknown }).items)
+          ? (parsed as { items: unknown[] }).items : [];
+        const repo = `/gh/${config.repo.slug}`;
+        const mirror = records.find((value): value is { repo?: unknown; placements?: { cluster?: unknown; status?: unknown }[] } =>
+          !!value && typeof value === 'object' && (value as { repo?: unknown }).repo === repo);
+        const ready = mirror?.placements?.filter(placement => placement.status === 'ready') ?? [];
+        if (ready.length) {
+          const clusters = ready.map(placement => typeof placement.cluster === 'string' ? placement.cluster : null).filter(Boolean);
+          lines.push({
+            product: 'Entire Web mirror',
+            status: 'connected',
+            detail: `GitHub repository mirror is ready${clusters.length ? ` on ${clusters.join(', ')}` : ''}.`,
+            fix: null,
+          });
+        } else {
+          lines.push({
+            product: 'Entire Web mirror',
+            status: 'unavailable',
+            detail: `No ready Entire Web mirror found for ${repo}. Local checkpoint capture and Git-remote checkpoint sync are separate.`,
+            fix: `Optional: entire repo mirror add ${repo}`,
+          });
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'mirror lookup failed';
+        lines.push({
+          product: 'Entire Web mirror',
+          status: 'unavailable',
+          detail: `Could not verify Entire Web mirror status: ${reason}. Local checkpoint capture is separate.`,
+          fix: `Optional: entire repo mirror list --name ${config.repo.slug}`,
+        });
+      }
+    }
     try {
       const output = await runner('entire', ['status', '--json'], { cwd });
       const enabled = JSON.parse(output.stdout).enabled === true;

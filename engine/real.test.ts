@@ -1318,6 +1318,58 @@ describe('runRealTally', () => {
     expect(validateLedger(result.ledger).ok).toBe(true);
   });
 
+  it('adds Entire, Neatlogs, and cfo.ai links to the PR after evidence read-back', async () => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: true, cfoai: true, slack: false');
+    const config = loadConfig(configPath);
+    config.tiers = config.tiers.map(tier => ({ ...tier, harness: 'codex', provider: 'openai', model: 'gpt-5.6-luna' }));
+    config.budget.cfoai = {
+      tableUrl: 'https://app.cfo.ai/s/budget',
+      spendDetailTableUrl: 'https://app.cfo.ai/s/spend',
+    };
+    writeFileSync(configPath, stringifyYaml(config));
+    const worker = new FakeWorker();
+    const evidenceUpdates: Array<{ prUrl: string; links: Array<{ label: string; url: string; note?: string }> }> = [];
+    const publisher = {
+      commitsAhead: worker.commitsAhead.bind(worker),
+      changedFiles: worker.changedFiles.bind(worker),
+      publishPr: worker.publishPr.bind(worker),
+      updatePrEvidence: async (input: typeof evidenceUpdates[number]) => { evidenceUpdates.push(input); },
+    };
+    const result = await runRealTally({
+      configPath,
+      dryRun: false,
+      baseline: false,
+      outputDir: join(dir, 'evidence-links'),
+      latestRunDir: join(dir, 'latest'),
+      now: fixedNow,
+      ports: {
+        intake,
+        signals: scriptedEntireSignals,
+        worker,
+        usage: worker,
+        sessions: worker,
+        publisher,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        trace: new FakeTrace(),
+        history: { lookup: async () => null, record: async () => {}, status: () => ({ status: 'ok' as const, detail: null }) },
+        checkpoints: { checkpointFor: async () => ({ checkpointId: '01M4PROOF', checkpointUrl: 'https://entire.io/gh/acme/payments-service/session/native-session-1', entireSessionId: 'native-session-1' }) },
+        workerTraceDrain: { drainWorker: async () => {} },
+        workerTraceReader: { verifyFor: async () => 'b'.repeat(32) },
+      },
+    });
+    expect(evidenceUpdates).toHaveLength(1);
+    expect(evidenceUpdates[0]?.prUrl).toBe('https://github.com/acme/payments-service/pull/1');
+    expect(evidenceUpdates[0]?.links).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Entire session and checkpoint', url: 'https://entire.io/gh/acme/payments-service/session/native-session-1', note: 'checkpoint 01M4PROOF' }),
+      expect.objectContaining({ label: 'Neatlogs routing trace', url: expect.stringMatching(/^https:\/\/app\.neatlogs\.com\/traces\//) }),
+      expect.objectContaining({ label: 'Neatlogs worker trace', url: 'https://app.neatlogs.com/traces/' + 'b'.repeat(32) }),
+      expect.objectContaining({ label: 'cfo.ai budget table', url: 'https://app.cfo.ai/s/budget' }),
+      expect.objectContaining({ label: 'cfo.ai spend table', url: 'https://app.cfo.ai/s/spend' }),
+    ]));
+    expect(result.ledger[0]?.checkpointUrl).toBe('https://entire.io/gh/acme/payments-service/session/native-session-1');
+    expect(result.ledger[0]?.workerTraceUrl).toBe('https://app.neatlogs.com/traces/' + 'b'.repeat(32));
+  });
+
   it('lowers routing confidence when Entire recalls a prior failure on the same files', async () => {
     const { dir, configPath } = fixture('neatlogs: false, entire: true, cfoai: false, slack: false');
     const worker = new FakeWorker();
