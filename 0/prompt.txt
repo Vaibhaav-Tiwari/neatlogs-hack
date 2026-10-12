@@ -464,3 +464,7 @@ the mirror functionality and youre allowed to do real runs. make sure everything
 ---
 
 whats next? we will fix the npm tag but other than that. also give me commands to check the new onboarding flow now myself
+
+---
+
+No, not like the what I'm basically saying is I want you to check and show me the output that better than me having to create all this myself other than that I want you to explain to me why are the checkpoints not clickable in the PR, then how can you have to think from the perspective of demo as well we want to show okay see it created this PR and even in these PR you can also go to the entire checkpoint and check it out you can see the neatlogs and have those links there you know that can make it much better and easily checkable by the judges as well. So why aren't we not doing that and yeah, maybe even the FO table link CFO table link. the entire mirror option is also possible in onboarding right. so all this can be one final pr for tally before we tag the latest npm package
