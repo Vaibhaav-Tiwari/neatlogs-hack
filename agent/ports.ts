@@ -36,6 +36,8 @@ export interface SizingSignals {
 }
 
 export interface SizingSignalsPort {
+  /** Task-specific availability or fallback detail, without changing sizing numbers. */
+  detailFor?(task: TaskInput): string | null;
   /** Null when nothing could be measured for this task. */
   signalsFor(task: TaskInput): Promise<SizingSignals | null>;
 }

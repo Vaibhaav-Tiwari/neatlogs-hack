@@ -381,6 +381,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
           return 'none';
         });
         io.stdout(`  History source: ${historySources.join(', ')}`);
+        if (task.entire) printPlanText(`Entire: ${task.entire.status === 'ok' ? 'connected' : 'setup needed'}`, task.entire.detail ?? 'Graph sizing available and used.', io);
         if (task.historyDetail) printPlanText('History note', task.historyDetail, io);
         printPlanText('Decision', task.decision, io);
       }

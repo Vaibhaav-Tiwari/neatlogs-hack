@@ -9,6 +9,7 @@ import { loadConfig } from './config.js';
 import { createDryRunPorts } from './dry-run.js';
 import { RunError } from './run.js';
 import { CODEX_LIST_PRICES } from './pricing.js';
+import { EntireSizingAdapter } from '../adapters/entire.js';
 import type { CfoaiTaskContextDocument } from '../adapters/cfoai-context.js';
 import { PriceHistory } from '../agent/history.js';
 import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
@@ -1969,6 +1970,32 @@ describe('runRealTally', () => {
     expect(result.ledger[0]?.decision).toContain('checkpoint recall unavailable');
     const onDisk = JSON.parse(readFileSync(join(dir, 'recall-unavailable', 'run.json'), 'utf8'));
     expect(onDisk.integrations.entire.detail).toContain('not mirrored');
+  });
+
+  it.each([false, true])('persists a connected mixed graph run with task-specific fallback details (empty first: %s)', async (emptyFirst) => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: true, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+    const tasks = [
+      { taskId: 'T1', title: 'Fix calc.ts', body: 'Fix `calc` in calc.ts; expected to add values.', issueNumber: null, issueUrl: null, size: 'small' as const, outcomes: ['passed' as const] },
+      { taskId: 'T2', title: 'Create docs/guide.md', body: 'Create docs/guide.md; do not change existing files.', issueNumber: null, issueUrl: null, size: 'small' as const, outcomes: ['passed' as const] },
+    ];
+    if (emptyFirst) tasks.reverse();
+    const adapter = new EntireSizingAdapter({ repoPath: dir,
+      fallback: { signalsFor: async () => ({ filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' }) },
+      runner: { run: async (_command, args) => ({ stdout: args.includes('search')
+        ? JSON.stringify({ results: args.at(-1)?.includes('calc') ? [{ file_path: 'calc.ts', symbol: 'calc' }] : [] }) : '{}' }) },
+    });
+    const result = await runRealTally({ configPath, dryRun: true, baseline: false, outputDir: join(dir, 'mixed'),
+      now: fixedNow, latestRunDir: join(dir, 'latest'), ports: {
+        intake: { tasks: async () => tasks }, signals: adapter, worker, usage: worker, sessions: worker, publisher: worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }, { passed: true, reason: null }]),
+        recall: { recallFor: async () => null, status: () => ({ status: 'ok', detail: 'checkpoint search available' }) },
+      } });
+    expect(result.runState.integrations.entire).toMatchObject({ status: 'ok' });
+    expect(result.runState.integrations.entire.detail).not.toContain('Fix:');
+    expect(result.ledger.find(row => row.taskId === 'T2')?.decision).toContain('No code symbols matched this task; sized by repository search.');
+    expect(result.ledger.find(row => row.taskId === 'T1')?.decision).not.toContain('No code symbols');
+    expect(JSON.parse(readFileSync(join(dir, 'mixed/run.json'), 'utf8')).integrations.entire.status).toBe('ok');
   });
 
   it('reads the run budget from cfo.ai, writes cumulative real spend and keeps a CSV fallback', async () => {

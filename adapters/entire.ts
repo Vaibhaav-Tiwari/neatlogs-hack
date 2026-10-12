@@ -82,6 +82,7 @@ export class EntireSizingAdapter implements SizingSignalsPort {
   private readonly runner: CommandRunner;
   private readonly topSymbols: number;
   private readonly fallback: SizingSignalsPort;
+  private readonly taskDetails = new Map<string, string | null>();
   private graphStatus: IntegrationState = {
     status: 'missing',
     detail: 'Entire graph has not succeeded yet. Falling back to code search. Fix: rerun `tally init` and choose Entire.',
@@ -101,13 +102,17 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     if (query === '') return null;
     try {
       const signals = await this.entireGraphSignals(query, task);
-      this.graphStatus = { status: 'ok', detail: signals.source === 'entire-graph' ? null : 'Graph search available; no matching target symbols, sizing from repository evidence.' };
+      const detail = signals?.source === 'entire-graph' ? null : 'No code symbols matched this task; sized by repository search.';
+      this.taskDetails.set(task.taskId, detail);
+      this.graphStatus = { status: 'ok', detail: [...this.taskDetails.values()].some(value => value !== null)
+        ? this.taskDetails.size === 1 ? detail : 'Graph search available; tasks without matching code symbols are sized by repository search.' : null };
       return signals;
     } catch (e) {
       this.graphStatus = {
         status: 'missing',
         detail: `Entire graph is unavailable (${(e as Error).message}). Falling back to code search. Fix: rerun \`tally init\` and choose Entire.`,
       };
+      this.taskDetails.set(task.taskId, this.graphStatus.detail);
       return this.fallback.signalsFor(task);
     }
   }
@@ -116,7 +121,11 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     return this.graphStatus;
   }
 
-  private async entireGraphSignals(query: string, task: TaskInput): Promise<SizingSignals> {
+  detailFor(task: TaskInput): string | null {
+    return this.taskDetails.get(task.taskId) ?? null;
+  }
+
+  private async entireGraphSignals(query: string, task: TaskInput): Promise<SizingSignals | null> {
     await this.runner.run('entire', ['graph', 'index', '--repo', this.repoPath]);
     const search = await this.runner.run('entire', [
       'graph',
@@ -130,7 +139,9 @@ export class EntireSizingAdapter implements SizingSignalsPort {
       '--query',
       query,
     ]);
-    const rawHits = objects(parseJson(search.stdout)).filter((hit) => hit.section !== 'related' &&
+    const searchResult = parseJson(search.stdout);
+    if (searchResult === null) throw new Error('graph search returned invalid JSON');
+    const rawHits = objects(searchResult).filter((hit) => hit.section !== 'related' &&
       (typeof hit.score !== 'number' || hit.score > 0) && stringField(hit, ['qualified_name', 'symbol', 'symbol_name', 'name']));
     const hitPath = (hit: Record<string, Json>) => this.repoRelative(stringField(hit, ['file_path', 'file', 'path']) ?? '');
     const allowed = new Set(await sizingPaths(this.repoPath, rawHits.map(hitPath).filter((path): path is string => path !== null)));
@@ -148,7 +159,7 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     }
     const contextFiles = [...new Set([...allowed, ...(evidence?.contextFiles ?? [])])].filter(path => !targets.has(path));
     const targetHits = hits.filter(hit => targets.has(hitPath(hit)!));
-    if (!targetHits.length && evidence) return { ...evidence, contextFiles };
+    if (!targetHits.length) return evidence ? { ...evidence, contextFiles } : null;
     const connectedPaths: string[] = [];
     const excludedConnections: string[] = [];
     const files = new Set<string>();
@@ -212,7 +223,6 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     const excludedDependents = excludedConnections.length + connectedPaths.filter(path => !allowedConnections.has(path)).length;
     for (const [id, node] of nodes) if (!targets.has(id) && !allowedConnections.has(id)) nodes.delete(id);
     for (const [id, edge] of edges) if (!nodes.has(edge.from) || !nodes.has(edge.to)) edges.delete(id);
-    if (!files.size) throw new Error('graph search returned no target symbols');
     const totals = { filesTouched: files.size, dependents: Math.max(0, callers + coChanges - excludedDependents), testsPresent: evidence?.testsPresent === true || [...nodes.keys()].some(looksLikeTest), nodes: nodes.size, edges: edges.size };
     return {
       filesTouched: totals.filesTouched, dependents: totals.dependents, testsPresent: totals.testsPresent,

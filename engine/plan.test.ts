@@ -51,6 +51,20 @@ integrations: { neatlogs: false, entire: false, cfoai: false, slack: false }
 }
 
 describe('planTally', () => {
+  it.each(['ok', 'missing'] as const)('exposes per-task Entire %s details in the plan without losing the sizing decision', async (status) => {
+    const configPath = fixture();
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('entire: false', 'entire: true'));
+    const detail = status === 'ok' ? 'No code symbols matched this task; sized by repository search.'
+      : 'Graph plugin missing. Fix: entire plugin install graph';
+    const plan = await planTally({ configPath, dryRun: true, baseline: false, signals: {
+      signalsFor: async () => ({ filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' }),
+      detailFor: () => detail,
+      ...{ status: () => ({ status, detail }) },
+    } });
+    expect(plan[0]?.entire).toEqual({ status, detail });
+    expect(plan[0]?.decision).toContain(detail);
+  });
+
   it('reads monthly cfo.ai budget even with a CLI cap and closes the client', async () => {
     const config = loadConfig(fixture());
     config.integrations.cfoai = true;

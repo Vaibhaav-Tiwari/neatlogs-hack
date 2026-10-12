@@ -44,7 +44,8 @@ function displayStatus(key, status, detail) {
 
 function entireDetail(detail) {
   if (typeof detail !== 'string') return null;
-  if (/Graph sizing: ok/i.test(detail) && /checkpoint search available/i.test(detail)) {
+  if (/Graph sizing: ok/i.test(detail) && /checkpoint search available/i.test(detail)
+    && !/no (?:matching )?code symbols|without matching code symbols|repository search/i.test(detail)) {
     return 'Graph sizing and checkpoint search are available.';
   }
   return detail;
