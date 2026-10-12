@@ -48,7 +48,7 @@ import { createPriceHistory } from './price-history.js';
 import { writeRunFiles } from './output.js';
 import { tierPriceNote } from './pricing.js';
 import { RunError, type RunOptions, type RunResult } from './run.js';
-import { Reservations, runPool, SerialQueue } from './concurrency.js';
+import { reservationNanos, Reservations, runPool, SerialQueue } from './concurrency.js';
 
 const execFileAsync = runCommand;
 
@@ -1152,15 +1152,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       if (concurrency > 1) {
         for (;;) {
           const admission = await decisions.run(async () => {
-            const cost = input.ceilingNanos ?? Infinity;
-            const next = input.attempt === 1 ? config.tiers[config.tiers.findIndex(t => t.name === input.tier.name) + 1] : undefined;
-            const fallback = input.attempt === 1 && config.modelAccessFallbackTier
-              ? config.tiers.find(tier => tier.name === config.modelAccessFallbackTier)
-              : undefined;
-            const retryCeiling = [next, fallback]
-              .filter((tier): tier is Tier => Boolean(tier))
-              .reduce((maximum, tier) => Math.max(maximum, ceilingNanos(config, input.task.size, tier)), 0);
-            const amount = cost + retryCeiling;
+            const amount = reservationNanos(config, input.task.size, input.tier, input.ceilingNanos, input.attempt);
             const fits = reservations.reserve(task.taskId, amount);
             return { fits, wait: fits ? null : reservations.waiting(task.taskId) };
           });

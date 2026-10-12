@@ -19,6 +19,21 @@ export async function runPool<T>(items: readonly T[], concurrency: number, run: 
   }));
 }
 
+import { ceilingNanos } from '../schema/money.js';
+import type { TallyConfig, TaskSize, Tier } from '../schema/types.js';
+
+/** Funds admission holds for an attempt and its possible immediate escalation. */
+export function reservationNanos(config: TallyConfig, size: TaskSize, tier: Tier, attemptCeilingNanos: number | null = ceilingNanos(config, size, tier), attempt = 1): number {
+  const next = attempt === 1 ? config.tiers[config.tiers.findIndex(candidate => candidate.name === tier.name) + 1] : undefined;
+  const fallback = attempt === 1 && config.modelAccessFallbackTier
+    ? config.tiers.find(candidate => candidate.name === config.modelAccessFallbackTier)
+    : undefined;
+  const retryCeiling = [next, fallback]
+    .filter((candidate): candidate is Tier => Boolean(candidate))
+    .reduce((maximum, candidate) => Math.max(maximum, ceilingNanos(config, size, candidate)), 0);
+  return (attemptCeilingNanos ?? Infinity) + retryCeiling;
+}
+
 /** Reservations and ledger costs are exchanged synchronously, never across an await. */
 export class Reservations {
   private held = new Map<string, number>();

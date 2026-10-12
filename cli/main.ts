@@ -357,6 +357,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
         dryRun: options.dryRun,
         baseline: options.baseline,
         budgetUsd: options.budgetUsd,
+        parallel: options.parallel,
         only: options.only,
         budgetInfo: budget,
       });
@@ -375,6 +376,7 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
           ? 'skip'
           : `${task.tier} ${task.harness}/${task.model} ceiling ${task.ceilingNanos === null ? 'none' : formatUsd(task.ceilingNanos)}`;
         io.stdout(`${task.taskId}: ${task.size} (confidence ${task.confidence.toFixed(2)}) -> ${route}`);
+        if (task.reservationNanos !== undefined) io.stdout(`  Parallel reservation: ${formatUsd(task.reservationNanos)}`);
         const historySources = task.historySources.map((source) => {
           if (source === 'neatlogs') return 'remote Neatlogs';
           if (source === 'local') return config.integrations.neatlogs ? 'local Neatlogs fallback' : 'local history';
@@ -384,6 +386,14 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
         if (task.entire) printPlanText(`Entire: ${task.entire.status === 'ok' ? 'connected' : 'setup needed'}`, task.entire.detail ?? 'Graph sizing available and used.', io);
         if (task.historyDetail) printPlanText('History note', task.historyDetail, io);
         printPlanText('Decision', task.decision, io);
+      }
+      const parallelWorkers = Math.max(options.parallel ?? config.parallelWorkers ?? 1, 1);
+      if (parallelWorkers > 1) {
+        const firstWave = plan.filter(task => !task.skipped).slice(0, parallelWorkers);
+        const reservation = firstWave.reduce((sum, task) => sum + (task.reservationNanos ?? 0), 0);
+        const cap = Math.min(budget.limitNanos, budget.monthlyRemainingNanos);
+        io.stdout(`First-wave reservation: ${formatUsd(reservation)} of ${formatUsd(cap)} available run cap`);
+        if (reservation > cap) io.stdout(`Warning: first-wave reservation does not fit the available run cap; no parallel workers will be admitted until the reservation fits.`);
       }
       return 0;
     }

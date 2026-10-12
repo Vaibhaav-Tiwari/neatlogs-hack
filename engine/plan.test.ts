@@ -117,6 +117,14 @@ describe('planTally', () => {
     expect(plan[0]?.decision).toContain('expected to cost');
   });
 
+  it('reports the admission reservation for parallel plans', async () => {
+    const plan = await planTally({ configPath: fixture(), dryRun: true, baseline: false, parallel: 2,
+      signals: { async signalsFor() { return { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' }; } },
+    });
+    expect(plan[0]?.ceilingNanos).toBe(200_000_000);
+    expect(plan[0]?.reservationNanos).toBe(1_200_000_000);
+  });
+
   it('keeps the planned ceilings within both the CLI cap and cfo.ai remaining budget', async () => {
     const configPath = fixture();
     const backlogPath = join(dirname(configPath), 'backlog.yaml');

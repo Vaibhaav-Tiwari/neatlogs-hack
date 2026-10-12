@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { Reservations, SerialQueue } from './concurrency.js';
+import { Reservations, reservationNanos, SerialQueue } from './concurrency.js';
+import type { TallyConfig } from '../schema/types.js';
+
+const reservationConfig = {
+  ceilings: { bySizeUsd: { small: 1, medium: 2, large: 3 } },
+  tiers: [
+    { name: 'cheap', harness: 'codex', provider: 'test', model: 'cheap', ceilingFraction: 0.2, price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 } },
+    { name: 'top', harness: 'codex', provider: 'test', model: 'top', ceilingFraction: 1, price: { inputUsdPerMTok: 1, cachedInputUsdPerMTok: 0, outputUsdPerMTok: 1 } },
+  ],
+} as unknown as TallyConfig;
+
+it('shares the parallel admission reservation calculation', () => {
+  expect(reservationNanos(reservationConfig, 'small', reservationConfig.tiers[0]!)).toBe(1_200_000_000);
+  expect(reservationNanos(reservationConfig, 'small', reservationConfig.tiers[0]!, 10_000_000)).toBe(1_010_000_000);
+  expect(reservationNanos(reservationConfig, 'small', reservationConfig.tiers[1]!, null, 2)).toBe(Infinity);
+});
 
 describe('Reservations', () => {
   it('exchanges held funds for actual spend without double-counting and frees unused funds', async () => {

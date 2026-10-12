@@ -8,6 +8,7 @@ import { RepositorySizingAdapter } from '../adapters/repository-sizing.js';
 import { CfoaiBudgetAdapter } from '../adapters/cfoai.js';
 import { ConfigBacklogIntake } from '../adapters/github.js';
 import { usdToNanos } from '../schema/index.js';
+import { reservationNanos } from './concurrency.js';
 import type { BudgetSource, IntegrationState, TallyConfig, TaskSize } from '../schema/index.js';
 import { loadConfig } from './config.js';
 import { createDryRunPorts } from './dry-run.js';
@@ -23,6 +24,7 @@ export interface PlannedTask {
   model: string | null;
   harness: string | null;
   ceilingNanos: number | null;
+  reservationNanos?: number;
   decision: string;
   /** Sources that returned observations for this task's routing decision. */
   historySources: PriceHistorySource[];
@@ -37,6 +39,7 @@ export interface PlanOptions {
   dryRun: boolean;
   baseline: boolean;
   budgetUsd?: number;
+  parallel?: number;
   only?: string;
   signals?: SizingSignalsPort;
   preflightRunner?: PreflightRunner;
@@ -146,6 +149,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         model: route.tier.model,
         harness: route.tier.harness,
         ceilingNanos: ceiling,
+        ...(Math.max(options.parallel ?? config.parallelWorkers ?? 1, 1) > 1 ? { reservationNanos: reservationNanos(config, estimate.size, route.tier, ceiling) } : {}),
         decision: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.reason : `${route.reason} Deliberate first-attempt ceiling override: $${task.firstAttemptCeilingUsd.toFixed(3)} (normal ceiling remains an upper bound).`,
         historySources: sources,
         ...(entire ? { entire } : {}),
