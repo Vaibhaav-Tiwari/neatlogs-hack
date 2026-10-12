@@ -109,16 +109,16 @@ describe('cfo.ai onboarding', () => {
 
   it('discovers a complete config and actual page address for a connected account without writes', async () => {
     const { module, client, login } = setup();
-    const ctx = context([false]);
+    const ctx = context();
     const result = await module.configure(ctx);
     expect(result.enabled).toBe(true);
     expect(result.budget?.cfoai).toMatchObject({ orgId: '42', scenario: 'Main Scenario',
       pageUrl: 'https://app.cfo.ai/s/page-discovered', table: 'Tally agent budget',
       tierSpendRows: { cheap: 'Tier spend - cheap', middle: 'Tier spend - middle', top: 'Tier spend - top' } });
-    expect(client.calls.filter(c => c.name.startsWith('edit'))).toEqual([]);
+    expect(client.calls.filter(c => c.name === 'edit_table_blocks')).toEqual([]);
+    expect(client.calls.filter(c => c.name === 'edit_pages')).toHaveLength(1);
     expect(login).not.toHaveBeenCalled();
-    expect(ctx.ui.confirm).toHaveBeenCalledOnce();
-    expect(vi.mocked(ctx.ui.confirm).mock.calls[0]?.[0]).toContain('scenario note');
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
     expect(ctx.config.budget.source).toBe('config');
     const complete = { ...ctx.config, budget: result.budget, integrations: { ...ctx.config.integrations, cfoai: true } };
     expect(validateConfig(complete)).toMatchObject({ ok: true });
@@ -195,16 +195,16 @@ describe('cfo.ai onboarding', () => {
     expect(client.calls.some(c => c.name.startsWith('edit'))).toBe(false);
   });
 
-  it('enables detailed Ari context only after a separate shared-memory consent', async () => {
+  it('adds detailed Ari context and enables shared-memory reports after cfo.ai opt-in', async () => {
     const { module, client } = setup();
-    const ctx = context([true]);
+    const ctx = context();
     const result = await module.configure(ctx);
     expect(result.enabled).toBe(true);
     expect(result.budget?.cfoai?.publishRunContext).toBe(true);
     const messages = vi.mocked(ctx.ui.print).mock.calls.map(([line]) => line).join('\n');
-    expect(messages).toContain('Ari task context (optional)');
-    expect(messages).toContain('shared with members of the selected cfo.ai workspace');
-    expect(vi.mocked(ctx.ui.confirm).mock.calls[0]?.[0]).toContain('scenario note and share per-attempt reports');
+    expect(messages).toContain('Ari context');
+    expect(messages).toContain('Reports are shared with this cfo.ai workspace');
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
     expect(client.calls.filter(c => c.name === 'edit_pages')).toHaveLength(1);
     expect(client.calls.find(c => c.name === 'edit_memory')).toBeUndefined();
     expect(client.pages[0]?.blocks[0]?.markdown).toContain('same recorded token mix');
@@ -213,31 +213,31 @@ describe('cfo.ai onboarding', () => {
   it('updates only its marked scenario guide and skips an identical update on repeat init', async () => {
     const { module, client } = setup();
     client.pages[0]!.blocks.push({ ref: 'tally-guide', markdown: '# Tally Ari context guide (managed by tally-agents)\nold' });
-    const first = context([true]);
+    const first = context();
     expect((await module.configure(first)).budget?.cfoai?.publishRunContext).toBe(true);
     expect(client.calls.filter(c => c.name === 'edit_pages')).toHaveLength(1);
     expect(client.calls.find(c => c.name === 'edit_pages')?.args.update_text.target).toBe('tally-guide');
     client.calls = [];
-    expect((await module.configure(context([true]))).budget?.cfoai?.publishRunContext).toBe(true);
+    expect((await module.configure(context())).budget?.cfoai?.publishRunContext).toBe(true);
     expect(client.calls.filter(c => c.name === 'edit_pages')).toHaveLength(0);
   });
 
   it('keeps cfo.ai tables usable if scenario-guide setup cannot be verified', async () => {
     const { module, client } = setup();
     client.failure = 'inspect_pages';
-    const ctx = context([true]);
+    const ctx = context();
     const result = await module.configure(ctx);
     expect(result.enabled).toBe(true);
     expect(result.budget?.cfoai?.publishRunContext).toBeUndefined();
     expect(vi.mocked(ctx.ui.print).mock.calls.map(call => call.join(' ')).join(' ')).toContain('Budget and spend tables remain available');
   });
 
-  it('keeps CFO tables connected while leaving Ari organization memory off by default', async () => {
+  it('keeps CFO tables connected when Ari context setup fails', async () => {
     const { module } = setup();
-    const ctx = context([false]);
+    const ctx = context();
     const result = await module.configure(ctx);
     expect(result.enabled).toBe(true);
-    expect(result.budget?.cfoai?.publishRunContext).toBeUndefined();
+    expect(result.budget?.cfoai?.publishRunContext).toBe(true);
   });
 
   it('keeps table budgeting available when the server lacks the organization memory tool', async () => {

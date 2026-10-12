@@ -95,7 +95,7 @@ export interface CfoaiOnboardingOptions {
   now?: () => Date;
 }
 
-/** No init-file writes, no other harness's credentials, and no model edits without consent. */
+/** Keeps model tables intact and writes only Tally-owned, scoped context. */
 export class CfoaiOnboarding implements IntegrationOnboarding {
   private readonly options: CfoaiOnboardingOptions;
   constructor(options: CfoaiOnboardingOptions = {}) { this.options = options; }
@@ -258,14 +258,10 @@ export class CfoaiOnboarding implements IntegrationOnboarding {
       const pageReadTool = tools.get('inspect_pages');
       const pageEditTool = tools.get('edit_pages');
       if (supportsOrganizationMemory(memoryTool?.inputSchema) && supportsScenarioContextTools(pageReadTool?.inputSchema, pageEditTool?.inputSchema)) {
-        context.ui.print('Ari task context (optional)');
-        context.ui.print(`  Scenario page: ${pageName} in ${scenario}. Tally adds or updates one Tally-managed interpretation note on this page.`);
-        context.ui.print('  Ari also receives one idempotent, organization-shared report per attempt with task, model, measured tokens, estimated cost, routing, budget, and review links.');
-        context.ui.print('  Organization-memory reports are shared with members of the selected cfo.ai workspace.');
-        context.ui.print('  Reports exclude issue bodies, source code, diffs, prompts, transcripts, raw trace contents, and credentials. Tally does not change page sharing or visibility.');
-        context.ui.print('  You can leave this off and still use cfo.ai budgets and spend tables.');
-        if (await context.ui.confirm('Add the scenario note and share per-attempt reports with Ari?')) {
-          try {
+        context.ui.print('Ari context');
+        context.ui.print(`  Adding Tally's managed guide to ${pageName} in ${scenario} and enabling per-attempt reports for Ari.`);
+        context.ui.print('  Reports are shared with this cfo.ai workspace. They include task, model, tokens, cost, outcome, budget and review links, not source, issue bodies, prompts, transcripts or credentials.');
+        try {
             const guide = [
               '# Tally Ari context guide (managed by tally-agents)',
               '',
@@ -301,9 +297,8 @@ export class CfoaiOnboarding implements IntegrationOnboarding {
             }
             publishRunContext = true;
             context.ui.print(`Ari context note is verified on the ${pageName} page. Per-attempt reports are enabled.`);
-          } catch (error) {
-            context.ui.print(`Ari context setup could not be verified: ${safeFailureReason(error)}. Budget and spend tables remain available; per-attempt reports are off.`);
-          }
+        } catch (error) {
+          context.ui.print(`Ari context setup could not be verified: ${safeFailureReason(error)}. Budget and spend tables remain available; per-attempt reports are off.`);
         }
       } else {
         context.ui.print('Ari task context is unavailable because this cfo.ai workspace does not expose the required scenario-page and organization-memory tools. Budget and spend tables are still configured.');

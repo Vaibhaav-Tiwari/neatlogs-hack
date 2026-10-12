@@ -61,13 +61,13 @@ export function formatDoctorLine(line: { product: string; status: DisplayStatus;
 
 const INIT_HEADINGS = new Set([
   'Tally init proposed changes:', 'Optional integrations', 'Integrations:', 'Model tiers',
-  'Neatlogs connection', 'Past-run history (optional)', 'Worker traces (optional)',
+  'Neatlogs connection', 'Coding agent',
   'Entire account', 'Entire CLI setup', 'Entire repository capture', 'Optional Entire browser mirror',
-  'cfo.ai connection', 'cfo.ai table setup', 'Ari task context',
+  'cfo.ai connection', 'cfo.ai table setup', 'Ari context',
 ]);
 
 export function formatInitLine(line: string, style: TerminalStyle): string {
-  if (INIT_HEADINGS.has(line) || /^(?:Ari task context|Entire CLI setup|Entire repository capture|Optional Entire browser mirror)(?:\b|\s*\()/i.test(line)) return style.heading(line);
+  if (INIT_HEADINGS.has(line) || /^(?:Ari context|Entire CLI setup|Entire repository capture|Optional Entire browser mirror)(?:\b|\s*\()/i.test(line)) return style.heading(line);
   if (line === 'Tally init proposed changes:' || line.startsWith('Tally re-init proposed')) return style.heading(line);
   const integrationState = /^(\s{2,})(Neatlogs|Entire|cfo\.ai)(\s+)(on|off)$/i.exec(line);
   if (integrationState) {

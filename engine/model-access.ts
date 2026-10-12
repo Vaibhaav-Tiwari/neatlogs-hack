@@ -30,9 +30,3 @@ export function modelAccessConfigurationError(error: unknown, tier: Pick<Tier, '
   const detail = errorMessage(raw);
   return `Model configuration error for tier "${tier.name}" (${tier.harness}, model "${tier.model}"): the active harness account rejected the configured model. Check model access for that account/provider, then update this tier's model in tally.yaml. Tally will not silently substitute another model. Provider detail: ${detail}`;
 }
-
-/** A sign-in check is not a model-entitlement check; avoid model probes that may spend. */
-export function configuredModelAccessNotice(tiers: readonly Pick<Tier, 'name' | 'harness' | 'model'>[]): string {
-  const models = [...new Set(tiers.map((tier) => `${tier.name} (${tier.harness}: ${tier.model})`))];
-  return `Model access is unverified. Harness sign-in does not prove these models are available. Tally does not send a model request before a run. Configured tiers: ${models.join(', ')}.`;
-}

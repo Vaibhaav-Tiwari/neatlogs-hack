@@ -1933,7 +1933,7 @@ describe('runRealTally', () => {
         recall: { recallFor: async () => null, status: () => ({ status: 'missing', detail: 'checkpoint recall unavailable: repository not mirrored to Entire' }) },
       },
     });
-    expect(result.runState.integrations.entire).toMatchObject({ status: 'missing', detail: expect.stringContaining('Graph sizing: ok') });
+    expect(result.runState.integrations.entire).toMatchObject({ status: 'ok', detail: expect.stringContaining('Graph sizing: ok') });
     expect(result.runState.integrations.entire.detail).toContain('not mirrored');
     expect(result.ledger[0]?.decision).toContain('checkpoint recall unavailable');
     const onDisk = JSON.parse(readFileSync(join(dir, 'recall-unavailable', 'run.json'), 'utf8'));

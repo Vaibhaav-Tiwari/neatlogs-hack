@@ -273,7 +273,7 @@ function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { 
   return {
     neatlogs: config.integrations.neatlogs ? neatlogsStatus(ports) : { status: 'off', detail: null },
     entire: config.integrations.entire
-      ? recall ? { status: graph.status === 'ok' && recall.status === 'ok' ? 'ok' : 'missing',
+      ? recall ? { status: graph.status,
           detail: `Graph sizing: ${graph.status}${graph.detail ? ` (${graph.detail})` : ''}; ${recall.detail ?? `checkpoint recall: ${recall.status}`}` } : graph
       : { status: 'off', detail: null },
     cfoai: config.integrations.cfoai

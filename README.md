@@ -235,16 +235,21 @@ repository you want Tally to work on:
    local URL showing the run as it happens.
 
 More on `tally init`: neatlogs, Entire and cfo.ai are separate opt-in prompts,
-defaulting to No. Model-access fallback is a separate opt-in: choose a named
-configured tier for one budget-checked retry after explicit model denial, or
-leave it blank to keep fail-fast behavior. Scripted setup can pass
-`--model-access-fallback-tier <name>`. It displays a compact proposal (full YAML with `--verbose`), install record in
+defaulting to No. When both coding CLIs are available, a numbered menu defaults
+to Codex; if only one is signed in, init selects it automatically. A stopped
+or unavailable AO daemon selects the direct runner without asking. New configs
+default to one budget-checked retry on the `cheap` tier after explicit model
+access rejection; re-init preserves an existing fallback setting. Set
+`modelAccessFallbackTier` in `tally.yaml` or use
+`--model-access-fallback-tier <name>` to change it. It displays a compact proposal (full YAML with `--verbose`), install record in
 `.tally/`, AO project registration/configuration and setup hook, then asks for
 final confirmation (default No) before applying changes. Use `tally init
 --dry-run` to preview without applying, or `--yes` only when you consent to
 applying detected defaults without prompts. Review model tiers, prices, tests
 and ceilings before starting workers. Claude's consented rules are installed
-locally before launch; init does not change global coding-agent settings.
+locally before launch. If Neatlogs is enabled, init also installs its hooks in
+the selected agents' global settings; those hooks trace matching sessions on
+this computer, including sessions outside Tally.
 The final summary shows the permission policy for this AO project's workers.
 Uninstall restores owned project settings; it never enables bypass-permissions.
 
@@ -257,11 +262,13 @@ tally init --yes --test-command "node --check js/app.js" \
   --neatlogs yes --entire no --cfoai yes
 ```
 
-An empty setup flag means no setup. Product flags select integrations, not
-optional browser login, SDK probes, global hooks or remote table writes.
-Existing credentials and cfo.ai tables can be discovered read-only; absent
-prerequisites are reported. Declining optional neatlogs probes/read access/hooks
-keeps tracing enabled when a project key is already configured.
+An empty setup flag means no setup. Selecting Neatlogs runs a synthetic key
+probe and installs global worker hooks for the selected coding agent(s).
+Past-run history connects automatically when its read credentials are already
+configured; otherwise Tally uses local history. Selecting cfo.ai enables its
+managed scenario guide and per-attempt reports; creating missing spend tables
+still has a separate confirmation. Entire installation, login, repository
+capture, settings publication, and mirror creation keep their own steps.
 
 Init detects test/setup commands from repository evidence and proposes tiers
 only for installed Codex or Claude Code agents. When no test command is found,
@@ -484,7 +491,7 @@ unverified, the run keeps the batches and shows `tally traces drain --run <id>`
 for recovery. Dry runs do not drain workers.
 
 With `integrations.entire: true`, enable Entire in the target repository and
-trust its Codex hooks through `/hooks` before starting workers. Tally records
+review and trust its hooks in the coding agent before starting workers. Tally records
 the task commit's `Entire-Checkpoint` trailer and its native `entireSessionId`
 separately from the AO `sessionId`. Logs-only checkpoints retain conversation
 context; escalation defaults to a metadata-only handoff containing the

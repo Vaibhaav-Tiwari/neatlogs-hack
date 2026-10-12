@@ -10,7 +10,7 @@ import { claudeAllowList } from './harness.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 describe('runDoctor', () => {
-  it('shows configured model access as unverified without failing the doctor command', async () => {
+  it('checks harness sign-in without adding a model-access warning or making a model request', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-models-'));
     const configPath = join(dir, 'tally.yaml');
     const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
@@ -21,9 +21,8 @@ describe('runDoctor', () => {
     const lines = await runDoctor({ configPath, env: {}, runner: async file => ({
       stdout: file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT' : 'ok', stderr: '',
     }) });
-    const access = lines.find(line => line.product === 'Configured model access');
-    expect(access).toMatchObject({ status: 'unverified', detail: expect.stringContaining('does not send a model request before a run'), fix: expect.stringContaining('configured accounts') });
-    expect(access && doctorHasFailures([access])).toBe(false);
+    expect(lines.some(line => /model access/i.test(line.product) || /model access is unverified/i.test(line.detail))).toBe(false);
+    expect(lines.some(line => ['Codex', 'Claude Code'].includes(line.product) && line.status === 'connected')).toBe(true);
     expect(doctorHasFailures([{ product: 'Codex', status: 'broken', detail: 'signed out', fix: 'codex login' }])).toBe(true);
   });
   it('reports hosted checkpoint recall as optional when Graph and capture are connected', async () => {

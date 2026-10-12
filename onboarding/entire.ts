@@ -258,7 +258,7 @@ export class EntireOnboarding implements IntegrationOnboarding {
           await this.run('git', ['push', 'origin', `${setupCommit}:refs/heads/${defaultBranch}`]);
         }
       }
-      if (required.includes('codex')) context.ui.print('In Codex started inside this repository, open /hooks and trust the Entire capture hooks once. Tally cannot approve them for you.');
+      context.ui.print('In your coding agent, open its hooks view, review the Entire capture hooks, and trust them for this repository. Tally cannot approve hooks for you.');
       // Local enablement alone is insufficient: future workers inherit the default-branch files.
       const pending = await this.run('git', ['status', '--porcelain', '--', ...SETTINGS_FILES]);
       if (pending) return off('Capture settings are still uncommitted. Entire remains off until they are published on the default branch.');
@@ -269,8 +269,8 @@ export class EntireOnboarding implements IntegrationOnboarding {
         const settings = await this.run('git', ['show', `refs/remotes/origin/HEAD:${file}`]);
         if (!/\bentire\s+hooks\b/.test(settings)) return off(`The default branch has no Entire ${agent} hooks yet.`);
       }
-      if (required.includes('codex') && !await context.ui.confirm('Have you trusted the Entire hooks via /hooks in Codex for this repository?')) {
-        return off('Codex hook trust is not confirmed. Entire remains off until you trust the hooks.');
+      if (!await context.ui.confirm('Have you reviewed and trusted the Entire hooks in your coding agent for this repository?')) {
+        return off('Hook trust is not confirmed. Entire remains off until you trust the hooks.');
       }
       const mirror = await this.ensureMirror(context);
       return { enabled: true, state: { status: 'ok', detail: ['Entire login, graph and repository capture are configured.', mirror, 'Generated summaries remain off by default.'].filter(Boolean).join(' ') } };

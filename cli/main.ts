@@ -168,8 +168,8 @@ Options:
   --neatlogs <yes|no> --entire <yes|no> --cfoai <yes|no> Init product opt-ins
   --verbose         For init: include the full proposed YAML
   --runner <ao|direct> For init: AO workers or sequential direct workers
-  --harness <claude-code|codex|mixed> For init: explicit coding agent choice
-  --model-access-fallback-tier <name> For init: one budget-checked retry after explicit model denial
+  --harness <claude-code|codex|mixed> For init: coding agent choice (Codex is default)
+  --model-access-fallback-tier <name> For init: override the default cheap-tier fallback
   --allow-claude     For init: explicitly consent to the printed repository allow-list
   --output <dir>    Output directory for tally market (default: .tally/market/latest)
   --limit <number>  Result limit for tally market (default: 10)

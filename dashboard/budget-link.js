@@ -1,5 +1,5 @@
 export function budgetPageUrl(budget) {
-  const value = budget?.cfoai?.pageUrl ?? budget?.cfoai?.tableUrl;
+  const value = budget?.cfoai?.tableUrl ?? budget?.cfoai?.pageUrl;
   if (typeof value !== 'string' || /example|placeholder|your[-_ ]|[<>]/i.test(value)) return null;
   try {
     const url = new URL(value);

@@ -197,7 +197,7 @@ function printSummary(config: TallyConfig, print: (line: string) => void): void 
     print(`  ${label.padEnd(18)} ${config.integrations[name] ? 'on' : 'off'}`);
   }
   if (config.budget.cfoai?.publishRunContext) print('  cfo.ai Ari context   on · per-attempt organization-memory reports');
-  print(`  Model fallback     ${config.modelAccessFallbackTier ?? 'off · fail fast'}`);
+  print(`  Model fallback     ${config.modelAccessFallbackTier ?? 'disabled'}`);
   print(`  Workers            ${config.runner === 'direct' ? 1 : config.parallelWorkers ?? 1} · ${config.runner ?? 'ao'}`);
 }
 
@@ -234,10 +234,13 @@ async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd
     catch (error) { aoStatus = { state: 'unknown', detail: error instanceof Error ? error.message : 'AO status could not be checked' }; }
     if (aoStatus.state !== 'running') print(`${aoStatus.detail}. AO is unavailable. Direct is the default. ${aoStatus.state === 'stopped' ? 'Run ao start to use AO.' : 'Check ao status --json before choosing AO.'}`);
     if (!runner) {
-      const defaultRunner = aoStatus.state === 'running' ? 'ao' : 'direct';
-      const value = options.yes || options.dryRun ? defaultRunner : (await readLine('Runner: parallel through Agent Orchestrator (ao), or one at a time directly (direct)?', defaultRunner)).trim();
-      if (value !== 'ao' && value !== 'direct') throw new InitError('Runner must be ao or direct; nothing was changed.');
-      runner = value;
+      if (aoStatus.state === 'running') {
+        const value = options.yes || options.dryRun ? 'ao' : (await readLine('Runner: Agent Orchestrator (AO) or direct?', 'ao')).trim().toLowerCase();
+        if (!['ao', 'direct'].includes(value)) throw new InitError('Runner must be AO or direct; nothing was changed.');
+        runner = value as 'ao' | 'direct';
+      } else {
+        runner = 'direct';
+      }
     }
     if (runner === 'ao' && aoStatus.state !== 'running') {
       const guidance = aoStatus.state === 'stopped' ? 'run ao start and retry' : 'check ao status --json, then retry';
@@ -258,8 +261,25 @@ async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd
   }
   const ready = new Set(statuses.filter(s => s.installed && s.signedIn).map(s => s.harness));
   if (!ready.size) throw new InitError('No installed and signed-in Codex or Claude Code agent detected; run claude auth login or codex login, then retry.');
-  const fallback = ready.has('claude-code') ? 'claude-code' : 'codex';
-  const choice = options.harnessChoice ?? (options.yes || options.dryRun ? fallback : (await readLine('Coding agents: Claude Code only (claude-code), Codex only (codex), or mixed?', fallback)).trim());
+  const fallback = ready.has('codex') ? 'codex' : 'claude-code';
+  let choice = options.harnessChoice;
+  if (!choice) {
+    const choices = [
+      ...(ready.has('codex') ? [{ choice: 'codex' as const, label: 'Codex' }] : []),
+      ...(ready.has('claude-code') ? [{ choice: 'claude-code' as const, label: 'Claude Code' }] : []),
+      ...(ready.has('codex') && ready.has('claude-code') ? [{ choice: 'mixed' as const, label: 'Both (Codex + Claude Code)' }] : []),
+    ];
+    if (choices.length === 1 || options.yes || options.dryRun) choice = choices.find(item => item.choice === fallback)?.choice ?? choices[0]!.choice;
+    else {
+      print('Coding agent');
+      choices.forEach((item, index) => print(`  ${index + 1}. ${item.label}${item.choice === fallback ? ' (default)' : ''}`));
+      const answer = (await readLine('Choose a coding agent (number)', String(choices.findIndex(item => item.choice === fallback) + 1))).trim().toLowerCase();
+      const index = Number(answer) - 1;
+      const selected = /^\d+$/.test(answer) ? choices[index] : choices.find(item => item.choice === answer || item.label.toLowerCase() === answer);
+      if (!selected) throw new InitError('Choose one of the listed coding agents; nothing was changed.');
+      choice = selected.choice;
+    }
+  }
   if (!['claude-code', 'codex', 'mixed'].includes(choice)) throw new InitError('Choose claude-code, codex or mixed; nothing was changed.');
   const required = choice === 'mixed' ? ['claude-code', 'codex'] : [choice];
   if (required.some(h => !ready.has(h as Harness))) throw new InitError(`Selected ${choice} requires installed and signed-in ${required.join(' and ')}; Tally will not substitute another harness.`);
@@ -342,6 +362,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
       const label = name === 'cfoai' ? 'cfo.ai' : name === 'entire' ? 'Entire' : name;
       config.integrations[name] = options.integrations?.[name] ?? parseYes(await readLine(`Enable ${label} integration? y/N`, before.integrations[name] ? 'y' : 'N'));
     }
+    if (options.modelAccessFallbackTier !== undefined) config.modelAccessFallbackTier = options.modelAccessFallbackTier;
   }
   if (!pending) {
     if (options.testCommand !== undefined) config.test.command = options.testCommand;
@@ -434,18 +455,15 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const issueLabel = options.issueLabel ?? await readLine('GitHub issue label for Tally tasks', 'tally');
   print('Optional integrations');
   print('  Integration  What it adds');
-  print('  Neatlogs     Tally traces and optional history from past tasks');
-  print('  Entire       Code graph sizing and local session checkpoints');
-  print('  cfo.ai       Live monthly budget and spend records');
-  print('Each integration is optional. You can enable one later by rerunning tally init.');
-  const neatlogs = options.integrations?.neatlogs ?? parseYes(await readLine('Enable Neatlogs traces? y/N', 'N'));
+  print('  Neatlogs     Routing traces and machine-wide worker hooks');
+  print('  Entire       Code graph sizing and session checkpoints');
+  print('  cfo.ai       Budget, spend and Ari context reports');
+  const neatlogs = options.integrations?.neatlogs ?? parseYes(await readLine('Enable Neatlogs traces and machine-wide worker hooks? y/N', 'N'));
   const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph and checkpoints? y/N', 'N'));
-  const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Use cfo.ai for the monthly budget and spend? y/N', 'N'));
+  const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Use cfo.ai for budget, spend and Ari context? y/N', 'N'));
   const { runner, concurrency, tiers } = await chooseSetup(options, command, repoRoot, readLine, print);
-  const fallbackTierInput = options.modelAccessFallbackTier ?? (!options.yes && !options.dryRun
-    ? (await readLine(`Optional fallback tier after explicit model-access rejection (${tiers.map(tier => tier.name).join(', ')}). Press Enter to disable.`, '')).trim() || undefined
-    : undefined);
-  if (fallbackTierInput && !tiers.some(tier => tier.name === fallbackTierInput)) {
+  const fallbackTier = options.modelAccessFallbackTier ?? 'cheap';
+  if (!tiers.some(tier => tier.name === fallbackTier)) {
     throw new InitError(`Model-access fallback tier must be one of ${tiers.map(tier => tier.name).join(', ')}; nothing was changed.`);
   }
   if (runner === 'ao') aoWorkerMode({ tiers });
@@ -469,7 +487,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
       issueLabel,
     },
     tiers,
-    ...(fallbackTierInput ? { modelAccessFallbackTier: fallbackTierInput } : {}),
+    modelAccessFallbackTier: fallbackTier,
     ceilings: {
       bySizeUsd: { small: 1.5, medium: 4, large: 10 },
     },

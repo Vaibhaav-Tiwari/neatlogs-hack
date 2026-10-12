@@ -10,6 +10,7 @@ import { attemptAmounts, attemptReason } from './cost-format.js';
 import { copyableIdEvidence, installSessionCopy, sessionEvidence } from './session-evidence.js';
 import { reasonText } from './reason-text.js';
 import { ledgerEmptyState } from './empty-state.js';
+import { integrationView } from './integration-view.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -488,37 +489,11 @@ function drawBudget(run, ledger) {
   );
 }
 
-const INTEGRATIONS = [
-  ['neatlogs', 'neatlogs', 'traces'],
-  ['entire', 'Entire', 'checkpoints and handoff'],
-  ['cfoai', 'cfo.ai', 'live budget'],
-  ['github', 'GitHub', 'issues and pull requests'],
-  ['slack', 'Slack', 'alerts'],
-];
-const INTEGRATION_WORD = { ok: 'on', off: 'off', missing: 'not connected', error: 'broken' };
-const INTEGRATION_OFF_NOTE = {
-  neatlogs: 'Off for this run; traces were not sent.',
-  entire: 'Off for this run; checkpoints and handoff use local fallback.',
-  cfoai: 'Off for this run; budget comes from tally.yaml.',
-  github: 'Off for this run; backlog came from a file.',
-  slack: 'Off for this run; alerts were not sent.',
-};
-
-function drawIntegrations(run) {
-  const items = INTEGRATIONS.filter(([key]) => run.integrations?.[key] && (key !== 'slack' || run.integrations[key].status !== 'off')).map(
-    ([key, name, job]) => {
-      const { status, detail } = run.integrations[key];
-      const note = detail ?? (status === 'off' ? INTEGRATION_OFF_NOTE[key] : job);
-      const pageUrl = key === 'cfoai' && status !== 'off' ? budgetPageUrl(run.budget) : null;
-      const linkedNote = pageUrl
-        ? `<a href="${esc(pageUrl)}" target="_blank" rel="noreferrer">cfo.ai budget table</a>`
-        : key === 'cfoai' && typeof note === 'string' && /^https?:\/\//.test(note) ? 'cfo.ai budget table' : esc(note);
-      return `<div class="int int-${esc(status)}">
+function drawIntegrations(run, ledger) {
+  const items = integrationView(run, ledger).map(({ key, name, status, statusLabel, detail, link: itemLink }) => `<div class="int int-${esc(status)}">
         <span class="box" aria-hidden="true"></span>
-        <p><b>${name}</b> <span class="state">${INTEGRATION_WORD[status] ?? esc(status)}</span>
-        <span class="detail">${linkedNote}</span></p></div>`;
-    },
-  );
+        <p><b>${esc(name)}</b> <span class="state">${esc(statusLabel)}</span>
+        <span class="detail">${esc(detail)}${itemLink ? ` · <a href="${esc(itemLink.url)}" target="_blank" rel="noreferrer">${esc(itemLink.label)}</a>` : ''}</span></p></div>`);
   draw('integrations', items.join(''));
 }
 
@@ -740,7 +715,7 @@ function drawAll(state, source) {
   drawHeadline(state.run, source.baseline);
   drawBudget(state.run, state.ledger);
   drawComparison(state.run, source);
-  drawIntegrations(state.run);
+  drawIntegrations(state.run, state.ledger);
   drawLedger(state.run, state.ledger);
   drawFoot(source);
   document.title = `Tally: ${usd(state.run.budget.spentNanos)} of ${usd(state.run.budget.limitNanos)}`;

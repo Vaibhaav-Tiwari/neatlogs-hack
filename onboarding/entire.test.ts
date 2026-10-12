@@ -56,13 +56,13 @@ describe('Entire onboarding', () => {
     expect((await f.module.check()).status).toBe('ok');
     expect(mutations(f.calls)).toEqual([]);
   });
-  it('reuses a configured repository and asks the human about Codex hook trust', async () => {
+  it('reuses a configured repository and asks the human to trust hooks in their coding agent', async () => {
     const f = fixture();
     expect((await f.module.configure(f.context)).enabled).toBe(true);
     expect(mutations(f.calls)).toEqual([]);
-    expect(f.context.ui.print).toHaveBeenCalledWith(expect.stringContaining('/hooks'));
+    expect(f.context.ui.print).toHaveBeenCalledWith(expect.stringContaining('your coding agent'));
     expect(vi.mocked(f.context.ui.print).mock.calls.join('\n')).not.toContain(';');
-    expect(vi.mocked(f.context.ui.confirm).mock.calls.join('\n')).not.toContain(';');
+    expect(vi.mocked(f.context.ui.confirm).mock.calls.join('\n')).toContain('Have you reviewed and trusted the Entire hooks in your coding agent for this repository?');
     expect(f.calls.every(call => call.cwd === f.context.repoRoot)).toBe(true);
   });
   it('reports an existing mirror without asking or changing it', async () => {

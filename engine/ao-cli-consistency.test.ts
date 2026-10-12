@@ -45,7 +45,7 @@ describe('ordinary-terminal AO CLI consistency', () => {
         const proposal: string[] = [];
         const result = await runInit({ cwd: dir, dryRun: true, print: line => proposal.push(line) });
         expect(result.applied).toBe(false);
-        expect(result.tiers.every((tier) => tier.includes('claude-code'))).toBe(true);
+        expect(result.tiers.every((tier) => tier.includes('codex'))).toBe(true);
         expect(existsSync(join(dir, '.tally'))).toBe(false);
         expect(proposal.some(line => line.startsWith('  Runner             ao'))).toBe(true);
       }

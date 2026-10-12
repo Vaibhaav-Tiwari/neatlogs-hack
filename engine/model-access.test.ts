@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { modelAccessConfigurationError, configuredModelAccessNotice } from './model-access.js';
+import { modelAccessConfigurationError } from './model-access.js';
 
 describe('model access diagnostics', () => {
   const tier = { name: 'top', harness: 'codex', model: 'gpt-5.6-sol' } as const;
@@ -19,10 +19,5 @@ describe('model access diagnostics', () => {
     expect(modelAccessConfigurationError(new Error('invalid API response'), tier)).toBeNull();
     expect(modelAccessConfigurationError(new Error('model not available; api_key=secret-value-123'), tier)).not.toContain('secret-value-123');
     expect(modelAccessConfigurationError(new Error('model not available; Authorization: Bearer secret-value-456'), tier)).not.toContain('secret-value-456');
-  });
-
-  it('explains why configured model access remains unverified without spending', () => {
-    expect(configuredModelAccessNotice([tier])).toContain('does not send a model request before a run');
-    expect(configuredModelAccessNotice([tier])).toContain('top (codex: gpt-5.6-sol)');
   });
 });
