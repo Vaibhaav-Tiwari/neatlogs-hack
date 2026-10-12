@@ -79,16 +79,25 @@ export class NeatlogsOnboarding implements IntegrationOnboarding {
   async check(): Promise<IntegrationState> {
     const key = this.env().NEATLOGS_API_KEY;
     // A passive check does not export a probe. Verification is a consented connect step.
-    return { status: key ? 'ok' : 'missing', detail: key ? 'neatlogs key is configured; connection verification is separate.' : 'neatlogs needs a project API key.' };
+    return { status: key ? 'ok' : 'missing', detail: key ? 'Neatlogs project key found. Connection check has not run.' : 'Neatlogs needs a project API key.' };
   }
   async connect(context: OnboardingContext): Promise<IntegrationState> {
     this.key = null;
     const ui = context.ui;
     let key = this.env().NEATLOGS_API_KEY ?? null;
-    ui.print('neatlogs needs a US project API key; sign up at https://app.neatlogs.com or skip. Verification exports only SDK-generated probe spans, not repository data.');
-    if (!await ui.confirm(key ? 'Verify the configured neatlogs key with the SDK probe?' : 'Open the neatlogs API keys page and connect?')) {
-      if (key) { this.key = key; return { status: 'ok', detail: 'neatlogs key is configured; optional probe skipped (connection not verified).' }; }
-      return { status: 'off', detail: 'neatlogs skipped; decisions remain in the local ledger.' };
+    ui.print('Neatlogs connection');
+    ui.print('  Tally sends routing and task traces to your Neatlogs project.');
+    if (key) {
+      ui.print('  A project API key is already configured.');
+      ui.print('  The connection check sends one synthetic span with no repository content.');
+    } else {
+      ui.print('  You need a project API key to send traces.');
+      ui.print(`  Create a key: ${NEATLOGS_KEYS_URL}`);
+      ui.print('  The connection check sends one synthetic span with no repository content.');
+    }
+    if (!await ui.confirm(key ? 'Verify the configured Neatlogs project key now?' : 'Connect Tally to Neatlogs now?')) {
+      if (key) { this.key = key; return { status: 'ok', detail: 'Neatlogs key found. Connection check skipped.' }; }
+      return { status: 'off', detail: 'Neatlogs skipped. Tally keeps routing and costs in the local ledger.' };
     }
     try {
       if (!key) {
@@ -97,42 +106,52 @@ export class NeatlogsOnboarding implements IntegrationOnboarding {
       }
       if (!key) return { status: 'off', detail: 'neatlogs skipped: no API key supplied.' };
       if (!await (this.options.probe ?? probe)(key)) {
-        ui.print('The neatlogs SDK probe rejected that key; it was not saved.');
-        if (!await ui.confirm('Open API keys and try a replacement key?')) return { status: 'missing', detail: 'neatlogs SDK probe failed; the key was not saved.' };
+        ui.print('Neatlogs could not verify this key. The key was not saved.');
+        if (!await ui.confirm('Open the API keys page and try another key?')) return { status: 'missing', detail: 'Neatlogs could not verify the project key. It was not saved.' };
         await (this.options.openBrowser ?? openBrowser)(NEATLOGS_KEYS_URL);
-        key = await (this.options.readSecret ?? readHiddenSecret)('replacement neatlogs project API key');
-        if (!key || !await (this.options.probe ?? probe)(key)) return { status: 'missing', detail: 'Replacement key was not verified or saved.' };
+        key = await (this.options.readSecret ?? readHiddenSecret)('Neatlogs replacement project API key');
+        if (!key || !await (this.options.probe ?? probe)(key)) return { status: 'missing', detail: 'Replacement key was not verified. No key was saved.' };
       }
       if (key !== this.env().NEATLOGS_API_KEY) (this.options.save ?? saveSecrets)({ NEATLOGS_API_KEY: key });
       this.key = key;
-      return { status: 'ok', detail: 'neatlogs SDK probe passed.' };
-    } catch { return { status: 'missing', detail: 'neatlogs connection did not complete; credentials were not printed.' }; }
+      return { status: 'ok', detail: 'Neatlogs project key verified with a synthetic probe.' };
+    } catch { return { status: 'missing', detail: 'Neatlogs connection did not complete. Credentials were not printed or saved.' }; }
   }
   async configure(context: OnboardingContext): Promise<OnboardingResult> {
     const state = await this.connect(context);
     if (state.status !== 'ok' || !this.key) return { enabled: false, state };
-    if (await context.ui.confirm('Connect optional neatlogs read access for past costs and outcomes?')) {
+    context.ui.print('Past-run history (optional)');
+    context.ui.print('  Lets Tally use earlier costs and outcomes when routing future tasks.');
+    context.ui.print('  Requires a read-only service token with context:read and observability:read.');
+    context.ui.print('  The token and selected project are saved in ~/.tally/.env.');
+    if (await context.ui.confirm('Connect read-only history from Neatlogs?')) {
       try {
-        const token = this.env().NEATLOGS_TOKEN ?? await (this.options.readSecret ?? readHiddenSecret)('neatlogs service-account read token');
+        const token = this.env().NEATLOGS_TOKEN ?? await (this.options.readSecret ?? readHiddenSecret)('Neatlogs read-only service token');
         if (token) {
           const available = await (this.options.projects ?? projects)(token);
-          const index = available.length === 1 ? 0 : await context.ui.select('Choose the neatlogs project (or skip)', available.map(p => p.name));
+          if (!available.length) {
+            context.ui.print('No Neatlogs projects were available to this token. Tally will use local history.');
+          }
+          const index = available.length === 1 ? 0 : available.length ? await context.ui.select('Choose a Neatlogs project. Press Enter to skip.', available.map(p => p.name)) : null;
           const selected = index === null ? undefined : available[index];
           if (selected) {
             const verified = this.options.verifyProject ? await this.options.verifyProject(token, selected.id) : await this.verifyProject(token, selected.id);
             if (!verified) throw new Error('Project read failed');
             (this.options.save ?? saveSecrets)({ NEATLOGS_TOKEN: token, NEATLOGS_PROJECT_ID: selected.id });
-            context.ui.print('neatlogs read access verified and saved outside the repository.');
-          } else context.ui.print('Read access skipped; local price history remains available.');
-        } else context.ui.print('Read access skipped; local price history remains available.');
-      } catch { context.ui.print('Read access could not be verified; local price history remains available.'); }
-    }
-    if (await context.ui.confirm('Install GLOBAL neatlogs worker hooks for Claude Code and Codex? This changes ~/.claude/settings.json and ~/.codex/hooks.json and traces every session on this machine.')) {
+            context.ui.print('Neatlogs history connected. Read token saved outside the repository.');
+          } else if (available.length) context.ui.print('Neatlogs history skipped. Tally will use local history.');
+        } else context.ui.print('Neatlogs history skipped. Tally will use local history.');
+      } catch { context.ui.print('Neatlogs history could not be verified. Tally will use local history.'); }
+    } else context.ui.print('Neatlogs history not connected. Tally will use local history.');
+    context.ui.print('Worker traces (optional)');
+    context.ui.print('  Machine-wide hooks capture Claude Code and Codex sessions on this computer.');
+    context.ui.print('  They update ~/.claude/settings.json and ~/.codex/hooks.json.');
+    if (await context.ui.confirm('Install Neatlogs hooks for all matching sessions on this computer?')) {
       try {
         await (this.options.installHooks ?? installGlobalNeatlogsHooks)({ NEATLOGS_API_KEY: this.key });
-        context.ui.print('Global neatlogs hooks installed. In Codex, open /hooks and trust the neatlogs hooks once.');
-      } catch { context.ui.print('Global hook setup did not complete; CFO decision tracing remains enabled.'); }
-    }
+        context.ui.print('Neatlogs hooks installed. In Codex, open /hooks, review them, then trust them.');
+      } catch { context.ui.print('Neatlogs hooks could not be installed. Tally decision tracing remains enabled.'); }
+    } else context.ui.print('Machine-wide hooks not installed. Tally decision tracing remains enabled.');
     return { enabled: true, state };
   }
   private async verifyProject(token: string, projectId: string): Promise<boolean> {

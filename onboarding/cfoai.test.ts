@@ -146,7 +146,12 @@ describe('cfo.ai onboarding', () => {
       values: { columns: ['2026-10'], rows: [['Agent budget', 40], ['Agent spend', 0]] } });
     expect(edits[0]!.args.create).not.toHaveProperty('variables');
     expect(JSON.stringify(edits[0]!.args.create.values)).not.toContain('Budget remaining');
-    expect(vi.mocked(ctx.ui.print).mock.calls.join(' ')).toContain('Agent budget = $40');
+    const proposal = vi.mocked(ctx.ui.print).mock.calls.map(([line]) => line).join('\n');
+    expect(proposal).toContain('cfo.ai table setup');
+    expect(proposal).toContain('Agent budget: $40');
+    expect(proposal).toContain('Budget remaining: formula (Agent budget - Agent spend)');
+    expect(proposal).toContain('Only missing tables will be created. Existing tables and spend will not be changed.');
+    expect(proposal).not.toContain(';');
     // Repeating onboarding reads the tables and preserves spend; no second login or creation.
     client.calls = [];
     expect((await module.configure(context())).enabled).toBe(true);

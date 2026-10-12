@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { BacklogError } from '../engine/backlog.js';
 import { ConfigError, loadConfig } from '../engine/config.js';
-import { doctorHasFailures, runDoctor } from '../engine/doctor.js';
+import { doctorHasFailures, runDoctor, type DoctorLine } from '../engine/doctor.js';
 import { InitError, runInit } from '../engine/init.js';
 import { CommandError } from '../adapters/command.js';
 import { runUninstall } from '../engine/uninstall.js';
@@ -83,6 +83,52 @@ export type ParsedCli =
 export interface CliIO {
   stdout: (line: string) => void;
   stderr: (line: string) => void;
+}
+
+function printDoctorLine(line: DoctorLine, io: CliIO): void {
+  io.stdout(`${line.product}: ${line.status}`);
+  if (line.detail && line.detail !== 'ok') io.stdout(`  ${line.detail}`);
+  if (line.fix) io.stdout(`  Next: ${line.fix}`);
+}
+
+function splitPlanClauses(value: string): string[] {
+  const clauses: string[] = [];
+  let part = '';
+  let parentheses = 0;
+  for (const character of value) {
+    if (character === '(') parentheses += 1;
+    if (character === ')') parentheses = Math.max(0, parentheses - 1);
+    if (character === ';') {
+      if (parentheses > 0) part += ',';
+      else {
+        if (part.trim()) clauses.push(part.trim());
+        part = '';
+      }
+    } else part += character;
+  }
+  if (part.trim()) clauses.push(part.trim());
+  return clauses;
+}
+
+function printPlanText(label: string, value: string, io: CliIO): void {
+  const clauses = splitPlanClauses(value);
+  if (!clauses.length) return;
+  io.stdout(`  ${label}:`);
+  for (const clause of clauses) {
+    const prefix = '    - ';
+    const continuation = ' '.repeat(prefix.length);
+    const words = clause.split(/\s+/);
+    let line = prefix;
+    for (const word of words) {
+      if (line.length > prefix.length && line.length + word.length + 1 > 88) {
+        io.stdout(line);
+        line = `${continuation}${word}`;
+      } else {
+        line += line.length === prefix.length ? word : ` ${word}`;
+      }
+    }
+    io.stdout(line);
+  }
 }
 
 const USAGE = `tally: a CFO for a fleet of coding agents
@@ -304,7 +350,9 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
       const config = loadConfig(options.config);
       const budget = await readPlanBudget(config, { budgetUsd: options.budgetUsd });
       printBudget({ source: budget.source, limitSource: budget.limitSource, limitNanos: budget.limitNanos, spentNanos: 0,
-        monthly: { source: budget.source, limitNanos: budget.monthlyLimitNanos, spentBeforeRunNanos: 0 } }, io);
+        monthly: { source: budget.source, limitNanos: budget.monthlyLimitNanos, spentBeforeRunNanos: budget.monthlySpentNanos } }, io);
+      if (budget.warning) io.stdout(`Budget note: ${budget.warning}`);
+      io.stdout('Planning tasks. Enabled history reads are bounded. No workers will start.');
       const plan = await planTally({
         configPath: options.config,
         dryRun: options.dryRun,
@@ -334,7 +382,8 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
           return 'none';
         });
         io.stdout(`  History source: ${historySources.join(', ')}`);
-        io.stdout(`  ${task.decision}`);
+        if (task.historyDetail) printPlanText('History note', task.historyDetail, io);
+        printPlanText('Decision', task.decision, io);
       }
       return 0;
     }
@@ -393,9 +442,7 @@ async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
     io.stdout(`test ${result.testCommand}`);
     if (result.setupCommand) io.stdout(`setup ${result.setupCommand}`);
     io.stdout(`tiers ${result.tiers.join(', ')}`);
-    for (const line of result.doctor) {
-      io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
-    }
+    for (const line of result.doctor) printDoctorLine(line, io);
     return doctorHasFailures(result.doctor) ? 1 : 0;
   } catch (e) {
     io.stderr(`tally init: ${e instanceof Error ? e.message : 'initialization failed; no changes confirmed'}`);
@@ -433,8 +480,14 @@ async function demoCommand(_options: CliOptions, io: CliIO): Promise<number> {
 }
 
 function printBudget(budget: RunResult['runState']['budget'], io: CliIO): void {
-  const monthly = budget.monthly ?? { source: budget.source, limitNanos: budget.limitNanos };
-  io.stdout(`monthly budget: ${formatUsd(monthly.limitNanos)} from ${monthly.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'}; run cap: ${formatUsd(budget.limitNanos)} (${budget.limitSource === 'cli' ? 'CLI --budget' : budget.limitSource === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`);
+  const monthly = budget.monthly ?? { source: budget.source, limitNanos: budget.limitNanos, spentBeforeRunNanos: 0 };
+  const runRemaining = Math.max(0, budget.limitNanos - budget.spentNanos);
+  const monthlyRemaining = Math.max(0, monthly.limitNanos - monthly.spentBeforeRunNanos - budget.spentNanos);
+  const effectiveRemaining = Math.min(monthlyRemaining, runRemaining);
+  io.stdout('Budget availability');
+  io.stdout(`  Monthly remaining: ${formatUsd(monthlyRemaining)} of ${formatUsd(monthly.limitNanos)} (${monthly.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`);
+  io.stdout(`  Run cap: ${formatUsd(budget.limitNanos)} (${budget.limitSource === 'cli' ? 'CLI --budget' : budget.limitSource === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`);
+  io.stdout(`  Available now: ${formatUsd(effectiveRemaining)}`);
 }
 
 function progressPrinter(io: CliIO): (event: RunProgress) => void {
@@ -460,7 +513,10 @@ function printRunSummary(result: RunResult, io: CliIO, dashboardUrl?: string): v
   const passed = result.runState.tasks.filter(task => task.status === 'passed').length;
   const failed = result.runState.tasks.filter(task => task.status === 'failed').length;
   const skipped = result.runState.tasks.filter(task => task.status === 'skipped').length;
-  io.stdout(`summary: ${passed} passed, ${failed} failed, ${skipped} skipped; total ${formatUsd(result.runState.budget.spentNanos)} against run cap ${formatUsd(result.runState.budget.limitNanos)}`);
+  io.stdout('Run summary');
+  io.stdout(`  Tasks: ${passed} passed, ${failed} failed, ${skipped} skipped`);
+  io.stdout(`  Total spend: ${formatUsd(result.runState.budget.spentNanos)}`);
+  io.stdout(`  Run cap: ${formatUsd(result.runState.budget.limitNanos)}`);
   printBudget(result.runState.budget, io);
   for (const url of new Set(result.runState.tasks.flatMap(task => task.prUrl ? [task.prUrl] : []))) io.stdout(`PR ${url}`);
   io.stdout(`run folder ${result.outputDir}`);
@@ -468,17 +524,20 @@ function printRunSummary(result: RunResult, io: CliIO, dashboardUrl?: string): v
 }
 
 function printIntegrations(result: Awaited<ReturnType<typeof runTally>>, io: CliIO): void {
-  const summary = Object.entries(result.runState.integrations)
-    .map(([name, state]) => `${name}=${state.status}${state.detail ? ` (${state.detail})` : ''}`)
-    .join('; ');
-  io.stdout(`integrations: ${summary}`);
+  const labels: Record<string, string> = { neatlogs: 'Neatlogs', entire: 'Entire', cfoai: 'cfo.ai', github: 'GitHub', slack: 'Slack' };
+  io.stdout('Integrations');
+  io.stdout('  Integration  Status');
+  for (const [name, state] of Object.entries(result.runState.integrations)) {
+    io.stdout(`  ${(labels[name] ?? name).padEnd(12)} ${state.status}`);
+    if (state.detail) io.stdout(`    ${state.detail}`);
+  }
 }
 
 async function loginCommand(options: CliOptions, io: CliIO): Promise<number> {
   if (options.loginTarget !== 'cfoai') return reportError('tally login', new RunError(['login expects an integration: cfoai']), io);
   try {
     const result = await loginCfoai();
-    io.stdout(`cfo.ai connected; tokens cached at ${result.tokenPath}`);
+    io.stdout(`cfo.ai connected. Tokens cached at ${result.tokenPath}`);
     return 0;
   } catch (e) {
     io.stderr(`tally login cfoai: ${(e as Error).message}`);
@@ -505,9 +564,7 @@ async function launchDashboard(options: CliOptions, io: CliIO): Promise<Dashboar
 
 async function doctorCommand(options: CliOptions, io: CliIO): Promise<number> {
   const lines = await runDoctor({ configPath: options.config });
-  for (const line of lines) {
-    io.stdout(`${line.product}: ${line.status} - ${line.detail}${line.fix ? `; fix: ${line.fix}` : ''}`);
-  }
+  for (const line of lines) printDoctorLine(line, io);
   return doctorHasFailures(lines) ? 1 : 0;
 }
 

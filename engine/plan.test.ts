@@ -55,21 +55,28 @@ describe('planTally', () => {
     const config = loadConfig(fixture());
     config.integrations.cfoai = true;
     const read = vi.spyOn(CfoaiBudgetAdapter.prototype, 'budgetLimitNanos').mockResolvedValue(40_000_000_000);
+    const spent = vi.spyOn(CfoaiBudgetAdapter.prototype, 'currentSpendNanos').mockResolvedValue(39_000_000_000);
     const close = vi.spyOn(CfoaiBudgetAdapter.prototype, 'close').mockResolvedValue();
     try {
-      expect(await readPlanBudget(config, { budgetUsd: 1 })).toEqual({ source: 'cfoai', limitSource: 'cli', limitNanos: 1_000_000_000, monthlyLimitNanos: 40_000_000_000 });
+      expect(await readPlanBudget(config, { budgetUsd: 5 })).toEqual({ source: 'cfoai', limitSource: 'cli', limitNanos: 5_000_000_000,
+        monthlyLimitNanos: 40_000_000_000, monthlySpentNanos: 39_000_000_000, monthlyRemainingNanos: 1_000_000_000 });
       expect(close).toHaveBeenCalledOnce();
-    } finally { read.mockRestore(); close.mockRestore(); }
+    } finally { read.mockRestore(); spent.mockRestore(); close.mockRestore(); }
   });
   it.each([false, true])('closes the read-only budget client even after an error: %s', async failure => {
     const config = loadConfig(fixture());
     config.budget.source = 'cfoai';
     const read = vi.spyOn(CfoaiBudgetAdapter.prototype, 'budgetLimitNanos').mockImplementation(async () => { if (failure) throw new Error('read failed'); return 5_000_000_000; });
+    const spent = vi.spyOn(CfoaiBudgetAdapter.prototype, 'currentSpendNanos').mockResolvedValue(1_000_000_000);
     const close = vi.spyOn(CfoaiBudgetAdapter.prototype, 'close').mockResolvedValue();
     try {
-      expect((await readPlanBudget(config, {})).source).toBe(failure ? 'config' : 'cfoai');
+      const budget = await readPlanBudget(config, {});
+      expect(budget.source).toBe(failure ? 'config' : 'cfoai');
+      expect(budget.monthlyRemainingNanos).toBe(failure ? 10_000_000_000 : 4_000_000_000);
+      if (failure) expect(budget.warning).toContain('cfo.ai budget read failed');
+      else expect(budget.warning).toBeUndefined();
       expect(close).toHaveBeenCalledOnce();
-    } finally { read.mockRestore(); close.mockRestore(); }
+    } finally { read.mockRestore(); spent.mockRestore(); close.mockRestore(); }
   });
   it('shows the deliberate first attempt override and rejects invalid values', async () => {
     const configPath = fixture();
@@ -94,6 +101,22 @@ describe('planTally', () => {
     expect(plan[0]).toMatchObject({ taskId: 'T1', size: 'small', tier: 'cheap', model: 'cheap-model', skipped: false });
     expect(plan[0]?.historySources).toEqual(['none']);
     expect(plan[0]?.decision).toContain('expected to cost');
+  });
+
+  it('keeps the planned ceilings within both the CLI cap and cfo.ai remaining budget', async () => {
+    const configPath = fixture();
+    const backlogPath = join(dirname(configPath), 'backlog.yaml');
+    writeFileSync(backlogPath, `tasks:\n${Array.from({ length: 6 }, (_, i) => `  - id: T${i + 1}\n    title: Fix calc.ts value ${i + 1}\n    body: Expected calc.ts to return a + b.\n    size: small\n`).join('')}`);
+    const plan = await planTally({ configPath, dryRun: true, baseline: false,
+      budgetInfo: { source: 'cfoai', limitSource: 'cli', limitNanos: 5_000_000_000,
+        monthlyLimitNanos: 40_000_000_000, monthlySpentNanos: 39_500_000_000, monthlyRemainingNanos: 500_000_000 },
+      signals: { async signalsFor() { return { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' }; } },
+    });
+
+    const started = plan.filter(task => !task.skipped);
+    expect(started.length).toBe(2);
+    expect(started.reduce((sum, task) => sum + (task.ceilingNanos ?? 0), 0)).toBeLessThanOrEqual(500_000_000);
+    expect(plan.slice(2).every(task => task.skipped)).toBe(true);
   });
 
   it('uses persisted history like routing and leaves the history file unchanged', async () => {

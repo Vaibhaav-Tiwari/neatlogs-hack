@@ -941,12 +941,15 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       budgetSource = 'config';
     }
   }
-  const ledgerBudget = new LedgerBudget(budgetLimitNanos, ledger, committedBeforeRunNanos);
   const monthlyCommittedBeforeRun = Math.max(0, monthlySpentNanos - ledgerSpend(ledger));
-  const reservations = new Reservations(() => Math.min(
-    budgetLimitNanos - committedBeforeRunNanos - ledgerSpend(ledger),
-    monthlyLimitNanos - monthlyCommittedBeforeRun - ledgerSpend(ledger),
+  // The sequential path must honor the same live CFO remainder as the parallel
+  // reservations. A CLI cap can only tighten the cap, never bypass it.
+  const availableRunLimitNanos = Math.max(0, Math.min(
+    budgetLimitNanos - committedBeforeRunNanos,
+    monthlyLimitNanos - monthlyCommittedBeforeRun,
   ));
+  const ledgerBudget = new LedgerBudget(availableRunLimitNanos, ledger);
+  const reservations = new Reservations(() => availableRunLimitNanos - ledgerSpend(ledger));
   const decisions = new SerialQueue();
   const accounting = new SerialQueue();
   const recordSpend = (row: LedgerRow) => accounting.run(async () => {
@@ -1000,8 +1003,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     state.model = tier.model;
     state.escalated = attempt > 1;
     state.spentNanos = ledger.filter((row) => row.taskId === state.taskId).reduce((sum, row) => sum + row.estimatedCostNanos, 0) + liveCosts.get(state.taskId)!;
-    if (concurrency > 1 && ledgerSpend(ledger) + [...liveCosts.values()].reduce((sum, cost) => sum + cost, 0)
-      >= Math.min(budgetLimitNanos - committedBeforeRunNanos, monthlyLimitNanos - monthlyCommittedBeforeRun)) {
+    if (ledgerSpend(ledger) + [...liveCosts.values()].reduce((sum, cost) => sum + cost, 0) >= availableRunLimitNanos) {
       safetyStop = 'stopped: shared run cap or monthly budget reached';
     }
     writeCurrent('running', null);
@@ -1029,7 +1031,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       endedAt,
       budget: {
         source: budgetSource,
-        monthly: { source: budgetSource, limitNanos: monthlyLimitNanos, spentBeforeRunNanos: monthlySpentNanos },
+        monthly: { source: budgetSource, limitNanos: monthlyLimitNanos, spentBeforeRunNanos: monthlyCommittedBeforeRun },
         limitSource: options.budgetUsd === undefined ? config.budget.source === 'cfoai' ? budgetSource : 'config' : 'cli',
         systemOfRecord: config.integrations.cfoai && ports.cfoai ? 'cfoai' : 'ledger',
         ...((config.budget.source === 'cfoai' || config.integrations.cfoai) && config.budget.cfoai
@@ -1105,7 +1107,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     // Each task sees its own held funds, but never another running task's reservation.
     const budget = taskBudget;
     const routingBudget: BudgetPort = concurrency === 1 ? budget : {
-      remainingNanos: async () => Math.min(budgetLimitNanos - committedBeforeRunNanos, monthlyLimitNanos - monthlyCommittedBeforeRun) - ledgerSpend(ledger),
+      remainingNanos: async () => availableRunLimitNanos - ledgerSpend(ledger),
     };
     const runAttempt = async (input: Parameters<typeof runAttemptWithRetry>[0]) => {
       if (concurrency > 1) {

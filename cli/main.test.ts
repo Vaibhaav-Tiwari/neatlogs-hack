@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as initModule from '../engine/init.js';
 import * as runModule from '../engine/run.js';
 import * as doctorModule from '../engine/doctor.js';
+import * as planModule from '../engine/plan.js';
 import * as dashboardModule from './dashboard-server.js';
 import * as lifecycle from './dashboard-lifecycle.js';
 import type { RunState } from '../schema/types.js';
@@ -233,6 +234,29 @@ describe('parseCli', () => {
 });
 
 describe('main', () => {
+  it('prints plan reasons as wrapped bullets and shows live budget availability', async () => {
+    const budget = vi.spyOn(planModule, 'readPlanBudget').mockResolvedValue({
+      source: 'cfoai', limitNanos: 5_000_000_000, monthlyLimitNanos: 1_000_000_000,
+      monthlySpentNanos: 343_700_000, monthlyRemainingNanos: 656_300_000, limitSource: 'cli',
+    });
+    const plan = vi.spyOn(planModule, 'planTally').mockResolvedValue([{
+      taskId: '#6', title: 'Add a ledger filter', size: 'small', confidence: 0.65,
+      tier: 'cheap', model: 'gpt-5.6-luna', harness: 'codex', ceilingNanos: 300_000_000,
+      decision: 'History has one cheap attempt so it uses the prior; related files were found by a local repository search; observed cost is below the configured ceiling (0 successful samples; 5 needed).',
+      historySources: ['neatlogs'], skipped: false,
+    }]);
+    try {
+      const { io, out } = capture();
+      expect(await main(['run', '--plan', '--budget', '5', '--config', new URL('../demo/tally.live.yaml', import.meta.url).pathname], io)).toBe(0);
+      expect(out.join('\n')).toContain('Monthly remaining: $0.6563 of $1.00 (cfo.ai)');
+      expect(out.join('\n')).toContain('History source: remote Neatlogs');
+      expect(out.join('\n')).toContain('  Decision:\n    - History has one cheap attempt so it uses the prior');
+      expect(out.join('\n')).toContain('    - related files were found by a local repository search');
+      expect(out.join('\n')).toContain('observed cost is below the configured ceiling (0 successful samples, 5 needed).');
+      expect(out.join('\n')).not.toContain(';');
+    } finally { budget.mockRestore(); plan.mockRestore(); }
+  });
+
   it.each(['run', 'demo'])('starts and opens the dashboard before %s, reports progress, and waits after the summary', async command => {
     await withTempCwd(async () => {
       const c = capture();
@@ -240,7 +264,7 @@ describe('main', () => {
       const start = vi.spyOn(dashboardModule, 'startDashboardServer').mockResolvedValue(dashboard);
       const open = vi.spyOn(lifecycle, 'openDashboardBrowser').mockResolvedValue();
       const wait = vi.spyOn(lifecycle, 'waitForDashboard').mockImplementation(async () => {
-        expect(c.out.join('\n')).toContain('summary:');
+        expect(c.out.join('\n')).toContain('Run summary');
         expect(c.out.join('\n')).toContain('run folder');
         expect(c.out.join('\n')).toContain('serving until Ctrl+C');
       });
@@ -259,18 +283,20 @@ describe('main', () => {
         expect(wait).toHaveBeenCalledWith(dashboard);
         expect(c.out.join('\n')).toContain('worker');
         expect(c.out.join('\n')).toContain('spend');
-        expect(c.out.join('\n')).toContain('monthly budget:');
-        expect(c.out.join('\n')).toContain('run cap:');
+        expect(c.out.join('\n')).toContain('Budget availability');
+        expect(c.out.join('\n')).toContain('Monthly remaining:');
+        expect(c.out.join('\n')).toContain('Run cap:');
+        expect(c.out.join('\n')).toContain('Available now:');
         expect(c.out.join('\n')).toContain('PR https://github.com/example/repo/pull/1');
       } finally { run.mockRestore(); start.mockRestore(); open.mockRestore(); wait.mockRestore(); }
     });
   });
   it('does not fail doctor for an explicitly disabled product', async () => {
-    const spy = vi.spyOn(doctorModule, 'runDoctor').mockResolvedValueOnce([{ product: 'neatlogs key', status: 'off', detail: 'disabled in tally.yaml; not required', fix: null }]);
+    const spy = vi.spyOn(doctorModule, 'runDoctor').mockResolvedValueOnce([{ product: 'Neatlogs key', status: 'off', detail: 'Disabled in tally.yaml. This integration is not required.', fix: null }]);
     try {
       const c = capture();
       expect(await main(['doctor'], c.io)).toBe(0);
-      expect(c.out.join('\n')).toContain('neatlogs key: off');
+      expect(c.out).toEqual(['Neatlogs key: off', '  Disabled in tally.yaml. This integration is not required.']);
     } finally { spy.mockRestore(); }
   });
   it('never starts an experiment for an unsupported --plan request', async () => {
@@ -302,7 +328,7 @@ describe('main', () => {
       expect(await main(['demo'], c.io)).toBe(0);
       expect(c.out.join('\n')).toContain('ledger.json');
       expect(c.out.join('\n')).toContain('attempts');
-      expect(c.out.join('\n')).toContain('integrations:');
+      expect(c.out.join('\n')).toContain('Integrations\n  Integration  Status');
     });
   });
 

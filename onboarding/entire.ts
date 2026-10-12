@@ -54,19 +54,21 @@ export class EntireOnboarding implements IntegrationOnboarding {
   async check(): Promise<IntegrationState> {
     try {
       await this.run('entire', ['--version']);
-      if (!await this.loggedIn()) return { status: 'missing', detail: 'Entire login is needed; run entire login.' };
-      if (!await this.graphInstalled()) return { status: 'missing', detail: 'Entire graph plugin is missing; run entire plugin install graph.' };
+      if (!await this.loggedIn()) return { status: 'missing', detail: 'Entire login is needed. Run entire login.' };
+      if (!await this.graphInstalled()) return { status: 'missing', detail: 'Entire graph plugin is missing. Run entire plugin install graph.' };
       if ((await this.status()).enabled !== true) return { status: 'missing', detail: 'Entire capture is not enabled in this repository.' };
       return { status: 'ok', detail: 'Entire login, graph plugin and repository capture are available.' };
-    } catch { return { status: 'missing', detail: 'Entire is unavailable; install instructions and sign-up: https://entire.io.' }; }
+    } catch { return { status: 'missing', detail: 'Entire is unavailable. Install instructions and sign-up: https://entire.io.' }; }
   }
   async connect(context: OnboardingContext): Promise<IntegrationState> {
     this.cwd = resolve(context.repoRoot ?? this.cwd);
     try {
       await this.run('entire', ['--version']);
       if (!await this.loggedIn()) {
-        context.ui.print('Entire needs its own login. No account? Sign up at https://entire.io or skip for now.');
-        if (!await context.ui.confirm('Run entire login to connect this machine?')) return { status: 'off', detail: 'Entire login skipped.' };
+        context.ui.print('Entire account');
+        context.ui.print('  Entire uses its own login.');
+        context.ui.print('  No account? Sign up at https://entire.io. You can skip this integration.');
+        if (!await context.ui.confirm('Open a browser to sign in to Entire?')) return { status: 'off', detail: 'Entire login skipped.' };
         await this.run('entire', ['login'], true);
         if (!await this.loggedIn()) throw new Error('Login not verified');
       }
@@ -76,11 +78,11 @@ export class EntireOnboarding implements IntegrationOnboarding {
         if (!await this.graphInstalled()) throw new Error('Graph plugin not available');
       }
       return { status: 'ok', detail: 'Entire login and graph plugin verified.' };
-    } catch { return { status: 'missing', detail: 'Entire connection did not complete; sign-up/install instructions: https://entire.io.' }; }
+    } catch { return { status: 'missing', detail: 'Entire connection did not complete. Install instructions and sign-up: https://entire.io.' }; }
   }
   async configure(context: OnboardingContext): Promise<OnboardingResult> {
     const off = (detail: string): OnboardingResult => {
-      context.ui.print(`${detail} Entire will be off: sizing uses code search and escalation has no Entire checkpoint handoff.`);
+      context.ui.print(`${detail} Entire will be off. Sizing uses code search and will not use Entire checkpoint handoff.`);
       return { enabled: false, state: { status: 'off', detail } };
     };
     const connection = await this.connect(context);
@@ -94,9 +96,14 @@ export class EntireOnboarding implements IntegrationOnboarding {
       if (status.enabled !== true || required.some(agent => !agents.has(agent))) {
         // A dirty checkout may contain unrelated or pre-existing settings changes. Never stage them.
         if (await this.run('git', ['status', '--porcelain'])) return off('Entire capture setup needs a clean checkout so existing edits remain untouched.');
-        context.ui.print(`Enable Entire capture in ${this.cwd}. It may add or update: ${SETTINGS_FILES.join(', ')} and local Git hooks.`);
-        context.ui.print('Settings must be committed to the default branch for worker worktrees to inherit them. Codex hooks need trusting once via /hooks. Telemetry stays off; no summaries are generated.');
-        if (!await context.ui.confirm('Enable these repository capture settings? No commit or push yet.')) return off('Entire repository setup declined.');
+        context.ui.print('Entire repository capture');
+        context.ui.print(`  Repository: ${this.cwd}`);
+        context.ui.print('  Settings that may be added or updated:');
+        for (const file of SETTINGS_FILES) context.ui.print(`    ${file}`);
+        context.ui.print('  Entire also updates local Git hooks.');
+        context.ui.print('  Settings must reach the default branch for worker worktrees to inherit them.');
+        context.ui.print('  Codex requires you to review and trust its hooks in /hooks. Telemetry and generated summaries stay off.');
+        if (!await context.ui.confirm('Enable these repository capture settings?')) return off('Entire repository setup declined.');
         const primary = required[0] ?? 'claude-code';
         if (status.enabled !== true) {
           await this.run('entire', ['enable', '--agent', primary, '--telemetry=false', '--project', '--no-init-repo', '--skip-initial-commit']);
@@ -107,17 +114,19 @@ export class EntireOnboarding implements IntegrationOnboarding {
         if (status.enabled !== true) throw new Error('Capture was not enabled');
         const lines = (await this.run('git', ['status', '--porcelain', '--untracked-files=all'])).split('\n').filter(Boolean);
         const files = lines.map(line => line.slice(3));
-        if (files.some(file => !SETTINGS_FILES.includes(file))) return off('Entire generated unexpected files; review them before publishing. Nothing was committed or pushed.');
+        if (files.some(file => !SETTINGS_FILES.includes(file))) return off('Entire generated unexpected files. Review them before publishing. Nothing was committed or pushed.');
         if (files.length) {
-          context.ui.print(`Generated settings to publish: ${files.join(', ')}.`);
+          context.ui.print('Generated settings to publish:');
+          for (const file of files) context.ui.print(`  ${file}`);
           const branch = await this.run('git', ['branch', '--show-current']);
           const remoteHead = await this.run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).catch(() => '');
           const defaultBranch = remoteHead.startsWith('origin/') ? remoteHead.slice('origin/'.length) : null;
-          if (!defaultBranch || branch !== defaultBranch) return off('Capture is enabled locally, but settings are not on the default branch; publish them through your normal review process, then rerun init.');
+          if (!defaultBranch || branch !== defaultBranch) return off('Capture is enabled locally, but settings are not on the default branch. Publish them through your normal review process, then rerun init.');
           const local = await this.run('git', ['rev-parse', 'HEAD']);
           const remote = await this.run('git', ['rev-parse', `refs/remotes/origin/${defaultBranch}`]);
-          if (local !== remote) return off('Default branch has unpublished commits; Entire setup will not publish unrelated work.');
-          if (!await context.ui.confirm(`Commit only these settings and push to origin/${defaultBranch}? Entire Git hooks may also publish checkpoint/session evidence.`)) return off('Publishing settings declined; local capture settings remain for review.');
+          if (local !== remote) return off('Default branch has unpublished commits. Entire setup will not publish unrelated work.');
+          context.ui.print('Entire Git hooks may also publish checkpoint and session evidence.');
+          if (!await context.ui.confirm(`Commit only these settings and push them to origin/${defaultBranch}?`)) return off('Publishing settings declined. Local capture settings remain for review.');
           if (await this.run('git', ['branch', '--show-current']) !== defaultBranch || await this.run('git', ['rev-parse', 'HEAD']) !== local) {
             return off('Checkout moved while awaiting approval; no settings were committed or pushed.');
           }
@@ -131,7 +140,7 @@ export class EntireOnboarding implements IntegrationOnboarding {
       if (required.includes('codex')) context.ui.print('In Codex started inside this repository, open /hooks and trust the Entire capture hooks once. Tally cannot approve them for you.');
       // Local enablement alone is insufficient: future workers inherit the default-branch files.
       const pending = await this.run('git', ['status', '--porcelain', '--', ...SETTINGS_FILES]);
-      if (pending) return off('Capture settings are still uncommitted; Entire remains off until they are published on the default branch.');
+      if (pending) return off('Capture settings are still uncommitted. Entire remains off until they are published on the default branch.');
       const published = json(await this.run('git', ['show', 'refs/remotes/origin/HEAD:.entire/settings.json']));
       if (published.enabled !== true) return off('Entire capture is not enabled on the remote default branch yet.');
       for (const agent of required) {
@@ -140,9 +149,9 @@ export class EntireOnboarding implements IntegrationOnboarding {
         if (!/\bentire\s+hooks\b/.test(settings)) return off(`The default branch has no Entire ${agent} hooks yet.`);
       }
       if (required.includes('codex') && !await context.ui.confirm('Have you trusted the Entire hooks via /hooks in Codex for this repository?')) {
-        return off('Codex hook trust is not confirmed; no worker was started.');
+        return off('Codex hook trust is not confirmed. Entire remains off until you trust the hooks.');
       }
-      return { enabled: true, state: { status: 'ok', detail: 'Entire login, graph and repository capture configured; generated summaries remain opt-in and off by default.' } };
-    } catch { return off('Entire setup could not be verified. Any generated files remain for review; no further changes were attempted.'); }
+      return { enabled: true, state: { status: 'ok', detail: 'Entire login, graph and repository capture are configured. Generated summaries remain off by default.' } };
+    } catch { return off('Entire setup could not be verified. Any generated files remain for review. No further changes were attempted.'); }
   }
 }

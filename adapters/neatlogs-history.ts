@@ -11,6 +11,8 @@ export interface NeatlogsHistoryOptions {
   workflowName?: string;
   limit?: number;
   maxPages?: number;
+  /** Maximum wall time for loading the remote history snapshot. */
+  timeoutMs?: number;
 }
 
 interface Observation {
@@ -25,6 +27,8 @@ const DEFAULT_ENDPOINT = 'https://app.neatlogs.com/api/v1/public';
 const DEFAULT_WORKFLOW = 'tally-cfo-agent';
 const MAX_PAGE_SIZE = 50;
 const MAX_PAGES = 10;
+const DEFAULT_READ_TIMEOUT_MS = 15_000;
+const MAX_READ_TIMEOUT_MS = 120_000;
 
 function boundedInteger(value: number | undefined, fallback: number, maximum: number): number {
   return value !== undefined && Number.isFinite(value)
@@ -178,8 +182,10 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
   private readonly workflowName: string;
   private readonly limit: number;
   private readonly maxPages: number;
+  private readonly timeoutMs: number;
   private readStatus: IntegrationState | null;
   private lastLookupSource: PriceHistorySource = 'none';
+  private observationsPromise: Promise<Observation[]> | null = null;
 
   constructor(options: NeatlogsHistoryOptions) {
     const env = options.env ?? loadEnv();
@@ -191,6 +197,7 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
     this.workflowName = options.workflowName ?? DEFAULT_WORKFLOW;
     this.limit = boundedInteger(options.limit, MAX_PAGE_SIZE, MAX_PAGE_SIZE);
     this.maxPages = boundedInteger(options.maxPages, MAX_PAGES, MAX_PAGES);
+    this.timeoutMs = boundedInteger(options.timeoutMs, DEFAULT_READ_TIMEOUT_MS, MAX_READ_TIMEOUT_MS);
     this.readStatus = this.token && this.projectId
       ? null
       : { status: 'missing', detail: 'NEATLOGS_TOKEN or NEATLOGS_PROJECT_ID is missing; using local price history.' };
@@ -208,7 +215,8 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
     if (!this.token || !this.projectId) return this.fallbackLookup(size, tier, model);
     let remote: PriceStats | null;
     try {
-      remote = aggregate(await this.remoteObservations(), size, tier, model);
+      this.observationsPromise ??= this.remoteObservations();
+      remote = aggregate(await this.observationsPromise, size, tier, model);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.readStatus = { status: 'error', detail: `Neatlogs price-history read failed; using local history. ${message}` };
@@ -240,6 +248,9 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
   private async remoteObservations(): Promise<Observation[]> {
     const observations: Observation[] = [];
     const seenCursors = new Set<string>();
+    // One deadline covers all pages and span reads. A request-per-page timeout
+    // could otherwise multiply into several minutes of silent plan latency.
+    const signal = AbortSignal.timeout(this.timeoutMs);
     let cursor: string | null = null;
     for (let pageNumber = 0; pageNumber < this.maxPages; pageNumber += 1) {
       if (cursor) {
@@ -250,17 +261,21 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
       tracesUrl.searchParams.set('workflowName', this.workflowName);
       tracesUrl.searchParams.set('limit', String(this.limit));
       if (cursor) tracesUrl.searchParams.set('cursor', cursor);
-      const tracesResponse = await this.fetchImpl(tracesUrl, { headers: this.headers() });
+      const tracesResponse = await this.fetchImpl(tracesUrl, { headers: this.headers(), signal });
       if (!tracesResponse.ok) throw new Error(`neatlogs traces read failed: ${tracesResponse.status}`);
       const body = await tracesResponse.json();
       for (const trace of tracesOf(body)) {
         const traceName = traceNameOf(trace);
         const traceObservation = observationFromName(traceName);
         if (traceObservation) observations.push(traceObservation);
-        if (traceName && traceName !== 'tally.history.record') continue;
+        // Older Tally history used the exact name and kept values in spans.
+        // A missing traceName is not evidence that a trace is one of ours;
+        // fetching spans for those rows turns a small list into hundreds of
+        // unrelated sequential requests.
+        if (traceName !== 'tally.history.record') continue;
         const traceId = traceIdOf(trace);
         if (!traceId) continue;
-        const spansResponse = await this.fetchImpl(`${this.endpoint}/traces/${encodeURIComponent(traceId)}/spans`, { headers: this.headers() });
+        const spansResponse = await this.fetchImpl(`${this.endpoint}/traces/${encodeURIComponent(traceId)}/spans`, { headers: this.headers(), signal });
         if (!spansResponse.ok) throw new Error(`neatlogs spans read failed: ${spansResponse.status}`);
         for (const span of spansOf(await spansResponse.json())) {
           const observation = observationFromSpan(span);

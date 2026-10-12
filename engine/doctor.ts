@@ -11,7 +11,7 @@ import { configHash } from './install-record.js';
 import { EntireCheckpointRecallAdapter } from '../adapters/entire-recall.js';
 import { readAoDaemonStatus } from './ao-status.js';
 
-export type DoctorStatus = 'connected' | 'missing' | 'broken' | 'off' | 'unverified';
+export type DoctorStatus = 'connected' | 'missing' | 'broken' | 'off' | 'unverified' | 'unavailable';
 
 export interface DoctorLine {
   product: string;
@@ -21,7 +21,7 @@ export interface DoctorLine {
 }
 
 export function doctorHasFailures(lines: DoctorLine[]): boolean {
-  return lines.some((line) => !['connected', 'off', 'unverified'].includes(line.status));
+  return lines.some((line) => !['connected', 'off', 'unverified', 'unavailable'].includes(line.status));
 }
 
 export type DoctorRunner = (file: string, args: string[], options?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }>;
@@ -145,7 +145,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
   const lines: DoctorLine[] = [];
   const direct = config?.runner === 'direct';
   lines.push(!config || direct
-    ? { product: 'AO daemon', status: 'off', detail: !config ? 'runner not selected; choose AO during tally init to use Agent Orchestrator' : 'direct runner; Agent Orchestrator is not required', fix: null }
+    ? { product: 'AO daemon', status: 'off', detail: !config ? 'Runner not selected. Choose AO during tally init to use Agent Orchestrator.' : 'Direct runner selected. Agent Orchestrator is not required.', fix: null }
     : await aoDaemonLine(runner));
   if (options.configPath && !direct) {
     const workerMode = await aoWorkerModeLine(options.configPath, runner);
@@ -163,23 +163,33 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
       product: 'Configured model access',
       status: 'unverified',
       detail: configuredModelAccessNotice(config.tiers),
-      fix: 'Check the configured models with the same active accounts/providers; edit tiers[].model in tally.yaml for any model they reject.',
+      fix: 'Check model access with the configured accounts. Update tiers[].model in tally.yaml for any model they reject.',
     });
     if (config.tiers.some(tier => tier.harness === 'claude-code')) {
       const approved = config.claudeCode && configHash(config.claudeCode.allow) === configHash(claudeAllowList(config.test));
-      lines.push({ product: 'Claude Code allow-list consent', status: approved ? 'connected' : 'missing', detail: approved ? 'Repository consent matches current test/setup commands; worker-local enforcement is a separate check' : 'Claude Code worker allow-list has not been approved for these test/setup commands', fix: approved ? null : 'tally init' });
+      lines.push({ product: 'Claude Code allow-list consent', status: approved ? 'connected' : 'missing', detail: approved ? 'Repository consent matches current test/setup commands. Worker-local enforcement is a separate check.' : 'Claude Code worker allow-list has not been approved for these test/setup commands.', fix: approved ? null : 'tally init' });
     }
   }
   lines.push(await commandLine('GitHub CLI', runner, 'gh', ['auth', 'status'], 'gh auth login'));
-  const off = (product: string, detail = 'disabled in tally.yaml; not required'): DoctorLine => ({ product, status: 'off', detail, fix: null });
-  const notSelected = 'optional integration; not selected until tally init';
+  const off = (product: string, detail = 'Disabled in tally.yaml. This integration is not required.'): DoctorLine => ({ product, status: 'off', detail, fix: null });
+  const notSelected = 'Optional integration. Not selected until tally init.';
+  const disabled = 'Disabled in tally.yaml. This integration is not required.';
   const entireEnabled = config?.integrations.entire === true;
-  lines.push(!entireEnabled ? off('Entire CLI', config ? 'disabled in tally.yaml; not required' : notSelected) : await commandLine('Entire CLI', runner, 'entire', ['--version'], 'pipx install entire'));
-  lines.push(!entireEnabled ? off('Entire graph plugin', config ? 'disabled in tally.yaml; not required' : notSelected) : await commandLine('Entire graph plugin', runner, 'entire', ['graph', '--help'], 'entire enable'));
+  lines.push(!entireEnabled ? off('Entire CLI', config ? disabled : notSelected) : await commandLine('Entire CLI', runner, 'entire', ['--version'], 'pipx install entire'));
+  lines.push(!entireEnabled ? off('Entire graph plugin', config ? disabled : notSelected) : await commandLine('Entire graph plugin', runner, 'entire', ['graph', '--help'], 'entire enable'));
   if (entireEnabled) {
     const cwd = resolve(dirname(options.configPath!), config.repo.path);
     const recall = await new EntireCheckpointRecallAdapter({ repoPath: cwd, command: runner }).checkAvailability();
-    lines.push({ product: 'Entire checkpoint recall', status: recall.status === 'ok' ? 'connected' : 'broken', detail: recall.detail ?? 'checkpoint search available', fix: recall.status === 'ok' ? null : 'check Entire repository mirroring and account access; entire enable alone does not enable hosted search' });
+    const detail = recall.detail ?? 'checkpoint search available';
+    const repositoryNotAvailable = /no matching repositories|not mirrored|not accessible in the current account/i.test(detail);
+    lines.push({
+      product: 'Entire checkpoint recall',
+      status: recall.status === 'ok' ? 'connected' : repositoryNotAvailable ? 'unavailable' : 'broken',
+      detail: recall.status === 'ok' ? detail : `${detail} Hosted recall is optional. Local capture and normal task runs remain available.`,
+      fix: recall.status === 'ok' ? null : repositoryNotAvailable
+        ? 'Optional: make this repository accessible to Entire to enable hosted checkpoint recall.'
+        : 'Check Entire checkpoint search and account access.',
+    });
     try {
       const output = await runner('entire', ['status', '--json'], { cwd });
       const enabled = JSON.parse(output.stdout).enabled === true;
@@ -189,8 +199,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
     }
   }
   lines.push(
-    config?.integrations.neatlogs !== true ? off('neatlogs key', config ? 'disabled in tally.yaml; not required' : notSelected) : env.NEATLOGS_API_KEY
-      ? { product: 'neatlogs key', status: 'connected', detail: 'NEATLOGS_API_KEY is set', fix: null }
+    config?.integrations.neatlogs !== true ? off('Neatlogs key', config ? disabled : notSelected) : env.NEATLOGS_API_KEY
+      ? { product: 'Neatlogs key', status: 'connected', detail: 'NEATLOGS_API_KEY is set', fix: null }
       : {
           product: 'neatlogs key',
           status: 'missing',
@@ -200,7 +210,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
   );
   const cfoaiEnabled = config?.integrations.cfoai === true || config?.budget.source === 'cfoai';
   if (!cfoaiEnabled) {
-    lines.push(off('cfo.ai', config ? 'disabled in tally.yaml; not required' : notSelected));
+    lines.push(off('cfo.ai', config ? disabled : notSelected));
     return lines;
   }
   const cfoai = await cfoaiCheck();

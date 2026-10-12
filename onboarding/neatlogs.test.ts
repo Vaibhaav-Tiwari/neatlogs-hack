@@ -22,7 +22,7 @@ describe('neatlogs onboarding', () => {
     const { module, options, context } = setup([false, false, false]);
     const result = await module.configure(context);
     expect(result.enabled).toBe(true);
-    expect(result.state.detail).toContain('connection not verified');
+    expect(result.state.detail).toContain('Connection check skipped');
     expect(options.probe).not.toHaveBeenCalled();
     expect(options.save).not.toHaveBeenCalled();
     expect(options.installHooks).not.toHaveBeenCalled();
@@ -39,6 +39,18 @@ describe('neatlogs onboarding', () => {
     expect(options.probe).toHaveBeenCalledWith('fake-key');
     expect(options.save).not.toHaveBeenCalled();
     expect(options.installHooks).not.toHaveBeenCalled();
+  });
+  it('explains decision traces, read-only history and machine-wide hooks as separate opt-ins', async () => {
+    const { module, context } = setup([true, false, false]);
+    expect((await module.configure(context)).enabled).toBe(true);
+    const messages = vi.mocked(context.ui.print).mock.calls.map(([message]) => message).join('\n');
+    expect(messages).toContain('Neatlogs connection');
+    expect(messages).toContain('Past-run history (optional)');
+    expect(messages).toContain('context:read and observability:read');
+    expect(messages).toContain('Worker traces (optional)');
+    expect(messages).toContain('Machine-wide hooks not installed. Tally decision tracing remains enabled.');
+    expect(messages).not.toContain(';');
+    expect(vi.mocked(context.ui.confirm).mock.calls.join('\n')).not.toContain(';');
   });
   it('offers signup and stays off for a missing key when connection is declined', async () => {
     const { module, options, context } = setup([false], {});
@@ -88,7 +100,7 @@ describe('neatlogs onboarding', () => {
     const module = new NeatlogsOnboarding({ ...options, verifyProject: async () => false });
     expect((await module.configure(context)).enabled).toBe(true);
     expect(options.save).not.toHaveBeenCalled();
-    expect(context.ui.print).toHaveBeenCalledWith(expect.stringContaining('local price history'));
+    expect(context.ui.print).toHaveBeenCalledWith(expect.stringContaining('local history'));
   });
   it('allows skipping project selection without saving a token', async () => {
     const { context, options } = setup([true, true, false]);
@@ -97,11 +109,19 @@ describe('neatlogs onboarding', () => {
     expect((await module.configure(context)).enabled).toBe(true);
     expect(options.save).not.toHaveBeenCalled();
   });
+  it('falls back to local history when the read token has no accessible projects', async () => {
+    const { context, options } = setup([true, true, false]);
+    const module = new NeatlogsOnboarding({ ...options, projects: async () => [] });
+    expect((await module.configure(context)).enabled).toBe(true);
+    const messages = vi.mocked(context.ui.print).mock.calls.map(([message]) => message).join('\n');
+    expect(messages).toContain('No Neatlogs projects were available to this token. Tally will use local history.');
+    expect(context.ui.select).not.toHaveBeenCalled();
+  });
   it('requires explicit global consent and explains Codex trust afterwards', async () => {
     const { module, context, options } = setup([true, false, true]);
     expect((await module.configure(context)).enabled).toBe(true);
     expect(options.installHooks).toHaveBeenCalledWith({ NEATLOGS_API_KEY: 'fake-key' });
-    expect(vi.mocked(context.ui.confirm).mock.calls.join(' ')).toContain('traces every session');
+    expect(vi.mocked(context.ui.confirm).mock.calls.join(' ')).toContain('all matching sessions on this computer');
     expect(context.ui.print).toHaveBeenCalledWith(expect.stringContaining('/hooks'));
   });
   it('does not disable CFO tracing if optional global hooks fail', async () => {

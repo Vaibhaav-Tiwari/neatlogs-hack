@@ -34,5 +34,5 @@ export function modelAccessConfigurationError(error: unknown, tier: Pick<Tier, '
 /** A sign-in check is not a model-entitlement check; avoid model probes that may spend. */
 export function configuredModelAccessNotice(tiers: readonly Pick<Tier, 'name' | 'harness' | 'model'>[]): string {
   const models = [...new Set(tiers.map((tier) => `${tier.name} (${tier.harness}: ${tier.model})`))];
-  return `Model access is unverified: harness sign-in does not prove these configured models are available, and Tally does not send a model request as a preflight probe. Configured tiers: ${models.join(', ')}.`;
+  return `Model access is unverified. Harness sign-in does not prove these models are available. Tally does not send a model request before a run. Configured tiers: ${models.join(', ')}.`;
 }

@@ -22,11 +22,11 @@ describe('runDoctor', () => {
       stdout: file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT' : 'ok', stderr: '',
     }) });
     const access = lines.find(line => line.product === 'Configured model access');
-    expect(access).toMatchObject({ status: 'unverified', detail: expect.stringContaining('does not send a model request as a preflight probe'), fix: expect.stringContaining('same active accounts/providers') });
+    expect(access).toMatchObject({ status: 'unverified', detail: expect.stringContaining('does not send a model request before a run'), fix: expect.stringContaining('configured accounts') });
     expect(access && doctorHasFailures([access])).toBe(false);
     expect(doctorHasFailures([{ product: 'Codex', status: 'broken', detail: 'signed out', fix: 'codex login' }])).toBe(true);
   });
-  it('reports checkpoint recall unavailable even when Graph and capture are connected', async () => {
+  it('reports hosted checkpoint recall as optional when Graph and capture are connected', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-recall-'));
     const configPath = join(dir, 'tally.yaml');
     const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
@@ -40,7 +40,12 @@ describe('runDoctor', () => {
     } });
     expect(lines.find(line => line.product === 'Entire graph plugin')).toMatchObject({ status: 'connected' });
     expect(lines.find(line => line.product === 'Entire repository')).toMatchObject({ status: 'connected' });
-    expect(lines.find(line => line.product === 'Entire checkpoint recall')).toMatchObject({ status: 'broken', detail: expect.stringContaining('not mirrored') });
+    expect(lines.find(line => line.product === 'Entire checkpoint recall')).toMatchObject({
+      status: 'unavailable',
+      detail: expect.stringContaining('Hosted recall is optional. Local capture and normal task runs remain available.'),
+      fix: expect.stringContaining('Optional:'),
+    });
+    expect(doctorHasFailures(lines.filter(line => line.product === 'Entire checkpoint recall'))).toBe(false);
   });
   it('reports mixed AO per-harness permission selection without substituting a harness', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-mixed-'));
@@ -71,7 +76,7 @@ describe('runDoctor', () => {
     const runner = vi.fn(async (file: string, args: string[]) => ({ stdout: file === 'ao' && args[0] === 'status' ? '{"state":"running"}' : file === 'claude' ? '{"loggedIn":true}' : JSON.stringify({ project: { config: { worker: { agentConfig: { permissions: 'default' } }, postCreate: [aoClaudeSetupCommand(configPath)] } } }), stderr: '' }));
     const check = vi.fn(async () => ({ status: 'missing' as const, detail: 'no token' }));
     const lines = await runDoctor({ runner, configPath, env: {}, cfoaiCheck: check });
-    expect(lines.filter(line => ['neatlogs key', 'Entire CLI', 'Entire graph plugin', 'cfo.ai'].includes(line.product)).every(line => line.status === 'off' && line.fix === null)).toBe(true);
+    expect(lines.filter(line => ['Neatlogs key', 'Entire CLI', 'Entire graph plugin', 'cfo.ai'].includes(line.product)).every(line => line.status === 'off' && line.fix === null)).toBe(true);
     expect(check).not.toHaveBeenCalled();
     expect(runner.mock.calls.some(call => call[0] === 'entire')).toBe(false);
     expect(lines.some(line => line.status === 'missing' || line.status === 'broken')).toBe(false);
@@ -95,7 +100,7 @@ describe('runDoctor', () => {
     const runner = vi.fn(async (_file: string, _args: string[] = []) => ({ stdout: 'ok', stderr: '' }));
     const cfoaiCheck = vi.fn(async () => ({ status: 'ok' as const, detail: 'connected' }));
     const lines = await runDoctor({ runner, env: { NEATLOGS_API_KEY: 'present' }, cfoaiCheck });
-    expect(lines.filter(line => ['AO daemon', 'Entire CLI', 'Entire graph plugin', 'neatlogs key', 'cfo.ai'].includes(line.product))
+    expect(lines.filter(line => ['AO daemon', 'Entire CLI', 'Entire graph plugin', 'Neatlogs key', 'cfo.ai'].includes(line.product))
       .every(line => line.status === 'off' && line.fix === null)).toBe(true);
     expect(doctorHasFailures(lines)).toBe(false);
     expect(runner.mock.calls.some(([file]) => file === 'ao' || file === 'entire')).toBe(false);
@@ -136,7 +141,7 @@ describe('runDoctor', () => {
     expect(lines.find((line) => line.product === 'AO daemon')).toMatchObject({ status: 'off' });
     expect(lines.find((line) => line.product === 'GitHub CLI')).toMatchObject({ status: 'missing', fix: 'gh auth login' });
     expect(lines.find((line) => line.product === 'Entire graph plugin')).toMatchObject({ status: 'off' });
-    expect(lines.find((line) => line.product === 'neatlogs key')).toMatchObject({ status: 'connected' });
+    expect(lines.find((line) => line.product === 'Neatlogs key')).toMatchObject({ status: 'connected' });
     expect(lines.find((line) => line.product === 'cfo.ai')).toMatchObject({ status: 'connected' });
   });
 

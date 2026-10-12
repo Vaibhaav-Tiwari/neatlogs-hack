@@ -106,9 +106,9 @@ Some questions are conditional: detected commands, existing credentials, already
 | Test command, when none is detected | Enter the exact shell command that verifies this repository. Init detects Makefile `test`, package.json `scripts.test`, pytest configuration, Cargo, or Go evidence. If nothing is found, blank input stops init; there is no guessed test command. Review a detected command in the final summary too. |
 | Optional setup command, when none is detected | Enter the reproducible environment-setup command, or leave blank if none is needed. Detection includes Makefile/package setup scripts, lockfile-based dependency installs, and `uv sync`. Setup runs before the coding agent starts, not inside its task ceiling. |
 | GitHub issue label for Tally tasks | Use `tally`, or a dedicated label you will actually apply to issues. The label controls which open issues enter the backlog. |
-| Enable neatlogs traces? | Say yes for external routing/worker evidence; no keeps decisions and costs in the local ledger. See the additional connection prompts below. |
-| Enable Entire graph/checkpoints? | Say yes for code-impact sizing and captured session/checkpoint handoff; no uses repository code search and no Entire checkpoint handoff. Enabling capture does not enable Brain or guarantee hosted recall. |
-| Enable cfo.ai budget integration? | Say yes to read the monthly budget and write real agent spend to your cfo.ai model; no uses the local configured budget and ledger. |
+| Enable Neatlogs traces? | Say yes to send Tally routing and task traces to Neatlogs. Past-run history is a separate read-only opt-in. |
+| Enable Entire graph and checkpoints? | Say yes for code-impact sizing and local session/checkpoint handoff. Hosted past-failure recall is optional and requires the repository to be accessible to Entire. |
+| Use cfo.ai for the monthly budget and spend? | Say yes to read the monthly budget and write real agent spend to your cfo.ai model. No uses the local configured budget and ledger. |
 | Runner: AO or direct? | Choose `direct` for Tally-managed local agent processes/worktrees without AO, or `ao` for AO-managed sessions. Init defaults to AO only when its daemon reports running; if AO is missing, stopped or cannot be verified, init defaults to direct and explains why. Direct always runs one task at a time. |
 | Run tasks in parallel through AO? | AO only; default No keeps one worker. Say yes, then enter the maximum worker count. Each task reserves its first ceiling plus one possible escalation against both budgets, so available funds can reduce actual overlap. Parallel execution is covered by fake-loop tests; its live proof is pending. |
 | Coding agents: Claude Code, Codex, or mixed? | Type `claude-code`, `codex`, or `mixed`. Only installed, signed-in agents are usable. Mixed currently proposes cheap Codex and stronger Claude tiers; inspect the exact models in the summary. Tally never silently substitutes a different harness. |
@@ -137,15 +137,23 @@ Changing test/setup commands invalidates old consent. Rerun `tally init` to revi
 
 ### Additional Integration Prompts
 
-**cfo.ai:** if not connected, init offers to open browser login. Select your workspace and scenario from the displayed choices, or skip; one available choice can be selected automatically. It checks budget/spend tables, and separately asks before creating missing tables; review the proposed rows, starting values and formulas. It does not silently reset existing model data. An incomplete connection falls back to local budgeting. `tally login cfoai` can reconnect later.
+**cfo.ai:** if not connected, init offers to open browser login. Select your workspace and scenario from the numbered choices, or press Enter to skip. It checks the budget and spend tables. Before creating any missing table, init shows the workspace, scenario, rows, starting values, and formula in a readable proposal and asks for approval. It does not reset existing model data. An incomplete connection falls back to local budgeting. `tally login cfoai` can reconnect later.
 
-**neatlogs:** init offers to open the API-key page or verify a configured key with an SDK probe. New keys are entered secretly and saved outside the repository. A rejected key is not saved; init can ask whether to open the page and try a replacement. It separately offers read access for past costs/outcomes, a secret service-account read token and project selection (one project can be automatic; blank skips). Declining these optional steps does not disable decision tracing if a key is already configured.
+**Neatlogs:** init explains each permission separately:
+
+- The project API key sends Tally routing and task traces. Its connection check sends one synthetic span with no repository content. New keys are entered secretly and saved outside the repository.
+- Past-run history is optional and read-only. It needs a service token with `context:read` and `observability:read`, plus a project selection. Tally saves the token and project ID outside the repository. If this step is skipped or cannot be verified, Tally uses local history.
+- Worker hooks are optional and machine-wide. They change `~/.claude/settings.json` and `~/.codex/hooks.json` and can trace sessions outside Tally. Codex requires you to review and trust them through `/hooks`.
+
+You can send decision traces without enabling history reads or installing worker hooks.
+
+Plans share one bounded Neatlogs history snapshot across tier lookups. The full read has a 15-second deadline; if it stalls or fails, Tally reports the fallback and uses local history so `tally run --plan` can finish. The Public API accepts trace-list page sizes up to 50 and opaque cursors; see the [Neatlogs pagination documentation](https://docs.neatlogs.com/api-reference/pagination).
 
 Worker tracing additionally needs harness hooks and usable read access for Tally to verify delivery. The optional **GLOBAL worker-hook installation** changes `~/.claude/settings.json` and `~/.codex/hooks.json` and traces sessions outside Tally too; approve only if you want that machine-wide behavior. Codex also needs you to trust hooks via `/hooks`. You can decline global installation and use existing hooks. Do not mistake a configured API key or decision trace for proof that worker traces arrived.
 
 **Entire:** init can offer login, Graph plugin installation, repository capture settings, and missing harness hooks, each with consent. It lists generated files before asking to enable capture, then separately asks before committing those settings and pushing them to the repository's default branch. This is an optional setup action, not task publishing: decline and use your usual review process if you do not want it. Future workers need the capture settings on their base branch; uncommitted settings are not enough. Codex hook trust is a separate `/hooks` confirmation.
 
-Entire being off does not prevent Tally sizing tasks from issue text and repository evidence. Being on adds Graph and checkpoints, but **past-failure checkpoint recall needs an accessible repository mirrored to Entire**. Capture alone is not mirroring. Brain is a separate memory extension; Tally does not install or use it. Generated summaries are off by default and require separate approval.
+Entire being off does not prevent Tally sizing tasks from issue text and repository evidence. Being on adds Graph and local checkpoints. **Hosted past-failure checkpoint recall needs an accessible repository mirrored to Entire.** If hosted recall is unavailable, normal planning and local capture remain available. Brain is a separate memory extension; Tally does not install or use it. Generated summaries are off by default and require separate approval.
 
 ### Reading Entire's Doctor Status
 
@@ -157,9 +165,10 @@ Run `tally doctor` again after init. When Entire is on, it reports separate chec
 | `Entire graph plugin: connected` | The Graph command is installed; this is not proof that hosted recall works. |
 | `Entire repository: connected` | Session capture is enabled in this repository. |
 | `Entire checkpoint recall: connected` | Hosted checkpoint search answered successfully, even if it returned no matching checkpoints. |
-| `Entire checkpoint recall: broken` | Hosted search failed. The line includes the actual reason and a mirroring/account-access fix, not another instruction to enable capture. |
+| `Entire checkpoint recall: unavailable` | Hosted recall could not access this repository. This is optional. The line gives a mirror/account-access hint, while local capture and normal task runs remain available. |
+| `Entire checkpoint recall: broken` | Hosted search failed for another reason. The line includes the actual error and a relevant check. |
 
-For example, a repository that is not mirrored can have the first three checks connected while checkpoint recall is broken. The fix text is `check Entire repository mirroring and account access; entire enable alone does not enable hosted search`. Doctor exits nonzero for a broken check, but this does not mean repository or Graph sizing is unavailable.
+For example, a repository that is not mirrored can have the first three checks connected while hosted checkpoint recall is unavailable. This optional condition does not make `tally doctor` fail and does not mean repository capture or Graph sizing is unavailable.
 
 The run's Entire integration detail likewise separates `Graph sizing: ok` from `checkpoint recall unavailable: ...`. Its combined status can be `missing` even while sizing works. Routing decisions include the recall-unavailable reason rather than implying past failures were consulted. Generated/tool-owned and gitignored paths are excluded from sizing; related search hits remain context, not automatic files-to-edit targets.
 
@@ -219,7 +228,10 @@ This sizes and routes tasks without starting workers, publishing, or charging a 
 Actual output from the direct Codex proof on chip-design-groundup, run `run-20261011-130259Z`:
 
 ```text
-monthly budget: $40.00 from cfo.ai; run cap: $1.00 (CLI --budget)
+Budget availability
+  Monthly remaining: $40.00 of $40.00 (cfo.ai)
+  Run cap: $1.00 (CLI --budget)
+  Available now: $1.00
 #17: small (confidence 0.74) -> cheap codex/gpt-5.6-luna ceiling $0.30
 ```
 
@@ -251,8 +263,14 @@ dashboard http://127.0.0.1:5197/?data=%2Fruns%2Flatest%2F
 #17 attempt 1: spend $0.0029
 #17 attempt 1: spend $0.0061
 #17 attempt 1: spend $0.0109
-summary: 1 passed, 0 failed, 0 skipped; total $0.0109 against run cap $1.00
-monthly budget: $40.00 from cfo.ai; run cap: $1.00 (CLI --budget)
+Budget availability
+  Monthly remaining: $40.00 of $40.00 (cfo.ai)
+  Run cap: $1.00 (CLI --budget)
+  Available now: $1.00
+Run summary
+  Tasks: 1 passed, 0 failed, 0 skipped
+  Total spend: $0.0109
+  Run cap: $1.00
 PR https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18
 ```
 
@@ -311,7 +329,7 @@ Direct Codex uses a workspace-write sandbox with network disabled and no bypass/
 | GitHub timeout/reset/5xx | Read-only intake and PR discovery retry network-class failures up to three attempts with a printed retry line. Auth/not-found errors and publishing writes are not blindly retried. Follow the surfaced `gh` diagnostic command; check auth/network before retrying a run that might already have published. |
 | Plan has no tasks | Check `gh issue list --label tally --state open`, using your chosen label. Already-closing open PRs are excluded. A zero-task run prints the repository, label and issue-labeling command and starts no worker. |
 | Larger-than-expected route or budget skip | Inspect named target files, confidence, test coverage, selected tiers and ceilings. `--budget` is a run cap; the monthly cfo.ai budget is separate. The next escalation ceiling must fit too. |
-| `Entire checkpoint recall: broken` while Graph/capture are connected | Read the reported search error. Capture is not hosted search: checkpoint recall needs repository mirroring and account access. Sizing can still work; do not repeatedly run `entire enable` or assume Brain is installed. |
+| `Entire checkpoint recall: unavailable` while Graph/capture are connected | Hosted history cannot see this repository. This does not block local checkpoints, Graph sizing, or normal runs. Mirror the repository only if you want hosted past-failure recall. |
 | Entire verification mentions a baseline command failure | The baseline test runs on the base checkout before the candidate check. Inspect that base run separately; Tally records its nonzero exit in the attempt reason, then applies the candidate verdict against the recorded baseline. |
 | Worker trace missing | Read `workerTraceDetail` in that attempt's ledger row and the Neatlogs integration detail in `run.json`. They distinguish pending spool batches/lock contention, missing credentials, API status codes, missing correlation, and spans still indexing. Tally retries a lock-contended drain once after all workers exit; if read-back still fails, check hook trust, project binding and read scopes, then use the exact `tally traces drain --run RUN_ID` command shown in the run details for finished-run recovery. |
 | A configured model is rejected by the signed-in account | By default Tally stops and names the rejected tier. To opt into one budget-checked retry, choose a different configured tier in init or add `modelAccessFallbackTier: <tier-name>` to `tally.yaml`. This handles explicit model-access rejection only; fix authentication, network, quota and rate-limit errors at their source. |

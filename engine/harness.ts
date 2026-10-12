@@ -12,12 +12,12 @@ export async function checkHarness(harness: Harness, command: InitCommandRunner,
   const file = harness === 'claude-code' ? 'claude' : 'codex';
   const fix = harness === 'claude-code' ? 'claude auth login' : 'codex login';
   try { await command(file, ['--version'], { cwd }); }
-  catch { return { harness, installed: false, signedIn: false, detail: `${file} is not installed or cannot run; install it before using ${harness} tiers`, fix: `Install ${harness === 'claude-code' ? 'Claude Code (https://code.claude.com/docs/en/setup)' : 'Codex CLI (https://developers.openai.com/codex/cli/)'}; then ${fix}` }; }
+  catch { return { harness, installed: false, signedIn: false, detail: `${file} is not installed or could not run. Install it before using ${harness} tiers.`, fix: `Install ${harness === 'claude-code' ? 'Claude Code (https://code.claude.com/docs/en/setup)' : 'Codex CLI (https://developers.openai.com/codex/cli/)'} and then run ${fix}.` }; }
   try {
     const output = await command(file, harness === 'claude-code' ? ['auth', 'status'] : ['login', 'status'], { cwd });
     const signedIn = harness === 'claude-code' ? JSON.parse(output.stdout).loggedIn === true
       : /\blogged in\b/i.test(`${output.stdout}\n${output.stderr}`) && !/\bnot logged in\b/i.test(`${output.stdout}\n${output.stderr}`);
-    return { harness, installed: true, signedIn, detail: signedIn ? `${file} is installed and signed in (CLI status; model access not probed)` : `${file} is signed out or its sign-in status could not be verified`, fix };
+    return { harness, installed: true, signedIn, detail: signedIn ? `${file} is installed and signed in. Model access was not probed.` : `${file} is signed out or its sign-in status could not be verified.`, fix };
   } catch { return { harness, installed: true, signedIn: false, detail: `${file} is signed out or its sign-in status could not be verified`, fix }; }
 }
 

@@ -8,7 +8,7 @@ export async function configureIntegrations(
   context: OnboardingContext,
   products: Partial<Record<'cfoai' | 'neatlogs' | 'entire', IntegrationOnboarding>> = { cfoai: new CfoaiOnboarding(), neatlogs: new NeatlogsOnboarding(), entire: new EntireOnboarding() },
 ): Promise<void> {
-  for (const name of ['cfoai', 'neatlogs', 'entire'] as const) {
+  for (const name of ['neatlogs', 'entire', 'cfoai'] as const) {
     const product = products[name];
     if (!context.config.integrations[name] || !product) continue;
     const result = await product.configure(context);
