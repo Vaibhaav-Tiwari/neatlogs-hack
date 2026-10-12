@@ -1,0 +1,15 @@
+Tally run-20261012-162757Z #153 a1: Add CHANGELOG.md covering 0.1.0 and 0.2.0
+Neatlogs correlation: runId=run-20261012-162757Z taskId=#153 attempt=1.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+Create a new file `CHANGELOG.md` at the repo root (edit no other file except adding one link line to `README.md`). Two entries, newest first, in Keep a Changelog style. For **0.2.0**: direct runners for Claude Code and Codex (`runner: direct`), opt-in parallel workers through Agent Orchestrator (`parallelWorkers`, `--parallel`), trace-driven routing with model-keyed history and learned ceilings, failure classification before escalation (`failureAssessment`), sponsor evidence links on task pull requests, the CrustData `tally market` report with `--replay`, the first-run logo, and the `tally doctor` Agent Orchestrator readiness fix. For **0.1.0**: the first release (route, cap, escalate, verify, open a pull request through Agent Orchestrator with Codex). Take every item from `README.md`, `docs/GETTING_STARTED.md` and the merged pull request titles in `git log`; do not list anything you cannot find there. Under 80 lines.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier cheap (codex/gpt-5.6-luna).
