@@ -9,6 +9,7 @@ import type { BudgetPort, HandoffPort, PriceHistoryPort, TaskInput, TraceAttribu
 import { planFromHistory, type HistoryPlan } from './history-plan.js';
 import { usd } from './router.js';
 import { traceDecision } from './trace.js';
+import { diagnoseAttempt, type FailureAssessment, type FailureTracePort } from './failure.js';
 
 /** The attempt that just ended, as written on its ledger row. */
 export interface FinishedAttempt {
@@ -25,6 +26,7 @@ export interface FinishedAttempt {
   branch?: string | null;
   checkpointId?: string | null;
   resultReason?: string | null;
+  workerTraceId?: string | null;
 }
 
 export interface EscalateDecision {
@@ -65,7 +67,8 @@ export interface EscalationInput {
   previous: FinishedAttempt;
   task?: TaskInput;
   config: TallyConfig;
-  ports: { budget: BudgetPort; handoff?: HandoffPort; trace?: TracePort; history?: PriceHistoryPort };
+  ports: { budget: BudgetPort; handoff?: HandoffPort; trace?: TracePort; history?: PriceHistoryPort; failureTrace?: FailureTracePort };
+  failureAssessment?: FailureAssessment;
   traceAttributes?: TraceAttributes;
 }
 
@@ -217,6 +220,26 @@ export async function decideEscalation(input: EscalationInput): Promise<Escalati
       ...input.traceAttributes,
     },
     async (span) => {
+      const failure = input.previous.result === 'passed' ? undefined
+        : input.failureAssessment ?? (input.ports.failureTrace ? await diagnoseAttempt(input.previous, input.ports.failureTrace) : undefined);
+      if (failure && !failure.retryable && failure.kind === 'model-unavailable' && !isModelAccessRejection(input.previous)) {
+        const decision: GiveUpDecision = {
+          action: 'give-up', taskId: input.previous.taskId,
+          statusReason: 'failed: model unavailable needs explicit model-access fallback',
+          reason: `The worker trace reports model-unavailable; Tally stops rather than silently substituting a model; ${failure.detail.replace(/\.$/, '')}.`,
+        };
+        span.set({ action: decision.action, reason: decision.reason, failureAssessment: JSON.stringify(failure) });
+        return decision;
+      }
+      if (failure && !failure.retryable && (failure.kind === 'permission-refused' || failure.kind === 'tool-failure')) {
+        const decision: GiveUpDecision = {
+          action: 'give-up', taskId: input.previous.taskId,
+          statusReason: `failed: ${failure.kind} needs intervention`,
+          reason: `The attempt hit ${failure.kind}; a stronger model would hit the same wall, so Tally stops without escalating; ${failure.detail.replace(/\.$/, '')}.`,
+        };
+        span.set({ action: decision.action, reason: decision.reason, failureAssessment: JSON.stringify(failure) });
+        return decision;
+      }
       const decision = await decideEscalationCore(input);
       if (decision.action === 'escalate' && input.ports.history && decision.history) {
         const h = decision.history;
@@ -228,6 +251,7 @@ export async function decideEscalation(input: EscalationInput): Promise<Escalati
           : `${h.attempts} observations, ${Math.round(h.observedPassRate * 100)}% pass rate, ${usd(h.observedAvgCostNanos!)} average cost`;
         decision.reason = `${decision.reason.replace(/\.$/, '')}; ${h.source} history: ${stats}, ${h.usedPrior ? 'uses the prior' : 'observed statistics'}, ${cap}.`;
       }
+      if (failure) decision.reason = `${decision.reason.replace(/\.$/, '')}; ${failure.detail.replace(/\.$/, '')}.`;
       span.set({
         action: decision.action,
         tier: decision.action === 'escalate' ? decision.tier.name : null,
@@ -235,6 +259,7 @@ export async function decideEscalation(input: EscalationInput): Promise<Escalati
         checkpointId: decision.action === 'escalate' ? decision.checkpointId : null,
         reason: decision.reason,
         history: JSON.stringify(decision.action === 'escalate' ? decision.history ?? null : null),
+        failureAssessment: JSON.stringify(failure ?? null),
       });
       return decision;
     },

@@ -9,6 +9,36 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify({ data
 const env = { NEATLOGS_TOKEN: 'fake-read-token', NEATLOGS_PROJECT_ID: 'fake-project' };
 
 describe('NeatlogsWorkerTraceReader', () => {
+  it('reads all correlated failure span pages and preserves status evidence', async () => {
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async input => {
+      const url = new URL(String(input));
+      if (!url.pathname.endsWith('/spans')) return json(trace);
+      if (url.searchParams.has('cursor')) return json({ spans: [{ spanId: 's2', spanName: 'Bash', spanType: 'TOOL', status: 'OK' }] });
+      return json({
+        spans: [{ spanId: 's1', spanName: 'Bash', spanType: 'TOOL', status: 'ERROR', errorMessage: 'permission denied' }],
+        ...(url.search ? { page: { hasMore: true, nextCursor: 'opaque' } } : {}),
+      });
+    } });
+    const result = await reader.failureFor({ ...context, traceId });
+    expect(result).toMatchObject({ traceId, spans: [
+      { id: 's1', status: 'ERROR', error: 'permission denied' }, { id: 's2', status: 'OK' },
+    ] });
+  });
+
+  it('refuses failure evidence from an unrelated worker', async () => {
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async () => json({ ...trace, workflowName: 'another task' }) });
+    expect(await reader.failureFor({ ...context, traceId })).toBeNull();
+  });
+
+  it('returns unavailable for incomplete span pagination rather than claiming an unrecovered denial', async () => {
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async input => {
+      const url = new URL(String(input));
+      if (!url.pathname.endsWith('/spans')) return json(trace);
+      return json({ spans: [{ spanId: 's1' }], ...(url.search ? { page: { hasMore: true, nextCursor: 'repeat' } } : {}) });
+    } });
+    expect(await reader.failureFor({ ...context, traceId })).toBeNull();
+  });
+
   it.each(['run-20261011-102312Z', 'long-run-id-'.repeat(20)])('reads the truncated compact prefix for three-digit issues and attempt 2: %s', async runId => {
     const input = { runId, taskId: '#123', attempt: 2, nativeSessionId: 'native' };
     const prefix = workerCorrelationPrefix(runId, input.taskId, input.attempt);
