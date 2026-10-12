@@ -260,16 +260,15 @@
       <div class="evidence reveal" id="measured">
         <div class="ev">
           <h4>Measured: the same three tasks, with and without Tally</h4>
-          <p>On three real tasks, everything on the top model cost $1.22; through Tally the same tasks cost $0.31 and $0.43 on two passes, every task passing each time.</p>
+          <p>On three real tasks, everything on the top model cost $1.22; through Tally with neatlogs history enabled, the same tasks cost $0.43. All three passed in both runs: about 65% lower estimated cost on this sample.</p>
           <ul class="bars compare">
             <li class="base"><span class="b-name">Everything on the top model</span><span class="b-track"><i style="width:100%"></i></span><span class="b-cost" data-count2="1.22">$1.22</span><span class="b-detail">small $0.458, medium $0.416, large $0.343. 3 of 3 passed.</span></li>
-            <li class=""><span class="b-name">Through Tally, built-in defaults</span><span class="b-track"><i style="width:25.4%"></i></span><span class="b-cost" data-count2="0.31">$0.31</span><span class="b-detail">small $0.015 and medium $0.030 on the cheap tier, large $0.264 on the top tier. 3 of 3 passed.</span></li>
             <li class=""><span class="b-name">Through Tally, with trace history from neatlogs</span><span class="b-track"><i style="width:35.0%"></i></span><span class="b-cost" data-count2="0.43">$0.43</span><span class="b-detail">small $0.012 and medium $0.020 on the cheap tier, large $0.395 on the top tier. 3 of 3 passed.</span></li>
           </ul>
           <ul class="limits">
             <li>Three tasks on <code>fly-doom-jev</code>, one run each, from the same starting commit, each verified by the repository's tests. No pull requests were opened.</li>
             <li>Costs are estimates at list price.</li>
-            <li>The pass with trace history was not cheaper than the pass on defaults. The difference is run-to-run variation on the large task, which used the same model both times.</li>
+            <li>This compares top-tier execution with Tally, not an isolated measurement of the benefit of history. The <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/blob/main/docs/EVIDENCE.md#matched-comparison">full three-pass results and caveats</a> remain available.</li>
             <li>Trace history changed one cost estimate and no tier or ceiling.</li>
             <li>cfo.ai was off for these runs.</li>
             <li>In all three passes each task's first start failed before using any tokens and was retried; those attempts cost $0.00 and are in the ledgers.</li>
@@ -316,7 +315,7 @@
       <header><p class="weight">15%</p><div><h3>Building in public</h3><p class="quote">“How you shared your project with other people while you built it.”</p></div></header>
       <div class="evidence two reveal">
         <div class="ev"><h4>The repository, in the open from the first commit</h4><p><b class="figure">377</b> commits and <b class="figure">143</b> merged pull requests on <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a>, the first on 10 October 2026 at 13:57 IST. <code>tally-agents</code> 0.2.0 is on <a href="https://www.npmjs.com/package/tally-agents">npm</a>, with direct runners, parallel runs through Agent Orchestrator, routing driven by trace history with learned ceilings, and evidence links on the pull requests it opens.</p></div>
-        <div class="ev"><p class="slot"><span>Not here yet</span>Links to the posts tagged #neatHack.</p></div>
+        <div class="ev"><h4>Shared while we built</h4><p>Tally is open source and published on npm: the code and an installable product are available for anyone to inspect and try. Alongside that public build, we shared progress on X.</p><ul class="plain"><li><a href="https://x.com/battarchicken/status/2108872869405168019?s=20">Build-in-public update 1</a></li><li><a href="https://x.com/battarchicken/status/2109387573110202536?s=20">Build-in-public update 2</a></li></ul><p><a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Explore the open-source project</a> · <a href="https://www.npmjs.com/package/tally-agents">Install tally-agents from npm</a></p></div>
       </div>
     </article>
 
