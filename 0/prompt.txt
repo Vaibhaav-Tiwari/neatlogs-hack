@@ -1,0 +1,15 @@
+Tally run-20261012-211342Z #171 a1: Start pinned-base experiment workers with their prompt so the first spawn does not fail
+Neatlogs correlation: runId=run-20261012-211342Z taskId=#171 attempt=1.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+In `tally experiment`, every task's first worker fails to start with zero tokens (`worker never started`) and only the built-in retry succeeds; this happened on all nine tasks of the 12 Oct comparison. Cause, as traced then: when a required base commit is pinned, the Agent Orchestrator adapter spawns the session without a prompt, checks `HEAD`, and then sends the prompt immediately, before the agent is ready to receive it; the retry path spawns with the prompt attached and works. Fix the pinned-base path in `adapters/ao.ts` so the first spawn is reliable while still verifying that the worktree is at the required base before any work is accepted (for example spawn with the prompt and verify the base from the session metadata or worktree before the first usage is counted, failing closed if it does not match). Do not weaken the base check and do not change non-experiment spawns. Add fake-AO tests proving: first spawn succeeds with a pinned base; a wrong base is still rejected before work is accepted; ordinary runs are unchanged. Typecheck, build and the full suite must stay green.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier cheap (codex/gpt-5.6-luna).
