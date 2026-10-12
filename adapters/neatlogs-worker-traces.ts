@@ -1,6 +1,7 @@
 import { loadEnv } from '../engine/env.js';
 import { workerCorrelationPrefix } from '../engine/worker-correlation.js';
 import type { IntegrationState } from '../schema/types.js';
+import type { FailureSpan, FailureTraceContext, FailureTracePort } from '../agent/failure.js';
 
 export interface WorkerTraceReadContext {
   runId: string;
@@ -32,7 +33,7 @@ function matches(trace: TraceRecord, context: WorkerTraceReadContext): boolean {
   });
 }
 
-export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
+export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort, FailureTracePort {
   private readonly env: Record<string, string>;
   private readonly fetchImpl: typeof fetch;
   private readonly endpoint: string;
@@ -49,6 +50,34 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
   }
 
   status(): IntegrationState { return this.state; }
+
+  async failureFor(context: FailureTraceContext): Promise<{ traceId: string; spans: FailureSpan[] } | null> {
+    const id = await this.verifyFor(context);
+    if (!id) return null;
+    const spans: FailureSpan[] = [];
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    for (let page = 0; page < 5; page++) {
+      const query = new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) });
+      const body = await this.read(`/traces/${id}/spans?${query}`) as {
+        data?: { spans?: Record<string, unknown>[]; page?: { hasMore?: boolean; nextCursor?: string } };
+      } | null;
+      if (!Array.isArray(body?.data?.spans)) return null;
+      for (const span of body.data.spans) {
+        const text = (value: unknown) => typeof value === 'string' ? value : '';
+        spans.push({
+          id: text(span.spanId), name: text(span.spanName ?? span.name), type: text(span.spanType),
+          status: text(span.status), error: text(span.errorMessage), startedAt: text(span.startedAt),
+        });
+      }
+      if (!body.data.page?.hasMore) return { traceId: id, spans };
+      cursor = body.data.page.nextCursor;
+      if (!cursor || seen.has(cursor)) return null;
+      seen.add(cursor);
+    }
+    // Partial history cannot prove that an early denial was unrecovered.
+    return null;
+  }
 
   private fail(detail: string): void {
     this.state = { status: 'missing', detail };

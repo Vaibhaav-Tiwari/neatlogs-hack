@@ -24,6 +24,24 @@ const ledger = JSON.parse(fixture('finished-run/ledger.json')) as LedgerRow[];
 const run = JSON.parse(fixture('finished-run/run.json')) as RunState;
 const config = parseYaml(fixture('finished-run/tally.yaml')) as TallyConfig;
 
+it('validates optional failure evidence while accepting legacy ledger rows', () => {
+  const failureAssessment = {
+    kind: 'ceiling', source: 'ledger', traceId: null, evidence: ['Ceiling crossed'],
+    spans: [], retryable: true, detail: 'Ledger fallback: worker trace could not be read.',
+  };
+  expect(validateLedgerRow(ledger[0]).ok).toBe(true);
+  expect(validateLedgerRow({ ...ledger[0], failureAssessment }).ok).toBe(true);
+  for (const invalid of [
+    { ...failureAssessment, kind: 'made-up' },
+    { ...failureAssessment, source: 'guess' },
+    { ...failureAssessment, traceId: 'invalid' },
+    { ...failureAssessment, spans: [42] },
+    { ...failureAssessment, evidence: [42] },
+    { ...failureAssessment, retryable: 'yes' },
+    { ...failureAssessment, extra: true },
+  ]) expect(validateLedgerRow({ ...ledger[0], failureAssessment: invalid }).ok).toBe(false);
+});
+
 it('accepts optional permission warnings on ledger rows without changing legacy rows', () => {
   expect(validateLedgerRow({ ...ledger[0], permissionWarnings: ['permission denied for Bash: raw test pipeline'] }).ok).toBe(true);
   expect(validateLedgerRow({ ...ledger[0], permissionWarnings: [42] }).ok).toBe(false);

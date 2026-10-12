@@ -80,6 +80,20 @@
     "ceilingNanos": { "type": "integer", "minimum": 0 },
     "result": { "enum": ["passed", "failed", "stopped", "error"] },
     "resultReason": { "type": ["string", "null"] },
+    "failureAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source", "traceId", "evidence", "spans", "retryable", "detail"],
+      "properties": {
+        "kind": { "enum": ["ceiling", "tool-failure", "tests-failed", "permission-refused", "model-unavailable", "unknown"] },
+        "source": { "enum": ["neatlogs", "ledger"] },
+        "traceId": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{32}$" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "spans": { "type": "array", "items": { "type": "string" } },
+        "retryable": { "type": "boolean" },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
     "scopeWarnings": { "type": "array", "items": { "type": "string" } },
     "permissionWarnings": { "type": "array", "items": { "type": "string" } },
     "tallyCommit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },

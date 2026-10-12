@@ -1049,6 +1049,78 @@ describe('runRealTally', () => {
     expect(worker.stopped).toEqual(worker.starts.map((_, i) => `session-${i + 1}`));
     expect(result.ledger.every((row) => row.tokens.total === settled.total)).toBe(true);
   });
+  it.each([
+    ['permission denied', 'permission-refused', false],
+    ['command not found', 'tool-failure', false],
+    ['model unavailable', 'model-unavailable', false],
+    ['tests failed', 'tests-failed', true],
+    ['budget exhausted', 'ceiling', true],
+  ] as const)('persists trace diagnosis for %s and only escalates model-solvable failures', async (error, kind, escalates) => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+    const trace = new FakeTrace();
+    let diagnoses = 0;
+    const traceId = 'a'.repeat(32);
+    const result = await runRealTally({
+      configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: {
+        intake, signals, worker, usage: worker, sessions: worker, publisher: worker, trace,
+        verifier: new SequenceVerifier([{ passed: false, reason: 'tests failed' }, { passed: true, reason: null }]),
+        history: {
+          lookup: async (_size, tier) => tier === 'middle'
+            ? { attempts: 5, passRate: 1, avgCostNanos: 20_000_000, source: 'neatlogs', successfulCostsNanos: [20_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000] } : null,
+          record: async () => {},
+        },
+        workerTraceReader: {
+          verifyFor: async () => traceId,
+          failureFor: async context => {
+            diagnoses++;
+            expect(context).toMatchObject({ runId: 'run-20261011-030000Z', taskId: 'T1', attempt: 1, traceId });
+            return { traceId, spans: [{ id: 'failed-span', name: 'Bash', type: 'TOOL', status: 'ERROR', error }] };
+          },
+        },
+      },
+    });
+    expect(diagnoses).toBe(1);
+    expect(result.ledger[0]?.failureAssessment).toMatchObject({ kind, source: 'neatlogs', traceId, spans: ['failed-span'], retryable: escalates });
+    expect(worker.starts).toHaveLength(escalates ? 2 : 1);
+    expect(validateLedger(JSON.parse(readFileSync(result.ledgerPath, 'utf8'))).ok).toBe(true);
+    const decision = trace.spans.find(span => span.name === 'tally.escalate');
+    expect(JSON.parse(String(decision?.attributes.failureAssessment))).toMatchObject({ kind });
+    if (escalates) {
+      expect(result.ledger[1]?.ceilingNanos).toBe(30_000_000);
+      expect(result.ledger[1]?.decision).toContain('neatlogs history: 5 observations');
+    } else expect(result.runState.tasks[0]?.statusReason).toMatch(/needs intervention|model unavailable/);
+  });
+
+  it('uses an honest persisted ledger fallback when worker trace diagnosis cannot be read', async () => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+    const result = await runRealTally({
+      configPath, dryRun: false, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, trace: new FakeTrace(), history: new PriceHistory(),
+        verifier: new SequenceVerifier([{ passed: false, reason: 'tests failed' }, { passed: true, reason: null }]),
+        failureTrace: { failureFor: async () => { throw new Error('read unavailable'); } } },
+    });
+    expect(result.ledger[0]?.failureAssessment).toMatchObject({ source: 'ledger', kind: 'tests-failed' });
+    expect(result.ledger[1]?.decision).toContain('worker trace could not be read');
+    expect(worker.starts).toHaveLength(2);
+  });
+
+  it('does not consult worker traces for simulated dry-run failures', async () => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
+    const config = loadConfig(configPath);
+    const dry = createDryRunPorts();
+    let reads = 0;
+    const result = await runRealTally({
+      configPath, dryRun: true, baseline: false, outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { ...dry, signals, intake: { tasks: async () => [{ ...(await intake.tasks(config, configPath))[0]!, outcomes: ['failed', 'passed'] }] },
+        trace: new FakeTrace(), failureTrace: { failureFor: async () => { reads++; return null; } } },
+    });
+    expect(reads).toBe(0);
+    expect(result.ledger[0]?.failureAssessment?.source).toBe('ledger');
+  });
+
   it('sizes, routes, spawns, verifies, escalates once and writes valid output', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
