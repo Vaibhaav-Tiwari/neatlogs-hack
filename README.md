@@ -1,584 +1,181 @@
-# Tally
+![Meet Tally, the CFO for your agent fleet: pixel tally mark on a dark background](https://raw.githubusercontent.com/Vaibhaav-Tiwari/neatlogs-hack/main/docs/assets/tally-banner.png)
 
-A CFO for a fleet of coding agents. Give it a backlog and a budget. It sizes
-each task, sends it to the cheapest model likely to finish it, stops any task
-that overruns its spend ceiling, hands failed work to a stronger model, and
-ends with a ledger tying spend to each attempt, its test result and any opened PR.
-
-**Start here: [Getting Started](docs/GETTING_STARTED.md)** covers the no-account demo, every init question, your first real run, troubleshooting and uninstall.
-
-Status: early build. The next release is `tally-agents` version `0.2.0`; npm
-`latest` remains `0.1.0` until the maintainer publishes it.
-
-0.2.0 adds direct runners, opt-in parallel AO workers, model-isolated
-trace-history routing and caps, failure diagnosis, and reviewed CrustData
-pilot-company reports. Configurations produced by 0.1.0 init continue to run
-sequentially unchanged; its legacy `concurrency` field does not opt into
-`parallelWorkers`. New 0.2.0 configuration fields are not accepted by 0.1.0.
-The GitHub release alternative is also available below. The seven-task demo uses simulated workers; real
-runs use Agent Orchestrator by default, or the direct runner (Claude Code or Codex),
-and record their attempts and evidence separately.
+Tally is a CFO for coding agents: give it GitHub issues and a budget, and it routes, caps and verifies the work before opening pull requests.
 
 ## Install
 
-Prerequisites before you install:
-
-- Node 20 or later and npm.
-- Git, for installing from GitHub or from a source checkout.
-
-The built CLI runtime is checked on Node 20 (20.20.2), including the seven-task
-dry demo. Vitest 5 is development-only and requires Node 22.12+ on the supported
-22.x line (or supported 24/26+ versions); source contributors should use that
-runtime for tests. The built npm release includes neither Vitest nor other dev
-dependencies and keeps its runtime requirement at Node 20+.
-
-That is all the simulated demo and the dashboard need. They use no Agent
-Orchestrator account, coding-agent login or GitHub credentials.
-
-A real run on your own repository also needs, today:
-
-- **Agent Orchestrator (AO), installed and running**, for the default `runner: ao`.
-  Alternatively, set `runner: direct` in `tally.yaml`; Tally creates worktrees
-  and starts `claude -p` or `codex exec` itself, by each tier's harness, without
-  an AO daemon. A missing or signed-out harness stops the run; Tally never
-  substitutes one for another.
-- At least one coding agent that AO can start, installed and signed in: Codex
-  or Claude Code. `tally init` proposes model tiers only for the agents it
-  finds installed.
-- GitHub CLI, signed in with `gh auth login`, with access to the repository.
-  Tally reads issues and opens pull requests through it.
-- A test command for the repository that exits 0 when the work is good. Tally
-  accepts a task only when that command passes, so `tally init` writes no
-  configuration without one.
-
-neatlogs, Entire and cfo.ai are optional. Each is off unless you turn it on
-during `tally init`, and the dashboard shows which are on, off or broken.
-With Entire off or unavailable, sizing uses named paths and bounded identifier
-searches in tracked repository files. It counts explicit new files and nearby
-tests without claiming graph dependencies. Specific target evidence increases
-confidence; ambiguous or truncated searches remain cautious. `run --plan`
-prints the size, confidence, route, ceiling and price-history source without
-starting a worker or writing history.
-
-### Direct Codex Runner
-
-The direct Codex path has completed a real run: `run-20261011-130259Z`, using
-luna, produced [chip-design-groundup PR #18](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18),
-with both decision and worker trace ids and a Tally-created commit.
-
-With `runner: direct`, a tier with `harness: codex` runs `codex exec --json` in
-the task's worktree. It needs Codex on PATH and signed in with `codex login`.
-The worker runs in Codex's `workspace-write` sandbox with approvals off and the
-network off; it can write only in its worktree and one scratch directory, and
-Tally never passes a bypass or full-access flag. That sandbox cannot write git
-metadata, so the worker leaves its edits in the working tree and Tally commits
-them. The repository's test command reaches the worker as a Tally-written
-script outside the worktree; a test that needs the network fails inside the
-worker, and Tally's own verification afterwards is what decides the result.
-
-Live spend is read from that session's own Codex rollout file and priced at the
-tier's list price. Counts arrive at model-call boundaries, so a ceiling stop
-can overshoot by one call. If the rollout file is missing or unreadable the
-worker is stopped rather than left unmetered. The rollout is an internal Codex
-format and may change between Codex versions.
-
-### Headless Claude Runner
-
-`runner: direct` needs Claude Code installed on PATH and signed in with
-`claude auth login`. Keep each tier's `harness: claude-code` and explicit model;
-the usual test command, list prices, budgets and integrations still apply.
-`claudeCode.allow` must contain the tool rules consented to in `tally init`;
-Tally passes that list verbatim and refuses to launch Claude without it.
-Direct workers use scoped file-edit and git/test/setup allow rules with
-`--permission-mode dontAsk`, never bypass-permissions. Push and `gh` are denied
-to workers; Tally verifies and publishes. Setup runs in the new worktree before
-the agent starts and is recorded separately as `setupDurationMs`.
-
-The live meter reads [Claude's partial stream events](https://code.claude.com/docs/en/agent-sdk/streaming-output)
-and deduplicates API message ids; final JSON usage settles the same session,
-not an additional charge. Usage arrives at message boundaries, so a ceiling
-can overshoot during a long generation or between watcher polls. Prompt-cache
-writes use [Anthropic's 5-minute / 1-hour multipliers](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
-of 1.25x / 2x the configured input price. Existing ledger costs are unchanged.
-Subagents and MCP tools are disabled so their unmetered work cannot escape the
-task ceiling. These are harness permission rules, not an OS isolation guarantee;
-configured commands and installed hooks must be trusted. Entire and neatlogs
-hooks are retained (no bare mode); verify capture through the run's recorded
-evidence and read-back rather than assuming that installed hooks prove delivery.
-Published worktrees are removed; stopped/failed checkouts stay available for
-handoff or recovery. A live direct process cannot be reattached after Tally exits.
-
-### AO Workers
-
-With `runner: ao`, each tier chooses its own `harness` and model. Codex workers
-use the project's consented `auto` mode. Claude Code workers use `default` at
-launch and a worktree-local `.claude/settings.local.json` with the consented
-`dontAsk` rules and exact Tally test/setup scripts. The local settings and
-instructions are excluded from commits. No bypass-permissions mode is used.
-Mixed AO tiers select the harness mode immediately before spawning under an
-in-process project lock; separate Tally processes and manual AO changes are not
-coordinated by that lock. Both Codex AO and Claude Code AO have real-run evidence.
-Correlated worker-trace read-back covers all four runner/harness paths; delivery
-still needs capture hooks and read access, and unverified traces remain missing.
-
-### Real-Run Evidence
-
-All four runner/harness paths have completed real runs on chip-design-groundup:
-
-| Path | Real-run PR evidence |
-|---|---|
-| Codex via AO | [#10](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/10) |
-| Claude Code via AO | [#13](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/13), [#16](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/16) |
-| Claude Code direct | [#14](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/14) |
-| Codex direct | [#18](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/18) |
-
-These runs do not prove every workflow. The following remain unproven live:
-
-- Mixed AO spawning a real Codex worker after a Claude Code worker. The mixed
-  setup proof completed on Claude Code without escalating to Codex.
-- Parallel workers.
-- Escalation on the direct runner.
-- The no-account onboarding path.
-
-The simulated demo is not evidence of any real worker path.
-
-Three ways in:
-
-1. **npm (primary):** `npm install -g tally-agents`.
-2. **GitHub (alternative, available now):** `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack#release`.
-   The `release` branch includes the compiled CLI and records its source commit
-   in `release-source.json`; no TypeScript or manual build is needed. The main
-   branch is source-only and is not the global-install target.
-3. **Source checkout:** `git clone https://github.com/Vaibhaav-Tiwari/neatlogs-hack`,
-   enter `neatlogs-hack`, and run `npm install` followed by `npm run build`.
-   Then use `node bin/tally.js` in place of `tally` in the commands below.
-   After editing TypeScript sources, run `npm run build` again. Generated
-   `dist/` files are not committed to main.
-
-The npm package is named `tally-agents`; the installed command is still
-`tally`.
-
-Maintainers can build a release tree with
-`npm run release:branch -- --source origin/main --out /tmp/tally-release`.
-Add `--push` to update the dedicated `release` branch (never publishes to npm).
-The main-push workflow builds and smoke-checks that tree before updating it.
-For npm publication, pack the built `release` tree, not the source-only main
-checkout. Check that `release-source.json` identifies the intended main commit,
-then inspect and smoke-test the tarball before publishing that exact artifact.
-The built package includes `dist/` and has no build or install lifecycle scripts.
-`npm run test:git-install` checks the GitHub `#release` URL with an empty cache
-and temporary global prefix, then checks version, help, demo and dashboard
-outside the checkout. Pass another Git URL after `--` to check a candidate.
-
-## Quickstart
-
-After either global installation, start in an empty directory:
-
-```bash
-tally demo
-tally dashboard
+```sh
+npm install -g tally-agents
 ```
 
-The demo writes `.tally/runs/` in that directory. Open the URL printed by
-`tally dashboard`; it reads the latest run and lists recorded runs. Keep it
-running while viewing the page, and press Ctrl-C to stop it. If its default
-port is occupied, use `tally dashboard --port 0` for a free port.
+Published version: **0.2.1**, checked on npm on 13 October 2026.
+Requires Node 20+; real work also needs Git, signed-in GitHub CLI and at least
+one signed-in coding agent. Optional integrations are not required.
 
-`tally demo --live` keeps workers simulated while checking the configured
-read-only integrations. Bundled cfo.ai workspace/table values are placeholders;
-missing credentials are reported, and no real worker is launched.
+## 60-Second Quick Start
 
-### A Provided Tarball
-
-With only a packed `tally-agents-0.2.0.tgz` in your current directory, these
-commands install into a temporary prefix without changing your normal global
-installation, then follow the same quickstart:
-
-```bash
-npm install -g --prefix "$PWD/tally-install" ./tally-agents-0.2.0.tgz
-export PATH="$PWD/tally-install/bin:$PATH"
-tally demo
-tally dashboard --port 0
-```
-
-No checkout, manual build or `tally init` is needed for the demo.
-
-### First Run On Your Own Repo
-
-Check the prerequisites for a real run above first. Then, from the root of the
-repository you want Tally to work on:
-
-1. **Label the issues Tally should take.** Tally reads open issues that carry
-   one label (`tally` unless you choose another). The label must exist and be
-   on at least one open issue:
-
-   ```bash
-   gh label create tally --description "Work for Tally"
-   gh issue edit 12 --add-label tally
-   gh issue list --label tally --state open
-   ```
-
-   The last command is the query Tally makes. If it prints nothing, Tally has
-   no tasks to work on.
-2. **`tally init`** asks for a budget and the issue label, shows the
-   short configuration summary and the AO changes it would make, and applies
-   nothing until you confirm. Type the label exactly as it is on GitHub.
-3. **`tally doctor`** prints one line per integration: connected, missing or
-   broken, with the fix.
-4. **`tally run --plan`** lists the tasks it found and the model each would go
-   to. It starts no workers and spends nothing. Check the task count here
-   before going further.
-5. **`tally run`** starts real workers through the configured AO or direct runner. It spends against your
-   agent accounts and can push branches and open pull requests on the
-   repository.
-6. **`tally dashboard`**, in a second terminal in the same directory, prints a
-   local URL showing the run as it happens.
-
-More on `tally init`: neatlogs, Entire and cfo.ai are separate opt-in prompts,
-defaulting to No. When both coding CLIs are available, a numbered menu defaults
-to Codex; if only one is signed in, init selects it automatically. A stopped
-or unavailable AO daemon selects the direct runner without asking. New configs
-default to one budget-checked retry on the `cheap` tier after explicit model
-access rejection; re-init preserves an existing fallback setting. Set
-`modelAccessFallbackTier` in `tally.yaml` or use
-`--model-access-fallback-tier <name>` to change it. It displays a compact proposal (full YAML with `--verbose`), install record in
-`.tally/`, AO project registration/configuration and setup hook, then asks for
-final confirmation (default No) before applying changes. Use `tally init
---dry-run` to preview without applying, or `--yes` only when you consent to
-applying detected defaults without prompts. Review model tiers, prices, tests
-and ceilings before starting workers. Claude's consented rules are installed
-locally before launch. If Neatlogs is enabled, init also installs its hooks in
-the selected agents' global settings; those hooks trace matching sessions on
-this computer, including sessions outside Tally.
-The final summary shows the permission policy for this AO project's workers.
-Uninstall restores owned project settings; it never enables bypass-permissions.
-
-Interactive init requires a terminal. Piped input exits with a plain message
-instead of waiting for answers. For scripted onboarding, pass values explicitly:
+From your repository root, with open issues carrying your chosen label:
 
 ```sh
-tally init --yes --test-command "node --check js/app.js" \
-  --setup-command "" --budget 5 --issue-label tally \
-  --neatlogs yes --entire no --cfoai yes
-```
-
-An empty setup flag means no setup. Selecting Neatlogs runs a synthetic key
-probe and installs global worker hooks for the selected coding agent(s).
-Past-run history connects automatically when its read credentials are already
-configured; otherwise Tally uses local history. Selecting cfo.ai enables its
-managed scenario guide and per-attempt reports; creating missing spend tables
-still has a separate confirmation. Entire installation, login, repository
-capture, settings publication, and mirror creation keep their own steps.
-
-Init detects test/setup commands from repository evidence and proposes tiers
-only for installed Codex or Claude Code agents. When no test command is found,
-it asks for a shell command: Tally cannot verify work without one. Blank input
-or `--yes` without either a detected command or `--test-command` fails without writing configuration
-or changing AO settings. An undetected setup command is optional and never
-guessed.
-
-AO does not need to be on your ordinary terminal's PATH. Tally resolves the
-CLI from PATH first, then `TALLY_AO_BIN`, then `repo.aoBin` in `tally.yaml`
-(relative to that file), then the macOS Agent Orchestrator app bundle under
-`/Applications` or `~/Applications`. For a custom installation:
-
-```bash
-export TALLY_AO_BIN="/Applications/Agent Orchestrator.app/Contents/Resources/daemon/ao"
 tally init
+tally run --plan
+tally run --budget 3 --dashboard
 ```
 
-Doctor and real runs use the same resolver. Init checks AO, git, GitHub auth
-and requested integrations before applying changes. An Entire opt-in requires
-Entire to be enabled in the target repo; init prints `entire enable` and stops
-if it is not, rather than installing capture hooks without consent.
+Init asks about runner, agents, verification, budget and integrations. Review
+the plan before the last command: **it starts paid workers and may push task
+branches/open PRs**. Replace `3` with your approved USD run budget. Connection
+and setup can take longer than a minute; the dashboard serves until Ctrl+C.
 
-Once confirmed, init records progress in `.tally/init-pending.json`. If an AO
-or file operation fails, it lists confirmed changes and unwritten files and
-prints the exact init command to resume. Re-running resumes only its owned,
-unchanged files; edited configs or changed AO settings are never overwritten.
-The recovery record is removed after init and doctor complete. This is a
-recoverable transaction, not an atomic transaction spanning the AO daemon and
-the filesystem: an interrupted call may require checking its outcome.
+Excerpt from a real AO run, not the simulated demo:
 
-Run `tally init` again to connect a product you skipped. It proposes an
-integration-only diff, preserves the rest of your config and AO ownership,
-and asks for confirmation (default No). `--dry-run` shows the diff without
-writing. With no proposed changes it exits cleanly. Interrupted re-init
-writes can be resumed using the command printed in the error.
-
-`tally run --dry-run` runs the same loop with simulated workers instead of
-real ones.
-
-`tally uninstall` lists the files and AO settings it owns and asks for
-confirmation before removing them. It refuses to overwrite edits made since
-init. It leaves run history, credentials and the globally installed CLI in
-place; remove that CLI separately with `npm uninstall -g tally-agents`.
-
-### Static Snapshot
-
-`tally publish --out site` writes a self-contained static dashboard,
-defaulting to real recorded runs. Select folders explicitly with
-`tally publish --out site --runs run-id-1,run-id-2`; use this for simulated demo
-data. It scans exported files for sensitive content and prints file sizes and
-the total. Serve the directory on a static HTTP host, including under a
-sub-path. This creates local files and does not deploy them.
-
-During development, `npm run tally -- <command>` runs the CLI from source.
-
-For routine validation, run:
-
-```bash
-npm test
+```text
+#21 attempt 1: passed $0.0126 https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/22
+#20 attempt 1: passed $0.0136 https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/23
+#19 attempt 1: passed $0.0150 https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/24
+finished run-20261011-190131Z: 3 tasks, 3 attempts
+summary: 3 passed, 0 failed, 0 skipped; total $0.0411 against run cap $2.00
 ```
 
-## Commands
+Try it without accounts or paid workers: `tally demo --dashboard --port 0`.
+The seven demo tasks and token usage are scripted, not real savings evidence.
 
-| Command | What it will do |
-|---|---|
-| `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`, `--plan`, `--dashboard`/`--open`. |
-| `tally experiment` | Compare baseline and Tally modes with `--dry-run --repeats N` (default 2). Paid AO experiments require explicit `--yes --budget <usd>` consent and a configured test timeout. The budget is an aggregate safety cap; baseline has no per-task ceiling. Both modes verify locally without pushing or opening PRs, run sequentially from the same pinned base, and close workers on interruption. Real comparison safety monitoring has not yet been exercised live. |
-| `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to use read-only integrations while workers stay fake. `--live` does not write CFO spend, but may send decision traces to Neatlogs. |
-| `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
-| `tally init` | Preview files and AO changes, then ask final default-No consent. `--dry-run` previews; `--yes` applies defaults without prompts. Claude workers require the consented scoped allow-list. |
-| `tally uninstall` | Confirm removal of init-owned configuration and AO settings; preserve history and credentials. |
-| `tally logo` | Replay the first-run logo animation. It plays once by itself, the first time you run bare `tally` or `tally init` in a terminal; after that bare `tally` and `--help` show a small still mark. Nothing is drawn when output is piped, in CI, on `TERM=dumb`, or for any other command. `TALLY_NO_ANIMATION=1` turns the motion off and `NO_COLOR` gives plain text. |
-| `tally doctor` | One line per integration: connected, missing or broken, with the fix. |
-| `tally login cfoai` | Sign in to cfo.ai; tokens are cached outside the repository. |
-| `tally traces drain --run <id>` | Recover only that finished run's worker traces, verify readable spans, then update saved status and worker trace ids. Use `--output <run-dir>` for a run stored elsewhere. |
-| `tally market --limit 5 --max-credits 4` | Find and qualify likely pilot companies with CrustData; checks account pricing before a bounded search. |
-| `tally market --plan --limit 10` | Free account-pricing check; prints a conservative maximum credit estimate without searching. |
-| `tally market --jobs --limit 25 --max-credits 1` | Find engineering posts with explicit coding-tool evidence; group by posting company and label hiring intent, never confirmed adoption. |
-| `tally market --replay .tally/market/latest/query.json --output /tmp/tally-market-replay` | Render the saved snapshot again with no API calls or credentials. |
-| `tally publish --out site` | Static dashboard export with a sensitive-content scan. No deployment. |
+## What Tally Does
 
-`run --dashboard` starts serving before the first task and prints the URL
-immediately. `--open` also opens that URL in the system browser. The server
-continues after the run for inspection, until Ctrl+C. Terminal output includes
-routes, worker session IDs, spend updates at most every ten seconds, attempt
-results, PR URLs and a final summary. `--budget` is a cap for this run, not a
-replacement for the monthly budget: Tally applies the lower of the run cap and
-the remaining monthly budget, including for the direct sequential runner. Plan
-and summary show both, including the amount available now and monthly source.
-When cfo.ai supplies the monthly budget, init asks only for a local fallback
-after connecting it. Worker trace IDs require correlated trace read-back;
-unverified delivery is shown as missing rather than success. See
-[Human approval points](docs/HUMAN_APPROVALS.md) for operations that still
-require explicit user consent or review.
+1. **Route:** size tasks and choose configured tiers using confidence, cost
+   and past outcomes when available.
+2. **Cap:** reserve budget and meter workers against their attempt ceilings.
+3. **Escalate:** stop capped/failed work and, when appropriate and affordable,
+   pass its branch and available checkpoint metadata to a stronger tier.
+4. **Verify:** independently run your configured repository checks.
+5. **Open a pull request:** publish verified work with a cost/evidence ledger.
+   **Tally never merges its task PRs.**
 
-### Pilot Discovery
+Both the run cap and remaining monthly budget apply. Polling/metering can
+overshoot a ceiling; this is not a provider-side hard billing limit.
 
-`tally market` finds and qualifies likely pilot companies, not adoption or market
-size. The default hypothesis is Software Development companies with 20-500
-employees. It does not infer coding-agent seats or use from headcount. An optional
-`--keyword` filters an exact phrase in the company description, which can also
-match vendors and does not prove adoption.
+## Runners and Agents
 
-Live searches require `CRUSTDATA_API_KEY` in `~/.tally/.env`. Before each single
-batch Tally checks free account pricing and prints a conservative maximum estimate
-including premium filters and returned fields. `--max-credits` (default 10)
-refuses an estimated over-cap search; it is a per-call estimate, not a server-side
-hard billing limit. No pagination, enrichment or retries occur. Use `--plan` to
-check pricing without a paid search. `--dry-run` requires cached `--replay`.
+| Runner | Execution | Agents |
+| --- | --- | --- |
+| Agent Orchestrator (`ao`) | AO manages sessions; opt into parallel workers at init or with `--parallel N` | Claude Code, Codex or configured mixed tiers |
+| Direct (`direct`) | Tally launches workers itself, one task at a time; no AO daemon needed | Claude Code or Codex, selected per tier |
 
-The output directory contains the exact `query.json`, `companies.json`, CSV and
-`report.md`: API version, query hash, retrieval timestamp, returned versus API
-match count, reported credits, and record-update dates when available. These
-dates are not publication dates. Cached replay preserves provenance and calls
-no API, even without credentials; it does not rerun the search for fresh data.
-Legacy snapshots without matching provenance must be recaptured rather than
-silently treated as new evidence.
+Install/sign in to every configured harness. Tally never silently substitutes
+one for a missing agent. Login does not prove model entitlement. Claude uses
+a scoped consented allow-list; no runner uses bypass-permissions.
+[Runner details and proofs](docs/EVIDENCE.md).
 
-Review a saved snapshot with `--replay <query.json> --review <reviews.json>`.
-Reviews are an array of `{ id, label, reason, sourceUrl, sourceDate, excerpt? }`;
-labels are `candidate`, `vendor`, `hiring intent`, `verified use`, or `rejected`.
-Use `null` for unknown source dates. Intent/use labels require a sourced excerpt;
-Tally checks the structure, not the truth of manual judgements. Without a review,
-every returned row remains an unverified candidate. JSON/CSV retain all rows;
-the short Markdown report shows at most ten. No deduplication or extrapolation
-is applied to company search.
+## Optional Integrations
 
-The stronger second stage is `--jobs`: a single batch (default 25) of engineering
-posts from the past 90 days whose descriptions mention Claude Code, Cursor,
-GitHub Copilot, Codex or AI coding agents. It uses Job Search, with no premium
-company filters. Ambiguous Cursor/Codex mentions need nearby AI/coding context;
-rows missing title, company identity, source URL or date are dropped. Accepted
-rows are grouped by normalized domain (or company id) and labelled hiring intent.
-That is evidence in a job advertisement, not a verified deployment, current open
-role, buyer or purchase commitment. Posting entities can be staffing companies;
-cross-posts under different domains are not assumed to be the same buyer.
-Dates are the API's `metadata.date_added`, not independently verified publication
-dates. JSON retains grouped job evidence and CSV includes title/excerpt.
+| Product | Adds | When Off or Unavailable |
+| --- | --- | --- |
+| neatlogs | Decision/worker traces, read-back evidence, cost/pass-rate history and learned caps keyed by size and actual model | No Tally decision export when off; local history, then explicit priors/config caps. Previously installed global hooks may still trace sessions. |
+| Entire | Graph sizing, checkpoints, past-failure recall and metadata-only handoff | Repository search sizes tasks; no Entire checkpoints/hosted recall promised. No symbol matches falls back without calling a working graph disconnected. |
+| cfo.ai | Monthly budget read, reconciled real spend and workspace-shared per-attempt Ari reports when enabled | Local budget/ledger; failed writes retain `cfoai-spend-fallback.csv` for reconciliation. |
 
-Use `--jobs --secondary <saved-company-query.json>` to include a previously
-reviewed firmographic snapshot as a secondary table without re-fetching it.
-The job snapshot embeds that secondary evidence, so `--replay <job-query.json>`
-later renders both tables with no API calls. Query match counts remain database
-counts, never adoption or market size.
+Credentials stay in their login tools or `~/.tally/`, not the repository.
+A stored trace ID does not itself prove delivery.
 
-## Routing Evidence
+## Evidence, Not Promises
 
-See the [Tally business plan](docs/BUSINESS_PLAN.md) for share-of-savings pricing,
-the measured three-task comparison, explicitly labelled unit-economics and
-pilot-funnel assumptions, cfo.ai usage and the remaining commercial risks.
+| Matched Three-Task Pass | Estimated Cost | Final Tasks Passing |
+| --- | ---: | ---: |
+| Every task on the top tier | $1.22 | 3/3 |
+| Tally v1, built-in priors | $0.31 | 3/3 |
+| Tally v2, history enabled | $0.43 | 3/3 |
 
-From a source checkout, build and analyze an audited list of real run directories:
+**Three tasks, one run each per pass**, same initial commit, list-price token
+estimates rather than invoices: about 75% and 65% cheaper on that sample. Each
+pass also had three separately recorded startup retries. Only C's large task
+used observed history; no tier/cap changed. C cost more than B: this does not
+prove history improved on priors or guarantee savings on another workload.
 
-```sh
-npm run build
-node scripts/routing-evidence.mjs --manifest runs.json --out /tmp/routing-evidence
-```
+- **Cap and escalation:** [fly-doom-jev PR #17](https://github.com/Vaibhaav-Tiwari/fly-doom-jev/pull/17),
+  `run-20261012-100856Z`: cheap stopped at $0.018 (metered $0.01956), middle
+  passed at $0.16958; the failure classification was ledger-derived.
+- **Parallel AO:** the three overlapping workers above cost $0.04111932.
+  The 0.2.1 sanity run also produced
+  [PR #35](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/35) and
+  [PR #36](https://github.com/Vaibhaav-Tiwari/chip-design-groundup/pull/36),
+  2/2 passing at $0.02483996 with reconciled spend/read-back traces.
+- **Live learned ceiling:** [Othello PR #5](https://github.com/Vaibhaav-Tiwari/Othello/pull/5),
+  `run-20261012-153240Z`: six successful small/luna observations from neatlogs
+  set a P90 x 1.5 cap of **$0.02284986**, below the configured $0.30; passed
+  at $0.01816744.
+- **Learned cap caused escalation:** in self-host run `run-20261012-162757Z`,
+  tasks #155/#157 stopped at a learned **$0.02725116** cap (metered $0.02817828
+  and $0.02770580). Middle/terra passed on each same branch at $0.19549280
+  and $0.38153360: [PR #163](https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/163)
+  and [PR #162](https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/162).
+  Both assessments are `ceiling`, source `ledger`, because worker traces were
+  unreadable then; not trace-derived failure diagnoses.
+- **Four paths:** individual real PRs exist for Claude and Codex through AO
+  and directly. [Full evidence and reference](docs/EVIDENCE.md).
 
-`runs.json` is a JSON array of paths containing `run.json` and `ledger.json`.
-The script writes a Markdown report, task CSV, JSON provenance and three SVG
-charts. It excludes simulations and active runs, keeps skipped/interrupted
-outcomes in the denominator, and labels missing historical signals as missing.
-Unattributed historical decisions are not silently assigned to prior or
-trace-driven cohorts. Correlations are descriptive, not cost predictions.
+These later user runs demonstrate learned caps, not a new controlled savings
+comparison. Caps require five successful samples per size/tier/model, never
+exceed config, and revert to config when insufficient data exists.
 
-Add `--live-traces` for bounded read-only neatlogs verification using Tally's
-read token and project id. Without that flag it only replays the output folder's
-cached `trace-readback.json`, making no API call. Optional `--issues issues.json`
-accepts a URL-keyed map of current issue titles/bodies for historical runs;
-these are labelled current text, not run-start snapshots. No paid workers or
-cfo.ai writes are performed. Before/after savings require matched measured
-tasks; missing baseline or v2 cohorts are reported as **not measured**.
+## Consent and Data Sharing
 
-For the matched three-pass experiment, add `--comparison-dir <folder>`.
-The folder contains `mentor-comparison-plan-signals.json` and, when results
-arrive, `comparison-passes.json`: an object mapping `A`, `B`, `C` to arrays of
-real run-directory paths (absolute or relative to that folder). A is top-tier
-baseline, B is Tally v1/priors, C is Tally v2/trace history. Missing passes stay
-pending. The report joins signals only at the exact pinned base SHA and task
-text, reports cost/verdict/attempts per task and per pass, and charts sizing
-against real costs with per-pass correlations. A pass C label does not itself
-prove that history influenced every route or that any cap was learned.
-Use `--comparison-passes <json>` to keep the labelled path manifest elsewhere
-without changing the measured signals folder.
+Review init's proposal. Integration setup can change external systems before
+the final config write. [Approval details](docs/HUMAN_APPROVALS.md).
 
-## Layout
+- **Claude:** approve scoped file edits, git add/commit/status/diff and exact
+  external test/setup scripts. Missing/stale consent blocks launch; no broad Bash.
+- **Entire:** capture changes listed settings/local hooks. Publishing them to
+  the default branch requires separate confirmation. Trust agent hooks yourself;
+  hosted mirroring is another choice, generated summaries are off by default.
+- **neatlogs:** key verification sends a synthetic probe; enabled tracing sends
+  decisions. Optional machine-wide hooks can trace agent sessions outside Tally.
+- **cfo.ai:** fresh init asks for budget, spend and Ari context, and adds a
+  managed guide to the chosen page. Real attempts
+  write spend and, when enabled, organization-memory reports with task/title/IDs,
+  model/tokens/cost/decision/outcome, budgets and evidence URLs. They exclude
+  issue bodies, source/diffs, prompts/transcripts and raw spans. Re-init currently
+  uses a generic enable question: inspect its reporting disclosure/proposal.
+- **PR evidence:** available Entire/neatlogs/cfo.ai links are appended to task
+  PR bodies. There is **no separate init question for finance-URL sharing**.
+  Links do not grant access, but PR readers can see their addresses.
 
-Routing history is isolated by task size, tier name and actual model id. Changing
-a tier's model does not reuse the old model's pass rate or learned cap. Legacy
-history without an explicit model remains available for audit but is excluded
-from model-specific decisions; these fall back to the prior/configured cap
-until enough new matching observations exist. History trace names include the
-model id so the public neatlogs read API can identify it without hidden attributes.
+Never paste keys into YAML, issues, PRs or diagnostics. Free-text labels and
+result notes still need care; sanitization is not a complete privacy guarantee.
+Dry runs never write simulated spend/Ari reports, but can export decision
+traces when neatlogs is enabled.
 
-Experiment summaries are atomically updated after each completed run at
-`.tally/runs/experiments/<experimentId>/summary.json`. The dashboard server lists
-them in `/runs/index.json` under `experiments`. Each underlying run retains its
-own folder, `mode`, and `repeat`. Simulated cost remains labeled as simulated.
-The aggregate watcher polls once a second; reported final cost can exceed the
-stop threshold due to polling or metering lag and is never clipped to the cap.
+## Known Limits
 
-| Folder | Holds |
-|---|---|
-| `schema/` | The contract every part reads: TypeScript types, JSON Schema, validators, and a sample finished run in `schema/fixtures/finished-run/`. |
-| `engine/` | The run loop, run state and ledger. |
-| `adapters/` | One thin module per outside tool (Agent Orchestrator, Entire, neatlogs, cfo.ai, GitHub). |
-| `agent/` | The CFO agent: sizing, routing, ceilings, escalation. |
-| `cli/` | The `tally` command. |
-| `dashboard/` | Static page that reads the ledger and run state. |
-| `demo/` | Sample backlog and scripted outcomes for `tally demo`. |
+- Early product; verification is only as strong as your configured checks.
+- Never run two Tally processes against one cfo.ai page: cross-process spend
+  writes are not atomic and can overwrite one another.
+- Mixed AO permission switching is locked only within one Tally process.
+  Direct escalation and no-account onboarding need broader live validation.
+- Direct processes cannot be reattached after exit. Codex metering uses an
+  internal rollout format; missing metering stops the worker.
+- Model access, trace delivery and hosted recall are separate evidence checks.
+- 0.1.0 configs load sequentially unchanged; new config fields do not work on
+  0.1.0. Built runtime supports Node 20; source tests need a Vitest-supported
+  runtime (22.12+ on Node 22).
 
-## Configuration
+## For AI Agents
 
-With neatlogs on, Tally drains the completed Codex worker's hook spool from
-its own process, outside the worker sandbox. It uses the official package's
-spool API (there is no flush CLI), matching native session IDs or the worktree
-path. Only successfully delivered batches are acknowledged; failed,
-unrelated and malformed batches remain queued. A locked or incomplete drain
-is reported as missing worker trace delivery. After all workers exit, Tally
-retries once when a worker drain reported lock contention and verifies the
-result with Neatlogs before updating the final run status. If delivery remains
-unverified, the run keeps the batches and shows `tally traces drain --run <id>`
-for recovery. Dry runs do not drain workers.
+Read [the self-contained agent guide](docs/AGENT_GUIDE.md) before using Tally
+on a person's repository: human choices, verified flags, plan/state/ledger
+interpretation and failure handling. It ships with npm; [llms.txt](llms.txt)
+provides discovery links.
 
-With `integrations.entire: true`, enable Entire in the target repository and
-review and trust its hooks in the coding agent before starting workers. Tally records
-the task commit's `Entire-Checkpoint` trailer and its native `entireSessionId`
-separately from the AO `sessionId`. Logs-only checkpoints retain conversation
-context; escalation defaults to a metadata-only handoff containing the
-checkpoint/session IDs, branch, recorded and changed files, attempt verdict,
-and task text. It does not generate a summary or export a transcript.
-`entire.generatedSummaries: true` explicitly opts into Entire's summary
-provider (`checkpoint explain --generate`), which may export session content;
-this setting is off by default and requires the user's approval.
-When Tally publishes a verified branch, it also pushes the checkpoint refs
-named by its new commits to `origin` and to an `entire` remote when configured.
-Checkpoint upload failures are reported as publishing failures. Dry runs do
-not publish branches or checkpoints.
+## More
 
-Entire checkpoint records live in separate Git refs, not on the task branch.
-Tally keeps the checkpoint ID and native session ID, and attaches a clickable
-Entire session link only when the Entire CLI confirms that the GitHub repo has
-a ready mirror. The link opens the session that contains the checkpoint; a
-reviewer still needs access to that repo in Entire. Without a ready mirror,
-Tally keeps the checkpoint ID available in the local ledger rather than adding
-a link that may not open.
+- [Getting started](docs/GETTING_STARTED.md)
+- [Business plan and labelled assumptions](docs/BUSINESS_PLAN.md)
+- [Detailed evidence and operational reference](docs/EVIDENCE.md)
+- [Website](https://tally-agents-pi.vercel.app/)
+- [npm](https://www.npmjs.com/package/tally-agents)
 
-After each run has completed its Neatlogs read-back, Tally adds an evidence
-section to the generated PR body when links are available: Entire session and
-checkpoint, Neatlogs routing and worker traces, and the configured cfo.ai
-budget and spend tables. Worker trace links are added only after Tally verifies
-their read-back. These dashboard links use the viewer's existing account
-access; Tally does not publish public trace shares.
+GitHub alternative: `npm install -g github:Vaibhaav-Tiwari/neatlogs-hack#release`.
+The release branch is prebuilt; main is source-only.
 
-Tally assumes nothing about the repository it works on. The repository, test
-command, model tiers, list prices, ceilings and budget all come from
-`tally.yaml` (a tier is a name, harness, model id, provider, list price and ceiling share); see `schema/fixtures/finished-run/tally.yaml` for a complete
-example and `schema/tally-config.schema.json` for the rules.
+## Licence
 
-Money in the ledger and run state is stored as integer nanos of USD
-(1 USD = 1,000,000,000). List-price estimates multiply aggregate tokens by the
-configured rates in `tally.yaml`; they are normalized estimates, not invoices.
-New ledger rows snapshot those rates in `price` and record their source and
-verification status in `priceNote`. Unknown models/providers or rates that
-disagree with the verified snapshot are labelled unverified. Operator-supplied
-`tiers[].priceNote` is retained as a config note, not independently verified.
-
-### Codex Tier Prices
-
-Official base text rates checked 2026-10-11, USD per million tokens:
-
-| Model | Input | Cached Input | Output | Source |
-|---|---:|---:|---:|---|
-| gpt-5.6-luna | 0.20 | 0.02 | 1.20 | [OpenAI](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
-| gpt-5.6-terra | 2.00 | 0.20 | 12.00 | [OpenAI](https://developers.openai.com/api/docs/models/gpt-5.6-terra) |
-| gpt-5.6-sol | 4.00 | 0.40 | 20.00 | [OpenAI](https://developers.openai.com/api/docs/models/gpt-5.6-sol) |
-
-```yaml
-tiers:
-  - { name: cheap, harness: codex, sessionMode: tui, provider: openai, model: gpt-5.6-luna, price: { inputUsdPerMTok: 0.2, cachedInputUsdPerMTok: 0.02, outputUsdPerMTok: 1.2 }, ceilingFraction: 0.2 }
-  - { name: middle, harness: codex, sessionMode: tui, provider: openai, model: gpt-5.6-terra, price: { inputUsdPerMTok: 2, cachedInputUsdPerMTok: 0.2, outputUsdPerMTok: 12 }, ceilingFraction: 0.5 }
-  - { name: top, harness: codex, sessionMode: tui, provider: openai, model: gpt-5.6-sol, price: { inputUsdPerMTok: 4, cachedInputUsdPerMTok: 0.4, outputUsdPerMTok: 20 }, ceilingFraction: 1 }
-```
-
-Per-request prompts above 272K input tokens have input/output uplifts;
-cache writes also have an uplift. AO's aggregate token buckets cannot resolve
-these adjustments. Sol's published promotional rates last at least through
-2026-11-21; recheck before subsequent runs. Historical costs are not repriced.
-
-For dry runs, set `backlog.source: file` and point `backlog.file` at YAML like:
-
-```yaml
-tasks:
-  - id: T1
-    title: Add validation for empty player name
-    size: small
-    outcomes: [passed]
-  - id: T2
-    title: Persist settings after restart
-    size: medium
-    outcomes: [stopped, passed]
-```
-
-`outcomes` is optional and defaults to one passed simulated attempt.
-
-The latest run is also mirrored to `.tally/runs/latest/run.json` and
-`.tally/runs/latest/ledger.json` so the dashboard has one stable path to poll.
-
-## Secrets
-
-Keys live in `~/.tally/.env`, outside every repository, and are loaded from
-there. Never put them in this repo; `.env` files are git-ignored.
+[MIT](LICENSE).

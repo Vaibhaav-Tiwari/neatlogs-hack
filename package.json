@@ -32,6 +32,8 @@
     "demo/tally.yaml",
     "demo/tally.live.yaml",
     "docs/",
+    "docs/AGENT_GUIDE.md",
+    "llms.txt",
     "schema/*.schema.json",
     "schema/fixtures/finished-run/run.json",
     "schema/fixtures/finished-run/ledger.json",
@@ -40,6 +42,7 @@
     "LICENSE",
     "!**/*.test.*",
     "!dist/**/testing/**",
+    "!docs/assets/**",
     "!dashboard/.gitkeep"
   ],
   "bin": {
