@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4RDCCNS0R90173M66CFB8M7",
+  "session_id": "01a125af-3ac6-7c02-a43b-a467b6fc3d3a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-12T15:58:34.363157Z",
+  "branch": "ao/neatlogs-hack-2/entire-empty-graph-status",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "adapters/entire.test.ts",
+    "adapters/entire.ts",
+    "agent/ports.ts",
+    "agent/sizer.ts",
+    "cli/main.ts",
+    "dashboard/integration-view.js",
+    "dashboard/integration-view.test.mjs",
+    "engine/plan.test.ts",
+    "engine/plan.ts",
+    "engine/real.test.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "8b3ac6b67119",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 8754692,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 393096960,
+    "output_tokens": 1163744,
+    "api_call_count": 2795
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-12T15:58:33.086181Z",
+    "agent_lines": 420,
+    "agent_removed": 45,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 420,
+    "total_lines_changed": 465,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
