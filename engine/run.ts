@@ -31,6 +31,8 @@ export interface RunOptions {
   runId?: string;
   repeat?: number;
   stopRequested?: () => string | null;
+  /** Experiments verify local commits without pushing branches or opening PRs. */
+  publish?: boolean;
   onEvent?: (event: RunProgress) => void;
 }
 

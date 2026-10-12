@@ -102,6 +102,42 @@ describe('experiment', () => {
   }, 5000);
 
   it('gates real execution before reading configuration or spawning', async () => {
-    await expect(runExperiment({ configPath: '/missing', dryRun: false, budgetUsd: 10 })).rejects.toThrow('real experiments are parked');
+    await expect(runExperiment({ configPath: '/missing', dryRun: false, budgetUsd: 10 })).rejects.toThrow('use --yes');
+    await expect(runExperiment({ configPath: '/missing', dryRun: false, allowReal: true })).rejects.toThrow('explicit aggregate --budget');
+  });
+
+  it('announces each run before its first worker and disables publishing in both modes', async () => {
+    const runsDir = mkdtempSync(join(tmpdir(), 'tally-experiment-announced-'));
+    const ports = createDryRunPorts({ config: loadConfig(configPath), configPath });
+    const worker = ports.worker!;
+    const announced: string[] = [];
+    let publishes = 0;
+    ports.publisher = { ...ports.publisher!, publishPr: async () => { publishes += 1; throw new Error('experiment must never publish'); } };
+    ports.worker = { start: async input => {
+      expect(announced.at(-1)).toBe(input.name.includes('-baseline-') ? 'baseline' : 'tally');
+      expect(input.prompt).toContain('do not push or open a PR');
+      return worker.start(input);
+    }, wait: (id, options) => worker.wait(id, options) };
+    const result = await runExperiment({ configPath, dryRun: true, repeats: 1, budgetUsd: 400, runsDir, now, baseCommit, ports,
+      beforeRun: async run => { announced.push(run.mode); expect(run.outputDir).toContain(run.runId); } });
+    expect(announced).toEqual(['baseline', 'tally']);
+    expect(publishes).toBe(0);
+    for (const mode of Object.values(result.summary.modes)) {
+      const ledger = JSON.parse(readFileSync(join(runsDir, mode.runs[0]!.runId, 'ledger.json'), 'utf8'));
+      expect(ledger.every((row: { prUrl: string | null }) => row.prUrl === null)).toBe(true);
+    }
+  }, 5000);
+
+  it('honors interruption between modes without starting another worker', async () => {
+    const runsDir = mkdtempSync(join(tmpdir(), 'tally-experiment-interrupt-'));
+    let stopped = false;
+    const result = await runExperiment({ configPath, dryRun: true, repeats: 2, budgetUsd: 400, runsDir, now, baseCommit,
+      stopRequested: () => stopped ? 'stopped: experiment interrupted' : null,
+      beforeRun: async () => { stopped = true; } });
+    expect(result.summary.status).toBe('stopped');
+    expect(result.summary.reason).toBe('stopped: experiment interrupted');
+    expect(result.summary.modes.baseline.runs).toHaveLength(1);
+    expect(result.summary.modes.baseline.runs[0]?.attempts).toBe(0);
+    expect(result.summary.modes.tally.runs).toEqual([]);
   });
 });

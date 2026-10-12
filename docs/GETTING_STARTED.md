@@ -329,7 +329,7 @@ Never paste credentials into issue bodies, configs or diagnostic reports. Tally 
 - AO same-branch stop/escalation has real evidence; direct implementations have fake-port coverage but not equivalent live escalation proof.
 - Direct live metering depends on harness event timing; Codex's rollout JSONL is an internal format that may change. Missing metering stops the worker. A direct process cannot be reattached after Tally exits.
 - Past-failure recall needs hosted repository mirroring/access. Entire capture and Graph availability do not establish it, and Brain is not part of the current Tally integration.
-- Real experiment execution is gated. Do not treat `tally demo` or an experiment dry run as evidence of real savings for your repository.
+- Paid AO experiments require explicit `--yes --budget <usd>` consent and a test timeout; they verify without pushing or opening PRs. Real comparison safety monitoring is not yet proven. Do not treat `tally demo` or an experiment dry run as evidence of real savings for your repository.
 
 ## Uninstall
 

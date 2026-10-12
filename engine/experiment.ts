@@ -12,7 +12,7 @@ import { nanosToUsd, usdToNanos } from '../schema/money.js';
 import { loadConfig } from './config.js';
 import { createDryRunPorts } from './dry-run.js';
 import type { FinalUsagePort, RealRunPorts, WorkerPort, WorkerResult, WorkerStartInput } from './real.js';
-import { RunError, runTally, type RunResult } from './run.js';
+import { RunError, runTally, type RunOptions, type RunResult } from './run.js';
 import { writeRunFiles } from './output.js';
 
 const execFileAsync = promisify(execFile);
@@ -158,13 +158,19 @@ export interface ExperimentOptions {
   configPath: string; dryRun: boolean; repeats?: number; budgetUsd?: number; only?: string;
   runsDir?: string; now?: () => Date; baseCommit?: string;
   ports?: Partial<RealRunPorts>;
+  allowReal?: boolean;
+  onEvent?: RunOptions['onEvent'];
+  beforeRun?: (run: { runId: string; mode: RunMode; repeat: number; outputDir: string }) => Promise<void>;
+  stopRequested?: () => string | null;
 }
 export async function runExperiment(options: ExperimentOptions): Promise<{ summary: ExperimentSummary; summaryPath: string }> {
-  if (!options.dryRun) throw new RunError(['real experiments are parked; use --dry-run until real execution is explicitly enabled']);
+  if (!options.dryRun && !options.allowReal) throw new RunError(['real experiments start paid workers; use --yes with an explicit --budget to approve, or --dry-run']);
+  if (!options.dryRun && options.budgetUsd === undefined) throw new RunError(['real experiments require an explicit aggregate --budget']);
   const repeats = options.repeats ?? 2;
   if (!Number.isInteger(repeats) || repeats < 1) throw new RunError(['--repeats must be a positive integer']);
   const configPath = resolve(options.configPath);
   const config = loadConfig(configPath);
+  if (!options.dryRun && (config.runner ?? 'ao') !== 'ao') throw new RunError(['real experiments currently require runner: ao']);
   if (!options.dryRun && !config.test.timeoutSec) throw new RunError(['real experiments require test.timeoutSec for a bounded wall-clock wait']);
   const repoPath = resolve(dirname(configPath), config.repo.path);
   let baseCommit = options.baseCommit;
@@ -195,7 +201,8 @@ export async function runExperiment(options: ExperimentOptions): Promise<{ summa
   try {
     for (let repeat = 1; repeat <= repeats; repeat += 1) {
       for (const mode of ['baseline', 'tally'] as const) {
-        if (summary.budget.spentNanos >= capNanos) { summary.status = 'stopped'; summary.reason = EXPERIMENT_CAP_REASON; break; }
+        const interrupted = options.stopRequested?.();
+        if (interrupted || summary.budget.spentNanos >= capNanos) { summary.status = 'stopped'; summary.reason = interrupted ?? EXPERIMENT_CAP_REASON; break; }
         const defaults = options.dryRun ? { ...createDryRunPorts({ config, configPath }),
           worktrees: { commitFor: async () => baseCommit, checkoutPathFor: async () => null } } : (() => {
           const ao = new AoCliAdapter({ cwd: repoPath, project: config.repo.aoProject, requiredBaseCommit: baseCommit });
@@ -206,11 +213,13 @@ export async function runExperiment(options: ExperimentOptions): Promise<{ summa
         const runId = `run-${stamp}-${mode}-${repeat}`;
         const outputDir = join(runsDir, runId);
         if (existsSync(outputDir)) throw new RunError([`experiment run directory already exists: ${outputDir}`]);
+        await options.beforeRun?.({ runId, mode, repeat, outputDir });
         let result: RunResult;
         try {
           result = await runTally({ configPath, dryRun: options.dryRun, baseline: mode === 'baseline',
             budgetUsd: nanosToUsd(capNanos - summary.budget.spentNanos), outputDir, latestRunDir: join(runsDir, 'latest'), now, runId, repeat, requiredBaseCommit: baseCommit,
-            stopRequested: () => guarded.stopReason(), ports: { ...ports, intake: { tasks: async () => structuredClone(tasks) }, worker: guarded, usage: guarded, sessions: guarded } });
+            publish: false, parallel: 1, onEvent: options.onEvent,
+            stopRequested: () => options.stopRequested?.() ?? guarded.stopReason(), ports: { ...ports, intake: { tasks: async () => structuredClone(tasks) }, worker: guarded, usage: guarded, sessions: guarded } });
         } catch (error) {
           await guarded.closeAll('experiment run failed');
           const runPath = join(outputDir, 'run.json');
@@ -226,7 +235,8 @@ export async function runExperiment(options: ExperimentOptions): Promise<{ summa
           throw error;
         }
         updateExperimentSummary(summary, result, repeat);
-        if (guarded.stopReason()) { summary.status = 'stopped'; summary.reason = guarded.stopReason()!; }
+        const stopReason = options.stopRequested?.() ?? guarded.stopReason();
+        if (stopReason) { summary.status = 'stopped'; summary.reason = stopReason; }
         writeExperimentSummary(summaryPath, summary);
         if (summary.status === 'stopped') break;
       }
