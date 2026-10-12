@@ -148,8 +148,8 @@
   <div class="wrap">
     <p class="eyebrow">The ledger</p>
     <h2 id="ledger-title">Every attempt, <em>written down</em></h2>
-    <p class="body">The dashboard is a read-only page over two files Tally writes as it works. This is the same run: the budget, the decision in one sentence, and the attempt with its tokens, cost and trace ids.</p>
-    <figure class="frame shot reveal"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>tally dashboard</span></div><img src="shots/dashboard-budget.png" alt="Tally dashboard for the real run: cost per passed task one cent, one cent spent of a one dollar cap, neatlogs and cfo.ai on, Entire off" width="1360" height="640" loading="lazy"></figure>
+    <p class="body">The dashboard is a read-only page over two files Tally writes as it works. Here Tally is working on its own repository: run <code>run-20261012-211342Z</code> spent $1.05 against a $15.00 cap, with 3 of 5 tasks passing. Task #171 stopped on cheap, continued on middle and passed, producing <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/173">pull request #173</a>.</p>
+    <figure class="frame shot reveal"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>tally dashboard · self-host run</span></div><img src="shots/selfhost-budget.png" alt="Tally self-host dashboard: 3 of 5 tasks passed, $1.05 spent against a $15 cap, $0.35 per passed task" width="2932" height="1104" loading="lazy"></figure>
   </div>
 </section>
 
@@ -283,9 +283,10 @@
         </div>
       </div>
       <div class="thumbs">
-        <figure class="thumb"><a href="shots/dashboard-budget.png"><span class="tag">A1</span><img src="shots/dashboard-budget.png" alt="Tally dashboard for the real run: one cent spent of a one dollar cap, neatlogs and cfo.ai on" width="1360" height="640" loading="lazy"></a><figcaption>Dashboard of the PR #18 run: $0.01 of a $1.00 cap</figcaption></figure>
-        <figure class="thumb"><a href="shots/dashboard-decision.png"><span class="tag">A2</span><img src="shots/dashboard-decision.png" alt="The ledger entry for issue 17 with the routing decision in a sentence and the code graph" width="1360" height="740" loading="lazy"></a><figcaption>The decision in one sentence, and the code graph</figcaption></figure>
-        <figure class="thumb"><a href="shots/dashboard-attempt.png"><span class="tag">A3</span><img src="shots/dashboard-attempt.png" alt="The attempt row: model, tokens, cost, ceiling, result, pull request and trace ids" width="1360" height="330" loading="lazy"></a><figcaption>The attempt row: tokens, cost, ceiling, traces</figcaption></figure>
+        <figure class="thumb"><a href="shots/selfhost-budget.png"><span class="tag">A1</span><img src="shots/selfhost-budget.png" alt="Self-host run budget: $1.05 spent of $15, with 3 of 5 tasks passed" width="2932" height="1104" loading="lazy"></a><figcaption>Self-host run: $1.05 of $15.00; 3 of 5 tasks passed</figcaption></figure>
+        <figure class="thumb"><a href="shots/selfhost-integrations.png"><span class="tag">A2</span><img src="shots/selfhost-integrations.png" alt="Integration status and task #172 skipped because its reservation did not fit; neatlogs notes a worker trace still indexing" width="2912" height="1232" loading="lazy"></a><figcaption>Connected integrations, pending trace detail and a budget-protected skip</figcaption></figure>
+        <figure class="thumb"><a href="shots/selfhost-escalation.png"><span class="tag">A3</span><img src="shots/selfhost-escalation.png" alt="Task #171 stopped at its learned cheap ceiling and passed after escalation to middle, with both attempt rows shown" width="2922" height="1520" loading="lazy"></a><figcaption>#171: cheap stopped at $0.02725; middle passed. <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/173">PR #173</a></figcaption></figure>
+        <figure class="thumb"><a href="shots/selfhost-graph.png"><span class="tag">A4</span><img src="shots/selfhost-graph.png" alt="Entire graph for task #171: one target file, 70 dependents and tests; edited target and test marked against predicted files" width="2886" height="1570" loading="lazy"></a><figcaption>Entire graph: predicted impact against actual target and test edits</figcaption></figure>
       </div>
       <details><summary>Show details</summary>
         <ul class="plain">
