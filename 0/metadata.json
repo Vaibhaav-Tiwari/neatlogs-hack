@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4QSBE7Q9TQ3HV6CYX6MQBX7",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-12T10:08:29.498721Z",
+  "branch": "ao/neatlogs-hack-5/routing-evidence",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "README.md",
+    "agent/evidence.test.ts",
+    "agent/evidence.ts",
+    "scripts/routing-evidence.mjs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "abfcec08179b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5878251,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 221255936,
+    "output_tokens": 752364,
+    "api_call_count": 1660
+  },
+  "session_metrics": {
+    "turn_count": 25
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-12T10:08:28.888033Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 350,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 350,
+    "total_lines_changed": 350,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
