@@ -49,6 +49,7 @@ export function comparisonEvidence(input: unknown, runs: ComparisonRun[]) {
     if (typeof item.taskId !== 'string' || !item.taskId || ids.has(item.taskId)) throw new Error('Invalid or duplicate comparison taskId');
     ids.add(item.taskId);
     if (!['small', 'medium', 'large'].includes(String(estimate.size))) throw new Error('Invalid comparison task size');
+    if (typeof impact.query !== 'string' || !impact.query.trim()) throw new Error('Comparison plan needs the measured task query');
     return {
       taskId: item.taskId, title: typeof item.title === 'string' ? item.title : item.taskId, size: estimate.size as TaskSize,
       filesTouched: count(signals.filesTouched, 'filesTouched'),

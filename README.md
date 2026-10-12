@@ -424,6 +424,8 @@ pending. The report joins signals only at the exact pinned base SHA and task
 text, reports cost/verdict/attempts per task and per pass, and charts sizing
 against real costs with per-pass correlations. A pass C label does not itself
 prove that history influenced every route or that any cap was learned.
+Use `--comparison-passes <json>` to keep the labelled path manifest elsewhere
+without changing the measured signals folder.
 
 ## Layout
 

@@ -6,6 +6,7 @@ export interface TaskEvidence {
   repo: string;
   taskId: string;
   cohort: RoutingCohort;
+  decision: string | null;
   costNanos: number;
   passed: boolean;
   errored: boolean;
@@ -91,7 +92,7 @@ export function taskEvidence(run: RunState, ledger: LedgerRow[], source: string,
     const query = task.impact?.query || (issue ? `${issue.title}\n${issue.body}` : null);
     const files = query?.match(/\b(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]+\b/g);
     result.push({
-      runId: run.runId, repo: run.repo, taskId: task.taskId, cohort: cohort(run, first),
+      runId: run.runId, repo: run.repo, taskId: task.taskId, cohort: cohort(run, first), decision: first?.decision ?? null,
       costNanos: rows.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
       passed: last?.result === 'passed', errored: last?.result === 'error', skipped, attempts: attempts.length,
       size: task.size, graphNodes: task.impact?.source === 'entire-graph' ? task.impact.totals.nodes : null,

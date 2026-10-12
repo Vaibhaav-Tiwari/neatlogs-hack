@@ -22,8 +22,9 @@ const passAssignments = new Map();
 if (comparisonDir) {
   plan = JSON.parse(await readFile(join(comparisonDir, 'mentor-comparison-plan-signals.json'), 'utf8'));
   let passes = {};
-  try { passes = JSON.parse(await readFile(join(comparisonDir, 'comparison-passes.json'), 'utf8')); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const passFile = option('--comparison-passes') ? resolve(option('--comparison-passes')) : join(comparisonDir, 'comparison-passes.json');
+  try { passes = JSON.parse(await readFile(passFile, 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT' || option('--comparison-passes')) throw error; }
   if (!passes || typeof passes !== 'object' || Array.isArray(passes)) throw new Error('comparison-passes.json must be an A/B/C object');
   for (const [pass, paths] of Object.entries(passes)) {
     if (!['A', 'B', 'C'].includes(pass) || !Array.isArray(paths) || paths.some(path => typeof path !== 'string')) throw new Error('Comparison pass must be A/B/C with an array of run paths');
@@ -134,7 +135,7 @@ const reportData = { generatedAt: new Date().toISOString(), sources, exclusions,
     historyWindowTruncated: readback.truncated, errors: readback.errors } };
 await writeFile(join(out, 'results.json'), JSON.stringify(reportData, null, 2) + '\n');
 const csv = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
-const keys = ['runId', 'repo', 'taskId', 'cohort', 'comparisonPass', 'costNanos', 'passed', 'errored', 'skipped', 'attempts', 'size', 'graphNodes', 'filesTouched', 'issueLength', 'filesNamed', 'textSource', 'signalSource', 'models', 'source'];
+const keys = ['runId', 'repo', 'taskId', 'cohort', 'comparisonPass', 'decision', 'costNanos', 'passed', 'errored', 'skipped', 'attempts', 'size', 'graphNodes', 'filesTouched', 'issueLength', 'filesNamed', 'textSource', 'signalSource', 'models', 'source'];
 await writeFile(join(out, 'tasks.csv'), [keys.join(','), ...tasks.map(task => keys.map(key => csv(task[key])).join(','))].join('\n') + '\n');
 
 const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
