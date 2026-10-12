@@ -78,6 +78,52 @@ describe('NeatlogsWorkerTraceReader', () => {
     expect(calls).toHaveLength(3);
   });
 
+  it('retries Neatlogs HTTP 409 until the worker span projection is readable', async () => {
+    let spanReads = 0;
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 3, retryDelayMs: 0, fetch: async input => {
+      const url = String(input);
+      if (url.endsWith('/spans')) {
+        spanReads++;
+        if (spanReads === 1) return new Response('', { status: 409, headers: { 'retry-after': '0' } });
+        return json({ spans: [{ spanId: 'ready' }] });
+      }
+      return json(trace);
+    } });
+
+    await expect(reader.verifyFor({ ...context, traceId })).resolves.toBe(traceId);
+    expect(spanReads).toBe(2);
+    expect(reader.status()).toEqual({ status: 'ok', detail: null });
+  });
+
+  it('keeps Neatlogs connected when the span projection remains pending after bounded retries', async () => {
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 2, retryDelayMs: 0, fetch: async input => {
+      const url = String(input);
+      return url.endsWith('/spans') ? new Response('', { status: 409, headers: { 'retry-after': '0' } }) : json(trace);
+    } });
+
+    await expect(reader.verifyFor({ ...context, traceId })).resolves.toBeNull();
+    expect(reader.status()).toMatchObject({ status: 'ok', detail: expect.stringContaining('still indexing') });
+  });
+
+  it('retries a pending span page while collecting failure evidence', async () => {
+    let spanReads = 0;
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 2, retryDelayMs: 0, fetch: async input => {
+      const url = String(input);
+      if (url.includes('/spans')) {
+        spanReads++;
+        if (spanReads === 2) return new Response('', { status: 409, headers: { 'retry-after': '0' } });
+        return json({ spans: [{ spanId: 'failure', spanName: 'tool', status: 'ERROR' }] });
+      }
+      return json(trace);
+    } });
+
+    await expect(reader.failureFor({ ...context, traceId })).resolves.toMatchObject({
+      traceId,
+      spans: [{ id: 'failure', status: 'ERROR' }],
+    });
+    expect(spanReads).toBe(3);
+  });
+
   it.each(['session', 'run', 'task', 'attempt', 'id', 'spans', 'empty', 'detail'])('does not verify a %s mismatch or incomplete response', async fault => {
     const candidate = { ...trace, ...(fault === 'session' ? { sessionId: 'other' } : {}) };
     if (fault === 'run') candidate.workflowName = candidate.workflowName.replace('run-1', 'run-other');

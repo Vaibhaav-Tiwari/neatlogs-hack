@@ -49,6 +49,19 @@ describe('shared AO executable resolution', () => {
     expect(error).toMatchObject({ code: 3, stdout: 'verdict', stderr: 'detail' });
     expect(error.message).not.toContain('printf');
   });
+
+  it('shows sanitized Git stderr so commit and publish failures can be diagnosed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-git-error-'));
+    const path = executable(join(dir, 'git'));
+    writeFileSync(path, "#!/bin/sh\nprintf 'remote: permission denied; token=ghp_supersecret1234567890\\n' >&2\nexit 1\n");
+    chmodSync(path, 0o700);
+    const error = await runCommand('git', ['push'], { env: { PATH: dir } }).catch((failure) => failure);
+    expect(error).toBeInstanceOf(CommandError);
+    expect(error.message).toContain('git push command failed');
+    expect(error.message).toContain('permission denied');
+    expect(error.message).not.toContain('ghp_supersecret1234567890');
+    expect(error.stderr).toContain('ghp_supersecret1234567890');
+  });
 });
 
 describe('Entire user-local executable resolution', () => {

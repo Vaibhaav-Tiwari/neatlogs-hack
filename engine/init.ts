@@ -13,6 +13,7 @@ import { aoWorkerMode, withWorkerPermissionMode } from './preflight.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 import { aoProjectCommand } from '../adapters/ao-project.js';
 import { configureIntegrations } from '../onboarding/index.js';
+import type { OnboardingContext } from '../onboarding/types.js';
 import { loadConfig } from './config.js';
 import { readPlanBudget } from './plan.js';
 import { formatUsd } from '../schema/money.js';
@@ -356,6 +357,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
   const pending = readReinit(configPath);
   const before = pending ? parseYaml(pending.beforeConfig) as TallyConfig : loadConfig(configPath);
   const config = pending ? parseYaml(pending.afterConfig) as TallyConfig : structuredClone(before);
+  const targetRepo = resolve(dirname(configPath), config.repo.path);
   if (!validateConfig(before).ok || !validateConfig(config).ok) throw new InitError('Re-init recovery configuration is invalid; no changes made.');
   if (!pending) {
     for (const name of ['neatlogs', 'entire', 'cfoai'] as const) {
@@ -378,6 +380,23 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
     }
     if ((config.runner ?? 'ao') === 'ao') aoWorkerMode(config);
     await consentClaude(config, options, readLine, print);
+    // Re-running init is also the repair/upgrade path for repositories that
+    // already have tally.yaml. Refresh selected integrations before comparing
+    // the proposed config so new integration settings (for example Entire's
+    // automatic commit linking or cfo.ai Ari context) are persisted too.
+    // Dry runs and --yes do not imply consent to external integration changes.
+    if (!options.dryRun && !options.yes) {
+      await (options.onboarding ?? configureIntegrations)({ config, repoRoot: targetRepo, ui: {
+        print,
+        confirm: async (question) => parseYes(await readLine(`${question} y/N`, 'N')),
+        select: async (question, choices) => {
+          choices.forEach((choice, index) => print(`${index + 1}. ${choice}`));
+          const value = (await readLine(`${question} (number, or Enter to skip)`, '')).trim();
+          const index = Number(value) - 1;
+          return /^\d+$/.test(value) && index >= 0 && index < choices.length ? index : null;
+        },
+      } } satisfies OnboardingContext);
+    }
   }
   const validation = validateConfig(config);
   if (!validation.ok) throw new InitError(`Proposed configuration is invalid: ${validation.errors.join('; ')}; nothing was changed.`);
@@ -387,7 +406,6 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
     return { ...result, applied: false, doctor: [] };
   }
   const command: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: config.repo.aoBin ? resolve(dirname(configPath), config.repo.aoBin) : undefined }));
-  const targetRepo = resolve(dirname(configPath), config.repo.path);
   await initPrerequisites(config, command, targetRepo, options);
   const plan = pending ?? prepareReinit(configPath, stringifyYaml(config));
   print(`Tally re-init proposed diff for ${configPath}:`);

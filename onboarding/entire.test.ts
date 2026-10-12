@@ -1,12 +1,20 @@
+import { mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { sampleConfig } from '../agent/testing/fakes.js';
 import { EntireOnboarding, type EntireOnboardingCommand } from './entire.js';
 import type { OnboardingContext } from './types.js';
 
 function fixture(answers: boolean[] = [true]) {
-  const cwd = '/tmp/tally-onboarding-target';
+  const cwd = mkdtempSync(join(tmpdir(), 'tally-entire-onboarding-'));
+  const entireDirectory = join(cwd, '.entire');
+  const settingsPath = join(entireDirectory, 'settings.json');
+  const localSettingsPath = join(entireDirectory, 'settings.local.json');
+  mkdirSync(entireDirectory, { recursive: true });
+  writeFileSync(settingsPath, JSON.stringify({ enabled: true, commit_linking: 'always' }, null, 2) + '\n');
   const state = { loggedIn: true, graph: true, enabled: true, agents: ['Codex'], dirty: '', generated: '', branch: 'main',
-    local: 'base-sha', remote: 'base-sha', published: true, remoteHooks: true, fail: '', loginWorks: true, pluginWorks: true,
+    local: 'base-sha', remote: 'base-sha', published: true, remoteHooks: true, settingsChanged: false, publishedCommitLinking: 'always', fail: '', loginWorks: true, pluginWorks: true,
     mirrors: [] as Array<{ repo: string; status: string; placements: Array<{ cluster: string; status: string }> }>, mirrorAdded: false };
   const calls: { file: string; args: string[]; cwd: string; interactive?: boolean }[] = [];
   const command: EntireOnboardingCommand = async (file, args, options) => {
@@ -21,7 +29,14 @@ function fixture(answers: boolean[] = [true]) {
       else if (args[0] === 'plugin') state.graph = state.pluginWorks;
       else if (args[0] === 'login') state.loggedIn = state.loginWorks;
       else if (args[0] === 'status') stdout = JSON.stringify({ enabled: state.enabled, agents: state.agents });
-      else if (args[0] === 'enable') { state.enabled = true; state.agents = [args[args.indexOf('--agent') + 1]! === 'codex' ? 'Codex' : 'Claude Code']; state.generated = '?? .entire/settings.json\n?? .codex/hooks.json'; }
+      else if (args[0] === 'enable') {
+        state.enabled = true;
+        state.agents = [args[args.indexOf('--agent') + 1]! === 'codex' ? 'Codex' : 'Claude Code'];
+        state.generated = '?? .entire/settings.json\n?? .codex/hooks.json';
+        mkdirSync(entireDirectory, { recursive: true });
+        writeFileSync(settingsPath, JSON.stringify({ enabled: true, commit_linking: 'prompt' }, null, 2) + '\n');
+        state.settingsChanged = true;
+      }
       else if (args[0] === 'agent') { state.agents.push(args[2] === 'codex' ? 'Codex' : 'Claude Code'); state.generated = ' M .codex/hooks.json'; }
       else if (args[0] === 'repo' && args[1] === 'mirror' && args[2] === 'list') stdout = JSON.stringify(state.mirrors);
       else if (args[0] === 'repo' && args[1] === 'mirror' && args[2] === 'add') state.mirrorAdded = true;
@@ -29,11 +44,26 @@ function fixture(answers: boolean[] = [true]) {
       else throw new Error(`Unexpected ${name}`);
     } else if (file === 'git') {
       if (args[0] === 'rev-parse') stdout = args[1] === '--show-toplevel' ? cwd : args[1] === 'HEAD' ? state.local : state.remote;
-      else if (args[0] === 'status') stdout = state.dirty || state.generated;
+      else if (args[0] === 'status') {
+        const scopedPaths = args.filter(arg => arg.startsWith('.'));
+        if (!scopedPaths.length || args.includes('--untracked-files=all')) stdout = state.dirty || state.generated;
+        else {
+          const generated = state.generated.split('\n').filter(Boolean).filter(line => scopedPaths.includes(line.slice(3)));
+          const settingsChanged = scopedPaths.includes('.entire/settings.json')
+            && (state.settingsChanged || JSON.parse(readFileSync(settingsPath, 'utf8')).commit_linking !== state.publishedCommitLinking);
+          stdout = [...(settingsChanged ? [' M .entire/settings.json'] : []), ...generated].filter((line, index, all) => all.indexOf(line) === index).join('\n');
+        }
+      }
+      else if (args[0] === 'ls-files') stdout = '';
       else if (args[0] === 'branch') stdout = state.branch;
       else if (args[0] === 'symbolic-ref') stdout = 'origin/main';
       else if (args[0] === 'show') stdout = args[1]!.endsWith('.entire/settings.json') ? JSON.stringify({ enabled: state.published }) : state.remoteHooks ? '{"command":"entire hooks codex SessionStart"}' : '{"hooks":{}}';
-      else if (args[0] === 'commit') { state.generated = ''; state.local = 'setup-sha'; }
+      else if (args[0] === 'commit') {
+        state.generated = '';
+        state.settingsChanged = false;
+        state.publishedCommitLinking = JSON.parse(readFileSync(settingsPath, 'utf8')).commit_linking as string;
+        state.local = 'setup-sha';
+      }
       else if (args[0] === 'push') { state.remote = state.local; state.published = true; }
       else if (args[0] !== 'add') throw new Error(`Unexpected ${name}`);
     } else throw new Error(`Unexpected ${name}`);
@@ -43,7 +73,7 @@ function fixture(answers: boolean[] = [true]) {
   config.tiers = config.tiers.map(t => ({ ...t, harness: 'codex' }));
   const context: OnboardingContext = { repoRoot: cwd, config, ui: { print: vi.fn(), confirm: vi.fn(async () => answers.shift() ?? false), select: vi.fn(async () => null) } };
   const module = new EntireOnboarding({ cwd, command });
-  return { state, calls, context, module, command };
+  return { state, calls, context, module, command, cwd, settingsPath, localSettingsPath };
 }
 const mutations = (calls: ReturnType<typeof fixture>['calls']) => calls.filter(c =>
   c.file === 'entire' && ['login', 'enable', 'agent'].includes(c.args[0]!) ||
@@ -64,6 +94,59 @@ describe('Entire onboarding', () => {
     expect(vi.mocked(f.context.ui.print).mock.calls.join('\n')).not.toContain(';');
     expect(vi.mocked(f.context.ui.confirm).mock.calls.join('\n')).toContain('Have you reviewed and trusted the Entire hooks in your coding agent for this repository?');
     expect(f.calls.every(call => call.cwd === f.context.repoRoot)).toBe(true);
+  });
+  it('offers a one-time automatic session-link setting instead of prompting for every Tally commit', async () => {
+    const f = fixture([true, true]);
+    const before = JSON.parse(readFileSync(f.settingsPath, 'utf8')) as Record<string, unknown>;
+    before.commit_linking = 'prompt';
+    writeFileSync(f.settingsPath, JSON.stringify(before, null, 2) + '\n');
+    f.state.publishedCommitLinking = 'prompt';
+
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(JSON.parse(readFileSync(f.settingsPath, 'utf8'))).toMatchObject({ enabled: true, commit_linking: 'always' });
+    expect(f.calls.find(call => call.file === 'git' && call.args[0] === 'add')?.args).toEqual(['add', '--', '.entire/settings.json']);
+    expect(vi.mocked(f.context.ui.confirm).mock.calls.map(call => call[0])).toEqual([
+      'Enable automatic session linking and publish only this setting to origin/main?',
+      'Have you reviewed and trusted the Entire hooks in your coding agent for this repository?',
+    ]);
+    const preview = vi.mocked(f.context.ui.print).mock.calls.map(call => call.join(' ')).join('\n');
+    expect(preview).toContain('Commit linking: automatic for this repository');
+    expect(preview).not.toContain('local Git hooks');
+    expect(preview).not.toContain('.codex/hooks.json');
+  });
+  it('does not change Entire commit linking when the one-time setup change is declined', async () => {
+    const f = fixture([false]);
+    const settings = JSON.parse(readFileSync(f.settingsPath, 'utf8')) as Record<string, unknown>;
+    settings.commit_linking = 'prompt';
+    writeFileSync(f.settingsPath, JSON.stringify(settings, null, 2) + '\n');
+    f.state.publishedCommitLinking = 'prompt';
+
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(JSON.parse(readFileSync(f.settingsPath, 'utf8')).commit_linking).toBe('prompt');
+    expect(f.calls.some(call => call.file === 'git' && ['add', 'commit', 'push'].includes(call.args[0]!))).toBe(false);
+  });
+  it('updates a local Entire override without staging local settings', async () => {
+    const f = fixture([true, true]);
+    writeFileSync(f.localSettingsPath, JSON.stringify({ commit_linking: 'prompt', userOption: 'preserved' }, null, 2) + '\n');
+
+    expect((await f.module.configure(f.context)).enabled).toBe(true);
+    expect(JSON.parse(readFileSync(f.localSettingsPath, 'utf8'))).toEqual({ commit_linking: 'always', userOption: 'preserved' });
+    expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('settings.local.json will be updated in this checkout');
+    expect(f.calls.some(call => call.file === 'git' && call.args[0] === 'add')).toBe(false);
+    expect(f.calls.some(call => call.file === 'git' && call.args[0] === 'push')).toBe(false);
+  });
+  it('leaves a tracked local Entire settings override untouched', async () => {
+    const f = fixture([true]);
+    writeFileSync(f.localSettingsPath, JSON.stringify({ commit_linking: 'prompt' }, null, 2) + '\n');
+    const command: EntireOnboardingCommand = async (file, args, options) => {
+      if (file === 'git' && args[0] === 'ls-files') return { stdout: '.entire/settings.local.json' };
+      return f.command(file, args, options);
+    };
+    f.module = new EntireOnboarding({ cwd: f.cwd, command });
+
+    expect((await f.module.configure(f.context)).enabled).toBe(false);
+    expect(JSON.parse(readFileSync(f.localSettingsPath, 'utf8')).commit_linking).toBe('prompt');
+    expect(f.calls.some(call => call.file === 'git' && ['add', 'commit', 'push'].includes(call.args[0]!))).toBe(false);
   });
   it('reports an existing mirror without asking or changing it', async () => {
     const f = fixture([true]);
@@ -161,6 +244,7 @@ describe('Entire onboarding', () => {
   it('shows the capture files before enabling and never commits on setup decline', async () => {
     const f = fixture([false]);
     f.state.enabled = false;
+    unlinkSync(f.settingsPath);
     expect((await f.module.configure(f.context)).enabled).toBe(false);
     expect(mutations(f.calls)).toEqual([]);
     expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('.entire/settings.json');
@@ -170,12 +254,14 @@ describe('Entire onboarding', () => {
     const f = fixture([true, true, true]);
     f.state.enabled = false;
     f.state.published = false;
+    unlinkSync(f.settingsPath);
     expect((await f.module.configure(f.context)).enabled).toBe(true);
     expect(f.calls.find(c => c.args[0] === 'enable')!.args).toEqual(['enable', '--agent', 'codex', '--telemetry=false', '--project', '--no-init-repo', '--skip-initial-commit']);
     expect(f.calls.find(c => c.args[0] === 'add')!.args).toEqual(['add', '--', '.entire/settings.json', '.codex/hooks.json']);
     expect(f.calls.find(c => c.args[0] === 'commit')!.args).toContain('--');
     expect(f.calls.find(c => c.args[0] === 'push')!.args).toEqual(['push', 'origin', 'setup-sha:refs/heads/main']);
     expect(vi.mocked(f.context.ui.confirm).mock.calls[1]![0]).toContain('Commit only these settings');
+    expect(JSON.parse(readFileSync(f.settingsPath, 'utf8'))).toMatchObject({ commit_linking: 'always' });
     // Rerun is read-only apart from the human's trust confirmation.
     f.calls.length = 0;
     f.context.ui.confirm = async () => true;

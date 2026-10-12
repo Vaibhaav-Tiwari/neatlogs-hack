@@ -23,6 +23,22 @@ interface TraceRecord {
   traceName?: string;
 }
 
+class TraceProjectionPending extends Error {
+  constructor(readonly retryAfterMs: number | null) {
+    super('Neatlogs has not finished building this trace span projection.');
+    this.name = 'TraceProjectionPending';
+  }
+}
+
+function retryAfterMs(response: Response): number | null {
+  const value = response.headers.get('retry-after');
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(10_000, seconds * 1000);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.min(10_000, Math.max(0, date - Date.now())) : null;
+}
+
 function matches(trace: TraceRecord, context: WorkerTraceReadContext): boolean {
   if (!trace.sessionId || trace.sessionId === context.runId || (context.nativeSessionId && trace.sessionId !== context.nativeSessionId)) return false;
   return [trace.workflowName, trace.traceName].some(name => {
@@ -45,7 +61,7 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort, Failure
     this.env = options.env ?? loadEnv();
     this.fetchImpl = options.fetch ?? fetch;
     this.endpoint = options.endpoint ?? 'https://app.neatlogs.com/api/v1/public';
-    this.retries = options.retries ?? 3;
+    this.retries = options.retries ?? 6;
     this.retryDelayMs = options.retryDelayMs ?? 500;
   }
 
@@ -59,9 +75,7 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort, Failure
     const seen = new Set<string>();
     for (let page = 0; page < 5; page++) {
       const query = new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) });
-      const body = await this.read(`/traces/${id}/spans?${query}`) as {
-        data?: { spans?: Record<string, unknown>[]; page?: { hasMore?: boolean; nextCursor?: string } };
-      } | null;
+      const body = await this.readFailureSpans(id, query);
       if (!Array.isArray(body?.data?.spans)) return null;
       for (const span of body.data.spans) {
         const text = (value: unknown) => typeof value === 'string' ? value : '';
@@ -83,6 +97,29 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort, Failure
     this.state = { status: 'missing', detail };
   }
 
+  private async readFailureSpans(id: string, query: URLSearchParams): Promise<{
+    data?: { spans?: Record<string, unknown>[]; page?: { hasMore?: boolean; nextCursor?: string } };
+  } | null> {
+    for (let retry = 0; retry < this.retries; retry++) {
+      try {
+        const body = await this.read(`/traces/${id}/spans?${query}`) as {
+          data?: { spans?: Record<string, unknown>[]; page?: { hasMore?: boolean; nextCursor?: string } };
+        } | null;
+        if (body) this.state = { status: 'ok', detail: null };
+        return body;
+      } catch (error) {
+        if (!(error instanceof TraceProjectionPending)) throw error;
+        this.state = { status: 'ok', detail: 'Neatlogs is still indexing this worker trace; Tally retried the span read.' };
+        if (retry + 1 < this.retries) {
+          const backoff = Math.min(5000, this.retryDelayMs * (2 ** retry));
+          await new Promise(resolve => setTimeout(resolve, error.retryAfterMs ?? backoff));
+        }
+      }
+    }
+    this.state = { status: 'ok', detail: 'Neatlogs is still indexing this worker trace; failure-span analysis is temporarily unavailable.' };
+    return null;
+  }
+
   async verifyFor(context: WorkerTraceReadContext): Promise<string | null> {
     this.state = { status: 'ok', detail: null };
     if (!this.env.NEATLOGS_TOKEN || !this.env.NEATLOGS_PROJECT_ID) {
@@ -90,6 +127,7 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort, Failure
       return null;
     }
     for (let retry = 0; retry < this.retries; retry++) {
+      let retryDelay: number | null = null;
       try {
         const candidates = context.traceId ? [context.traceId] : await this.discover(context);
         if (!candidates.length && this.state.status === 'ok') {
@@ -109,12 +147,20 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort, Failure
           if (this.state.status === 'ok') this.fail(`Neatlogs trace ${id} matched the worker but has no readable spans yet; retry after ingestion finishes.`);
         }
       } catch (error) {
-        const name = error instanceof Error ? error.name : 'unknown error';
-        this.fail(name === 'AbortError' || name === 'TimeoutError'
-          ? 'Neatlogs worker trace read-back timed out; check connectivity and retry.'
-          : `Neatlogs worker trace read-back request failed (${name}); check connectivity and retry.`);
+        if (error instanceof TraceProjectionPending) {
+          retryDelay = error.retryAfterMs;
+          this.state = { status: 'ok', detail: 'Neatlogs is still indexing this worker trace; Tally retried the span read.' };
+        } else {
+          const name = error instanceof Error ? error.name : 'unknown error';
+          this.fail(name === 'AbortError' || name === 'TimeoutError'
+            ? 'Neatlogs worker trace read-back timed out; check connectivity and retry.'
+            : `Neatlogs worker trace read-back request failed (${name}); check connectivity and retry.`);
+        }
       }
-      if (retry + 1 < this.retries) await new Promise(resolve => setTimeout(resolve, this.retryDelayMs));
+      if (retry + 1 < this.retries) {
+        const backoff = Math.min(5000, this.retryDelayMs * (2 ** retry));
+        await new Promise(resolve => setTimeout(resolve, retryDelay ?? backoff));
+      }
     }
     return null;
   }
@@ -140,6 +186,7 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort, Failure
     });
     if (!response.ok) {
       const operation = path.includes('/spans') ? 'worker span read-back' : 'worker trace read-back';
+      if (response.status === 409 && path.includes('/spans')) throw new TraceProjectionPending(retryAfterMs(response));
       const detail = response.status === 401
         ? `Neatlogs ${operation} was unauthorized (HTTP 401); check NEATLOGS_TOKEN and its project binding.`
         : response.status === 403

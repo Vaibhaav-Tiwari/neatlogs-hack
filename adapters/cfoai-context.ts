@@ -152,7 +152,7 @@ export function buildCfoaiTaskContext(input: CfoaiTaskContextInput): CfoaiTaskCo
     filename: `tally-${safeRun}-attempt-${digest.slice(0, 16)}.md`,
     tags: ['tally', `tally-scenario-${slug(input.scenario ?? 'unknown')}`, `tally-run-${slug(input.runId)}`, `tally-task-${slug(row.taskId)}`, `tally-attempt-${digest.slice(0, 16)}`],
     metadata: {
-      source: 'tally-agents',
+      producer: 'tally-agents',
       run_id: clean(input.runId, 200),
       task_id: clean(row.taskId, 200),
       attempt_id: clean(row.attemptId, 240),

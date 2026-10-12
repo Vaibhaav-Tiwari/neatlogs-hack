@@ -410,15 +410,16 @@ export class CfoaiBudgetAdapter implements BudgetPort {
     }
     try {
       const result = await this.client.callTool('edit_memory', args);
-      if (isRecord(result) && result.isError === true) throw new Error('cfo.ai refused the Ari context write');
+      if (isRecord(result) && result.isError === true) throw new Error(cfoaiRefusalMessage(result));
       const parsed = unwrapToolResult(result);
       if (isRecord(parsed) && (parsed.status === 'rejected' || parsed.status === 'error')) {
-        throw new Error('cfo.ai refused the Ari context write');
+        throw new Error(cfoaiRefusalMessage(parsed));
       }
       this.setOkStatus('Ari task context was shared with organization memory.');
     } catch (error) {
       const detail = safeCfoaiError(error);
-      this.statusState = { status: 'error', detail: `Ari task context write failed: ${detail}` };
+      // Organization memory is optional reporting; its refusal must not label
+      // working budget reads and spend-table writes as disconnected.
       throw new Error(detail);
     }
   }
@@ -536,6 +537,22 @@ function successfulEdit(value: unknown): boolean {
   return isRecord(parsed) && (parsed.status === 'applied' || (parsed.status === 'no_op' && parsed.reason === 'already_satisfied'));
 }
 
+function cfoaiRefusalMessage(value: unknown): string {
+  const parsed = unwrapToolResult(value);
+  let detail: unknown;
+  if (typeof parsed === 'string') detail = parsed;
+  else if (isRecord(parsed)) {
+    const error = parsed.error;
+    if (isRecord(error)) {
+      detail = [error.code, error.message, error.hint].filter((part): part is string => typeof part === 'string').join(': ');
+    } else detail = parsed.message ?? error ?? parsed.reason ?? parsed.detail;
+  }
+  const safeDetail = typeof detail === 'string' ? safeCfoaiError(new Error(detail)) : null;
+  return safeDetail && safeDetail !== 'cfo.ai returned an unspecified error'
+    ? `cfo.ai refused the Ari context write: ${safeDetail}`
+    : 'cfo.ai refused the Ari context write';
+}
+
 export function safeCfoaiError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error))
     .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
@@ -560,7 +577,7 @@ function supportsOrganizationMemory(schema: Record<string, unknown> | undefined)
         filename: 'tally-schema-check.md',
         scope: 'organization',
         tags: ['tally'],
-        metadata: { source: 'tally-agents' },
+        metadata: { producer: 'tally-agents' },
       },
     });
   } catch { return false; }

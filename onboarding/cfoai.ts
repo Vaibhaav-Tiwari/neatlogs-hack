@@ -51,7 +51,7 @@ function supportsOrganizationMemory(schema: Record<string, unknown> | undefined)
         filename: 'tally-schema-check.md',
         scope: 'organization',
         tags: ['tally'],
-        metadata: { source: 'tally-agents' },
+        metadata: { producer: 'tally-agents' },
       },
     });
   } catch { return false; }

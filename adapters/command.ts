@@ -10,6 +10,19 @@ export class CommandError extends Error {
   constructor(message: string, readonly code?: string | number, readonly stdout = '', readonly stderr = '') { super(message); }
 }
 
+function safeGitDiagnostic(value: string): string {
+  return value
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .replace(/\b(?:github_pat_|gh[pousr]_)[a-zA-Z0-9_]+\b/gi, '[redacted]')
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+    .replace(/\b(?:authorization|token|password|secret|api[-_ ]?key)\s*[:=]\s*[^\r\n]*/gi, '[credential redacted]')
+    .replace(/https?:\/\/[^\s/@]+:[^\s/@]+@/gi, 'https://[redacted]@')
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(-500);
+}
+
 export interface AoBinaryOptions {
   aoBin?: string;
   cwd?: string;
@@ -54,11 +67,16 @@ export async function runCommand(file: string, args: string[], options: AoBinary
   try {
     return await execFileAsync(executable, args, { cwd: options.cwd, env: options.env, timeout: options.timeout, maxBuffer: options.maxBuffer, encoding: 'utf8' });
   } catch (error) {
-    const failure = error as { code?: string | number; stdout?: unknown; stderr?: unknown };
+    const failure = error as { code?: string | number; signal?: string; stdout?: unknown; stderr?: unknown };
     const code = failure.code;
+    const label = code ?? failure.signal ?? 'unknown error';
+    const stderr = typeof failure.stderr === 'string' ? failure.stderr : '';
+    const diagnostic = file === 'git' ? safeGitDiagnostic(stderr) : '';
+    const operation = file === 'git' && args.includes('push') ? ' push'
+      : file === 'git' && args.includes('commit') ? ' commit' : '';
     throw new CommandError(code === 'ENOENT'
       ? `${file} is required but could not be started; install it or add its executable to PATH${options.cwd ? `, and check that ${options.cwd} exists` : ''}.`
-      : `${file} command failed (${code ?? 'unknown error'}); check the command in your terminal before retrying.`, code,
-      typeof failure.stdout === 'string' ? failure.stdout : '', typeof failure.stderr === 'string' ? failure.stderr : '');
+      : `${file}${operation} command failed (${label})${diagnostic ? `: ${diagnostic}` : '; check the command in your terminal before retrying.'}`, code,
+      typeof failure.stdout === 'string' ? failure.stdout : '', stderr);
   }
 }

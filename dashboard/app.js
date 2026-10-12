@@ -11,6 +11,7 @@ import { copyableIdEvidence, installSessionCopy, sessionEvidence } from './sessi
 import { reasonText } from './reason-text.js';
 import { ledgerEmptyState } from './empty-state.js';
 import { integrationView } from './integration-view.js';
+import { decisionSummary } from './decision-view.js';
 
 const NANOS_PER_USD = 1_000_000_000;
 
@@ -593,12 +594,23 @@ function finalRouteCell(task, attempts, awaiting) {
   return `${tierCell(task.tier ?? last?.tier, task.model ?? last?.model)}${note}`;
 }
 
-function taskDecision(attempts) {
-  if (attempts.length === 0) return '<span class="blank">No model has been paid to try yet.</span>';
-  const first = attempts[0];
-  const last = attempts[attempts.length - 1];
-  const carry = attempts.length > 1 && last?.escalatedFrom ? `<p class="carried">Latest attempt continues the previous work.</p>` : '';
-  return `${carry}<p>${esc(first.decision)}</p>${last?.attempt !== first.attempt ? `<p class="reason">Final decision: ${esc(last.decision)}</p>` : ''}${last?.resultReason ? `<p class="reason ${last.result === 'stopped' ? 'over' : ''}">${reasonText(attemptReason(last))}</p>` : ''}`;
+function taskDecision(task, attempts) {
+  const summary = decisionSummary(task, attempts);
+  const lines = [
+    `<p class="decision-summary">${esc(summary.headline)}</p>`,
+    summary.history ? `<p class="decision-history">${esc(summary.history)}</p>` : '',
+    summary.finalHistory ? `<p class="decision-history">Final route: ${esc(summary.finalHistory)}</p>` : '',
+  ].filter(Boolean).join('');
+  const evidence = attempts.map(attempt => `<section class="decision-attempt">
+      <b>Attempt ${attempt.attempt} · ${esc(attempt.tier)}</b>
+      <p>${esc(attempt.decision)}</p>
+      ${attempt.resultReason ? `<p class="reason">${reasonText(attemptReason(attempt))}</p>` : ''}
+    </section>`).join('');
+  const skipReason = task.status === 'skipped' && /no budget/i.test(task.statusReason ?? '');
+  const statusEvidence = task.statusReason && !skipReason && !attempts.some(attempt => attempt.resultReason === task.statusReason)
+    ? `<p class="reason">Task status: ${reasonText(task.statusReason)}</p>` : '';
+  if (!attempts.length) return `${lines}${statusEvidence}`;
+  return `${lines}<details class="decision-evidence"><summary>Full routing evidence</summary>${statusEvidence}${evidence}</details>`;
 }
 
 const taskGraphs = new Map();
@@ -635,7 +647,7 @@ function drawLedger(run, ledger) {
             <div><dt>Attempts</dt><dd>${attemptCountCell(task, attempts, awaiting)}</dd></div>
             <div class="task-total"><dt>Total cost</dt><dd>${costCell(attempts.reduce((sum,row)=>sum+displayedCost(row),0), null, attempts.some((row) => row.result === 'stopped'), attempts.some(row => row.displayIsReplay) ? 'replay' : attempts.length > 0 && attempts.every((row) => row.costSource === 'simulated') ? 'simulated' : attempts[0]?.costSource, attempts.some((row) => row.displayIsLiveEstimate))}</dd></div></dl>
         </header>
-        <div class="ledger-decision"><span class="decision-label">Why</span>${taskDecision(attempts)}${task.statusReason ? `<p class="why-status">${reasonText(task.statusReason)}</p>` : ''}</div>
+        <div class="ledger-decision"><span class="decision-label">Why</span>${taskDecision(task, attempts)}</div>
         ${keys.has(`${run.runId}:${task.taskId}`) ? `<div data-graph-slot="${esc(task.taskId)}"></div>` : ''}
         ${attemptTable(run, attempts)}
       </article>`;
