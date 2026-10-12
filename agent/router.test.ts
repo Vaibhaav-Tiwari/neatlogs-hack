@@ -245,4 +245,20 @@ describe('routeTask', () => {
       error: null,
     });
   });
+
+  it('lets remote costs lower the cap and records the same provenance in decision and trace', async () => {
+    const trace = new RecordingTrace();
+    const history = new FakeHistory().set('small', 'bronze', {
+      attempts: 5, passRate: 1, avgCostNanos: 20_000_000, source: 'neatlogs',
+      successfulCostsNanos: Array(5).fill(20_000_000),
+    });
+    const decision = started(await routeTask({
+      task: task(), estimate: estimate('small', 0.9), config,
+      ports: { history, trace, budget: new FakeBudget(40_000_000) },
+    }));
+    expect(decision.ceilingNanos).toBe(30_000_000);
+    expect(decision.reason).toContain('bronze neatlogs: 5 observations, 100% pass rate, $0.02 average cost');
+    expect(decision.reason).toContain('P90 $0.02 x 1.5');
+    expect(JSON.parse(trace.spans[0]!.attributes.history as string)).toEqual(decision.history);
+  });
 });

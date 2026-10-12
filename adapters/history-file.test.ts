@@ -41,8 +41,8 @@ describe('FilePriceHistory', () => {
     await history.record({ size: 'small', tier: 'model-a', result: 'passed', costNanos: 100 });
     await history.record({ size: 'small', tier: 'model-a', result: 'failed', costNanos: 300 });
     await history.record({ size: 'small', tier: 'model-b', result: 'passed', costNanos: 900 });
-    expect(await history.lookup('small', 'model-a')).toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 200 });
-    expect(await history.lookup('small', 'model-b')).toEqual({ attempts: 1, passRate: 1, avgCostNanos: 900 });
+    expect(await history.lookup('small', 'model-a')).toEqual({ attempts: 2, passRate: 0.5, avgCostNanos: 200, source: 'local', successfulCostsNanos: [100] });
+    expect(await history.lookup('small', 'model-b')).toEqual({ attempts: 1, passRate: 1, avgCostNanos: 900, source: 'local', successfulCostsNanos: [900] });
     expect(JSON.parse(store.files.get('/tmp/tally/history.json')!)).toMatchObject({
       version: 1,
       cells: {
@@ -61,7 +61,7 @@ describe('FilePriceHistory', () => {
       JSON.stringify({ version: 1, cells: { 'medium:silver': { attempts: 4, passes: 3, totalCostNanos: 1000 } } }),
     );
     const history = new FilePriceHistory({ path: '/tmp/tally/history.json', store });
-    expect(await history.lookup('medium', 'silver')).toEqual({ attempts: 4, passRate: 0.75, avgCostNanos: 250 });
+    expect(await history.lookup('medium', 'silver')).toEqual({ attempts: 4, passRate: 0.75, avgCostNanos: 250, source: 'local' });
   });
 
   it('starts empty when the file is corrupt', async () => {

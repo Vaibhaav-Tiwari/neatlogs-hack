@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { usdToNanos } from '../schema/money.js';
 import { decideEscalation, type EscalationDecision, type FinishedAttempt } from './escalation.js';
-import { FakeBudget, FakeHandoff, RecordingTrace, sampleConfig } from './testing/fakes.js';
+import { FakeBudget, FakeHandoff, FakeHistory, RecordingTrace, sampleConfig } from './testing/fakes.js';
 
 const config = sampleConfig();
 
@@ -53,6 +53,21 @@ function expectOneSentence(reason: string): void {
 }
 
 describe('decideEscalation', () => {
+  it('uses the next tier history cap before checking the remaining budget', async () => {
+    const history = new FakeHistory().set('medium', 'silver', {
+      attempts: 5, passRate: 1, avgCostNanos: 100_000_000, source: 'neatlogs',
+      successfulCostsNanos: Array(5).fill(100_000_000),
+    });
+    const trace = new RecordingTrace();
+    const decision = escalated(await decideEscalation({
+      previous: previous(), config,
+      ports: { history, trace, budget: new FakeBudget(150_000_000) },
+    }));
+    expect(decision.ceilingNanos).toBe(150_000_000);
+    expect(decision.reason).toContain('neatlogs history: 5 observations');
+    expect(JSON.parse(trace.spans[0]!.attributes.history as string)).toEqual(decision.history);
+  });
+
   it('moves a stopped attempt one tier up, carrying the handoff summary', async () => {
     const decision = escalated(await decide(previous()));
     expect(decision.tier.name).toBe('silver');

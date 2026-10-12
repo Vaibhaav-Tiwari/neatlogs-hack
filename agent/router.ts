@@ -8,10 +8,11 @@
  * and the sizer is confident enough in what the task is. Otherwise it goes
  * to a stronger tier. Nothing starts unless its ceiling fits the budget left.
  */
-import { ceilingNanos, formatUsd, nanosToUsd } from '../schema/money.js';
+import { formatUsd, nanosToUsd } from '../schema/money.js';
 import type { TallyConfig, TaskSize, Tier } from '../schema/types.js';
 import { DEFAULT_PRIOR_WEIGHT, estimateFor, priorFor } from './history.js';
-import type { BudgetPort, PriceHistoryPort, PriceStats, TaskInput, TraceAttributes, TracePort } from './ports.js';
+import type { BudgetPort, PriceHistoryPort, TaskInput, TraceAttributes, TracePort } from './ports.js';
+import { planFromHistory, type HistoryPlan } from './history-plan.js';
 import type { SizeEstimate } from './sizer.js';
 import { traceDecision } from './trace.js';
 
@@ -53,6 +54,7 @@ export interface StartDecision {
   topCostNanos: number;
   /** One plain-English sentence, shown on the dashboard and stored on the ledger row. */
   reason: string;
+  history?: HistoryPlan[];
 }
 
 export interface SkipDecision {
@@ -63,6 +65,7 @@ export interface SkipDecision {
   /** Goes into TaskState.statusReason. */
   statusReason: 'not started: no budget';
   reason: string;
+  history?: HistoryPlan[];
 }
 
 export type RouteDecision = StartDecision | SkipDecision;
@@ -102,38 +105,7 @@ interface Candidate {
   worthItOnPrior: boolean;
   confident: boolean;
   fits: boolean;
-}
-
-interface PlanningEstimate {
-  passRate: number;
-  avgCostNanos: number;
-  attempts: number;
-  source: 'history' | 'prior' | 'thin-history';
-}
-
-async function observedFor(history: PriceHistoryPort | undefined, size: TaskSize, tier: string): Promise<PriceStats | null> {
-  try {
-    const observed = (await history?.lookup(size, tier)) ?? null;
-    return observed && observed.attempts > 0 ? observed : null;
-  } catch {
-    return null;
-  }
-}
-
-async function planningEstimate(input: {
-  config: TallyConfig;
-  history: PriceHistoryPort | undefined;
-  size: TaskSize;
-  tierName: string;
-  minHistoryAttempts: number;
-}): Promise<PlanningEstimate> {
-  const prior = priorFor(input.config, input.size, input.tierName);
-  const observed = await observedFor(input.history, input.size, input.tierName);
-  if (!observed) return { ...prior, attempts: 0, source: 'prior' };
-  if (observed.attempts < input.minHistoryAttempts) {
-    return { ...prior, attempts: observed.attempts, source: 'thin-history' };
-  }
-  return { passRate: observed.passRate, avgCostNanos: observed.avgCostNanos, attempts: observed.attempts, source: 'history' };
+  plan: HistoryPlan;
 }
 
 function neededConfidenceForRule(ceiling: number, passRate: number, topCost: number): number {
@@ -150,32 +122,22 @@ async function routeTaskCore(input: RouteInput): Promise<RouteDecision> {
   if (!top) throw new Error('tally.yaml has no tiers');
 
   const remaining = Math.max(0, await input.ports.budget.remainingNanos());
-  const topPlan = await planningEstimate({
-    config,
-    history: input.ports.history,
-    size,
-    tierName: top.name,
-    minHistoryAttempts: options.minHistoryAttempts,
-  });
+  const topPlan = await planFromHistory(config, input.ports.history, size, top.name, options.minHistoryAttempts);
   const topPriorCost = (await estimateFor(config, undefined, size, top.name, options.priorWeight)).avgCostNanos;
   const topCost = topPlan.avgCostNanos;
-  const topCeiling = ceilingNanos(config, size, top);
+  const topCeiling = topPlan.ceilingNanos;
   const subject = `${size} task with ${estimate.summary}`;
-  const common = { taskId: task.taskId, size, confidence };
+  const history: HistoryPlan[] = [topPlan];
+  const common = { taskId: task.taskId, size, confidence, history };
 
   const cheaper: Candidate[] = [];
   for (const tier of config.tiers.slice(0, -1)) {
-    const plan = await planningEstimate({
-      config,
-      history: input.ports.history,
-      size,
-      tierName: tier.name,
-      minHistoryAttempts: options.minHistoryAttempts,
-    });
+    const plan = await planFromHistory(config, input.ports.history, size, tier.name, options.minHistoryAttempts);
+    history.push(plan);
     const prior = priorFor(config, size, tier.name);
-    const ceiling = ceilingNanos(config, size, tier);
+    const ceiling = plan.ceilingNanos;
     const expected = Math.round(ceiling + (1 - plan.passRate) * topCost);
-    const expectedOnPrior = Math.round(ceiling + (1 - prior.passRate) * topPriorCost);
+    const expectedOnPrior = Math.round(plan.configuredCeilingNanos + (1 - prior.passRate) * topPriorCost);
     const neededConfidence = neededConfidenceForRule(ceiling, plan.passRate, topCost);
     cheaper.push({
       tier,
@@ -183,7 +145,8 @@ async function routeTaskCore(input: RouteInput): Promise<RouteDecision> {
       passRate: plan.passRate,
       avgCostNanos: plan.avgCostNanos,
       attempts: plan.attempts,
-      source: plan.source,
+      source: plan.usedPrior ? (plan.attempts ? 'thin-history' : 'prior') : 'history',
+      plan,
       expected,
       expectedOnPrior,
       neededConfidence,
@@ -202,7 +165,7 @@ async function routeTaskCore(input: RouteInput): Promise<RouteDecision> {
     if (candidate.worthIt !== candidate.worthItOnPrior) {
       return `History changed the choice for ${candidate.tier.name}: ${candidate.attempts} attempts show a ${percent(candidate.passRate)} pass rate and ${usd(candidate.avgCostNanos)} average cost`;
     }
-    return null;
+    return `History for ${candidate.tier.name} uses ${candidate.plan.source}: ${candidate.attempts} observations, ${percent(candidate.passRate)} pass rate and ${usd(candidate.avgCostNanos)} average cost`;
   };
 
   // Why the tiers below the chosen one were passed over, most telling first.
@@ -295,11 +258,22 @@ export async function routeTask(input: RouteInput): Promise<RouteDecision> {
     { ...input.traceAttributes, taskId: input.task.taskId, size: input.estimate.size, confidence: input.estimate.confidence },
     async (span) => {
       const decision = await routeTaskCore(input);
+      const notes = decision.history?.map((plan) => {
+        const stats = plan.observedPassRate === null
+          ? `${plan.tier} ${plan.source}: 0 observations, prior ${percent(plan.passRate)} pass rate and ${usd(plan.avgCostNanos)} average cost`
+          : `${plan.tier} ${plan.source}: ${plan.attempts} observations, ${percent(plan.observedPassRate)} pass rate, ${usd(plan.observedAvgCostNanos!)} average cost`;
+        const cap = plan.capSource === 'successful-p90'
+          ? `cap ${usd(plan.ceilingNanos)} from P90 ${usd(plan.p90CostNanos!)} x 1.5 over ${plan.successfulSamples} successful samples, max ${usd(plan.configuredCeilingNanos)}`
+          : `config cap ${usd(plan.ceilingNanos)} (${plan.successfulSamples} successful samples; 5 needed)`;
+        return `${stats}, ${plan.usedPrior ? 'uses the prior' : 'observed statistics'}, ${cap}`;
+      });
+      if (notes?.length) decision.reason = `${decision.reason.replace(/\.$/, '')}; ${notes.join('; ')}.`;
       span.set({
         action: decision.action,
         tier: decision.action === 'start' ? decision.tier.name : null,
         ceilingNanos: decision.action === 'start' ? decision.ceilingNanos : null,
         reason: decision.reason,
+        history: JSON.stringify(decision.history ?? []),
       });
       return decision;
     },
