@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { usdToNanos } from '../schema/money.js';
 import type { AttemptOutcome, PriceHistoryPort, PriceHistoryWriterPort, PriceStats } from '../agent/ports.js';
 import { historyAttributes, historyTraceName, NeatlogsPriceHistory } from './neatlogs-history.js';
+import { PriceHistory } from '../agent/history.js';
 
 class FakeHistory implements PriceHistoryPort, PriceHistoryWriterPort {
   records: AttemptOutcome[] = [];
@@ -22,6 +23,43 @@ function response(body: unknown, ok = true, status = ok ? 200 : 503): Response {
 }
 
 describe('NeatlogsPriceHistory', () => {
+  it('reads only the actual model from public trace names, including encoded model ids', async () => {
+    const model = 'provider/codex terra=v2';
+    const history = new NeatlogsPriceHistory({
+      fallback: new PriceHistory(), env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
+      fetch: async () => response({ data: { traces: [
+        { traceName: historyTraceName({ size: 'small', tier: 'cheap', model, result: 'passed', costNanos: 100 }) },
+        { traceName: historyTraceName({ size: 'small', tier: 'cheap', model: 'claude', result: 'failed', costNanos: 900 }) },
+        { traceName: historyTraceName({ size: 'small', tier: 'cheap', result: 'passed', costNanos: 1 }) },
+      ] } }),
+    });
+    expect(await history.lookup('small', 'cheap', model)).toMatchObject({ attempts: 1, passRate: 1, avgCostNanos: 100, source: 'neatlogs' });
+    expect(await history.lookup('small', 'cheap', 'claude')).toMatchObject({ attempts: 1, passRate: 0, avgCostNanos: 900 });
+    expect(await history.lookup('small', 'cheap', 'new-model')).toBeNull();
+    expect(history.status()?.detail).toContain('unknown-model observations excluded');
+  });
+
+  it('uses explicit legacy span model attributes without assigning an unknown model', async () => {
+    const history = new NeatlogsPriceHistory({
+      fallback: new PriceHistory(), env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
+      fetch: async input => `${input}`.includes('/traces?')
+        ? response({ traces: [{ traceId: 'old', traceName: 'tally.history.record' }] })
+        : response({ spans: [
+          { name: 'tally.history.record', attributes: historyAttributes({ size: 'small', tier: 'cheap', model: 'codex', result: 'passed', costNanos: 100 }) },
+          { name: 'tally.history.record', attributes: historyAttributes({ size: 'small', tier: 'cheap', result: 'passed', costNanos: 1 }) },
+        ] }),
+    });
+    expect(await history.lookup('small', 'cheap', 'codex')).toMatchObject({ attempts: 1, avgCostNanos: 100 });
+  });
+
+  it('passes the model through local fallback rather than using old pooled rows', async () => {
+    const fallback = new PriceHistory();
+    await fallback.record({ size: 'small', tier: 'cheap', result: 'passed', costNanos: 1 });
+    await fallback.record({ size: 'small', tier: 'cheap', model: 'codex', result: 'passed', costNanos: 100 });
+    const history = new NeatlogsPriceHistory({ fallback, env: {} });
+    expect(await history.lookup('small', 'cheap', 'codex')).toMatchObject({ attempts: 1, avgCostNanos: 100, source: 'local' });
+    expect(await history.lookup('small', 'cheap', 'claude')).toBeNull();
+  });
   it('falls back to the local history when service-account credentials are missing', async () => {
     const fallback = new FakeHistory({ attempts: 2, passRate: 0.5, avgCostNanos: 123 });
     const history = new NeatlogsPriceHistory({ fallback, env: {}, fetch: async () => response([]) });

@@ -102,7 +102,7 @@ describe('planTally', () => {
     mkdirSync(dirname(historyPath), { recursive: true });
     const snapshot = JSON.stringify({
       version: 1,
-      cells: { 'small:cheap': { attempts: 5, passes: 0, totalCostNanos: 1_000_000_000 } },
+      cells: { [JSON.stringify(['small', 'cheap', 'cheap-model'])]: { attempts: 5, passes: 0, totalCostNanos: 1_000_000_000 } },
     }, null, 2);
     writeFileSync(historyPath, `${snapshot}\n`);
     const historyBefore = readFileSync(historyPath, 'utf8');
@@ -139,7 +139,7 @@ describe('planTally', () => {
       });
 
       expect(plan[0]?.historySources).toEqual(['neatlogs']);
-      expect(lookup).toHaveBeenCalled();
+      expect(lookup).toHaveBeenCalledWith('small', 'cheap', 'cheap-model');
     } finally {
       lookup.mockRestore();
       source.mockRestore();

@@ -30,6 +30,19 @@ class MemoryStore implements HistoryFileStore {
 }
 
 describe('FilePriceHistory', () => {
+  it('keeps model cells separate across restarts and excludes old tier aggregates from model lookups', async () => {
+    const store = new MemoryStore();
+    const path = '/tmp/tally/history.json';
+    store.files.set(path, JSON.stringify({ version: 1, cells: { 'small:cheap': { attempts: 6, passes: 6, totalCostNanos: 6 } } }));
+    const history = new FilePriceHistory({ path, store });
+    expect(await history.lookup('small', 'cheap', 'codex')).toBeNull();
+    await history.record({ size: 'small', tier: 'cheap', model: 'codex', result: 'passed', costNanos: 100 });
+    await history.record({ size: 'small', tier: 'cheap', model: 'claude', result: 'passed', costNanos: 900 });
+    const restored = new FilePriceHistory({ path, store });
+    expect(await restored.lookup('small', 'cheap', 'codex')).toMatchObject({ attempts: 1, avgCostNanos: 100, source: 'local' });
+    expect(await restored.lookup('small', 'cheap', 'claude')).toMatchObject({ attempts: 1, avgCostNanos: 900 });
+    expect(await restored.lookup('small', 'cheap', 'new-model')).toBeNull();
+  });
   it('starts empty when the file is missing', async () => {
     const history = new FilePriceHistory({ path: '/tmp/tally/history.json', store: new MemoryStore() });
     await expect(history.lookup('small', 'model-a')).resolves.toBeNull();

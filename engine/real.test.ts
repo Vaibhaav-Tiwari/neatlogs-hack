@@ -1163,12 +1163,12 @@ describe('runRealTally', () => {
       { sessionId: result.runState.runId, taskId: 'T1', attempt: 2 },
     ]);
     expect(trace.spans.filter((span) => span.name.startsWith('tally.history.record ')).map((span) => span.attributes)).toMatchObject([
-      { sessionId: result.runState.runId, taskId: 'T1', attempt: 1, 'tally.history.size': 'small', 'tally.history.tier': 'cheap', 'tally.history.result': 'failed' },
-      { sessionId: result.runState.runId, taskId: 'T1', attempt: 2, 'tally.history.size': 'small', 'tally.history.tier': 'middle', 'tally.history.result': 'passed' },
+      { sessionId: result.runState.runId, taskId: 'T1', attempt: 1, 'tally.history.size': 'small', 'tally.history.tier': 'cheap', 'tally.history.result': 'failed', 'tally.history.model': 'claude-haiku-4-5-20251001' },
+      { sessionId: result.runState.runId, taskId: 'T1', attempt: 2, 'tally.history.size': 'small', 'tally.history.tier': 'middle', 'tally.history.result': 'passed', 'tally.history.model': 'claude-sonnet-5-5' },
     ]);
     expect(trace.spans.filter((span) => span.name.startsWith('tally.history.record ')).map((span) => span.name)).toEqual([
-      'tally.history.record size=small tier=cheap result=failed cost_nanos=2700000',
-      'tally.history.record size=small tier=middle result=passed cost_nanos=5400000',
+      'tally.history.record size=small tier=cheap result=failed cost_nanos=2700000 model=claude-haiku-4-5-20251001',
+      'tally.history.record size=small tier=middle result=passed cost_nanos=5400000 model=claude-sonnet-5-5',
     ]);
     expect(result.runState.tasks[0]).toMatchObject({ status: 'passed', attempts: 2, escalated: true });
     expect(validateRunState(JSON.parse(readFileSync(result.runStatePath, 'utf8'))).ok).toBe(true);

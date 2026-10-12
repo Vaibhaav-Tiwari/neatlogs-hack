@@ -50,8 +50,8 @@ export class FilePriceHistory implements PriceHistoryPort, PriceHistoryWriterPor
     this.store = options.store ?? new NodeHistoryFileStore();
   }
 
-  async lookup(size: TaskSize, tierOrModel: string): Promise<PriceStats | null> {
-    const stats = await (await this.history()).lookup(size, tierOrModel);
+  async lookup(size: TaskSize, tier: string, model?: string): Promise<PriceStats | null> {
+    const stats = await (await this.history()).lookup(size, tier, model);
     this.lastLookupSource = stats ? 'local' : 'none';
     return stats ? { ...stats, source: 'local' } : null;
   }

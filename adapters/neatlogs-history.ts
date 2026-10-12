@@ -16,6 +16,7 @@ export interface NeatlogsHistoryOptions {
 interface Observation {
   size: TaskSize;
   tier: string;
+  model?: string;
   result: string;
   costNanos: number;
 }
@@ -96,7 +97,9 @@ function observationFromName(name: string | null): Observation | null {
   const costNanos = Number(fields.cost_nanos);
   if (size !== 'small' && size !== 'medium' && size !== 'large') return null;
   if (!tier || !result || !Number.isFinite(costNanos) || costNanos < 0) return null;
-  return { size, tier, result, costNanos: Math.round(costNanos) };
+  let model: string | undefined;
+  try { model = fields.model ? decodeURIComponent(fields.model) : undefined; } catch { return null; }
+  return { size, tier, ...(model ? { model } : {}), result, costNanos: Math.round(costNanos) };
 }
 
 function spansOf(body: unknown): unknown[] {
@@ -140,20 +143,22 @@ function pageOf(body: unknown): { hasMore: boolean; nextCursor: string | null } 
 
 function observationFromSpan(span: unknown): Observation | null {
   if (typeof span !== 'object' || span === null) return null;
-  const name = stringValue((span as Record<string, unknown>).name);
+  const name = stringValue((span as Record<string, unknown>).spanName) ?? stringValue((span as Record<string, unknown>).name);
   const attrs = attributesOf(span);
   if (name !== 'tally.history.record' && stringValue(attrs['tally.history.kind']) !== 'attempt') return null;
   const size = stringValue(attrs['tally.history.size']) ?? stringValue(attrs.size);
   const tier = stringValue(attrs['tally.history.tier']) ?? stringValue(attrs.tier);
+  const model = stringValue(attrs['tally.history.model']) ?? stringValue(attrs.model);
   const result = stringValue(attrs['tally.history.result']) ?? stringValue(attrs.result);
   const costNanos = numberValue(attrs['tally.history.cost_nanos']) ?? numberValue(attrs.costNanos);
   if (size !== 'small' && size !== 'medium' && size !== 'large') return null;
   if (!tier || !result || costNanos === null || costNanos < 0) return null;
-  return { size, tier, result, costNanos: Math.round(costNanos) };
+  return { size, tier, ...(model ? { model } : {}), result, costNanos: Math.round(costNanos) };
 }
 
-function aggregate(observations: Observation[], size: TaskSize, tier: string): PriceStats | null {
-  const matches = observations.filter((row) => row.size === size && row.tier === tier && row.result !== 'error');
+function aggregate(observations: Observation[], size: TaskSize, tier: string, model?: string): PriceStats | null {
+  const matches = observations.filter((row) => row.size === size && row.tier === tier
+    && (model ? row.model === model : row.model === undefined) && row.result !== 'error');
   if (matches.length === 0) return null;
   return {
     attempts: matches.length,
@@ -199,27 +204,27 @@ export class NeatlogsPriceHistory implements PriceHistoryPort, PriceHistoryWrite
     return this.lastLookupSource;
   }
 
-  async lookup(size: TaskSize, tier: string): Promise<PriceStats | null> {
-    if (!this.token || !this.projectId) return this.fallbackLookup(size, tier);
+  async lookup(size: TaskSize, tier: string, model?: string): Promise<PriceStats | null> {
+    if (!this.token || !this.projectId) return this.fallbackLookup(size, tier, model);
     let remote: PriceStats | null;
     try {
-      remote = aggregate(await this.remoteObservations(), size, tier);
+      remote = aggregate(await this.remoteObservations(), size, tier, model);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.readStatus = { status: 'error', detail: `Neatlogs price-history read failed; using local history. ${message}` };
-      return this.fallbackLookup(size, tier);
+      return this.fallbackLookup(size, tier, model);
     }
     if (remote) {
       this.readStatus = { status: 'ok', detail: null };
       this.lastLookupSource = 'neatlogs';
       return remote;
     }
-    this.readStatus = { status: 'ok', detail: `No usable Neatlogs price-history observations matched ${size}/${tier}; using local history.` };
-    return this.fallbackLookup(size, tier);
+    this.readStatus = { status: 'ok', detail: `No usable Neatlogs price-history observations matched ${size}/${tier}${model ? ` model ${model} (unknown-model observations excluded)` : ''}; using local history.` };
+    return this.fallbackLookup(size, tier, model);
   }
 
-  private async fallbackLookup(size: TaskSize, tier: string): Promise<PriceStats | null> {
-    const stats = await this.fallback.lookup(size, tier);
+  private async fallbackLookup(size: TaskSize, tier: string, model?: string): Promise<PriceStats | null> {
+    const stats = await this.fallback.lookup(size, tier, model);
     this.lastLookupSource = stats ? 'local' : 'none';
     return stats ? { ...stats, source: 'local' } : null;
   }
@@ -275,6 +280,7 @@ export function historyAttributes(outcome: AttemptOutcome): Record<string, strin
     'tally.history.kind': 'attempt',
     'tally.history.size': outcome.size,
     'tally.history.tier': outcome.tier,
+    ...(outcome.model ? { 'tally.history.model': outcome.model } : {}),
     'tally.history.result': outcome.result,
     'tally.history.cost_nanos': outcome.costNanos,
     'tally.history.cost_usd': outcome.costNanos / NANOS_PER_USD,
@@ -282,5 +288,5 @@ export function historyAttributes(outcome: AttemptOutcome): Record<string, strin
 }
 
 export function historyTraceName(outcome: AttemptOutcome): string {
-  return `tally.history.record size=${outcome.size} tier=${outcome.tier} result=${outcome.result} cost_nanos=${outcome.costNanos}`;
+  return `tally.history.record size=${outcome.size} tier=${outcome.tier} result=${outcome.result} cost_nanos=${outcome.costNanos}${outcome.model ? ` model=${encodeURIComponent(outcome.model)}` : ''}`;
 }

@@ -265,7 +265,7 @@ export async function routeTask(input: RouteInput): Promise<RouteDecision> {
         const cap = plan.capSource === 'successful-p90'
           ? `cap ${usd(plan.ceilingNanos)} from P90 ${usd(plan.p90CostNanos!)} x 1.5 over ${plan.successfulSamples} successful samples, max ${usd(plan.configuredCeilingNanos)}`
           : `config cap ${usd(plan.ceilingNanos)} (${plan.successfulSamples} successful samples; 5 needed)`;
-        return `${stats}, ${plan.usedPrior ? 'uses the prior' : 'observed statistics'}, ${cap}`;
+        return `${stats}, ${plan.usedPrior ? 'uses the prior' : 'observed statistics'}, ${cap}, model ${plan.model} only (unknown-model observations excluded)`;
       });
       if (notes?.length) decision.reason = `${decision.reason.replace(/\.$/, '')}; ${notes.join('; ')}.`;
       span.set({

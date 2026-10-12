@@ -68,7 +68,7 @@ export async function estimateFor(
   const prior = priorFor(config, size, tierName);
   let observed: PriceStats | null = null;
   try {
-    observed = (await history?.lookup(size, tierName)) ?? null;
+    observed = (await history?.lookup(size, tierName, config.tiers.find(tier => tier.name === tierName)!.model)) ?? null;
   } catch {
     observed = null;
   }
@@ -84,7 +84,7 @@ interface Cell {
 
 export interface PriceHistorySnapshot {
   version: 1;
-  /** Keyed by `${size}:${tier}`. */
+  /** Model cells use JSON [size, tier, model]; legacy `${size}:${tier}` cells remain audit-only. */
   cells: Record<string, Cell>;
 }
 
@@ -113,8 +113,8 @@ export class PriceHistory implements PriceHistoryPort, PriceHistoryWriterPort {
     }
   }
 
-  async lookup(size: TaskSize, tier: string): Promise<PriceStats | null> {
-    const cell = this.cells.get(`${size}:${tier}`);
+  async lookup(size: TaskSize, tier: string, model?: string): Promise<PriceStats | null> {
+    const cell = this.cells.get(model ? JSON.stringify([size, tier, model]) : `${size}:${tier}`);
     if (!cell || cell.attempts === 0) return null;
     return {
       attempts: cell.attempts,
@@ -127,7 +127,7 @@ export class PriceHistory implements PriceHistoryPort, PriceHistoryWriterPort {
   async record(outcome: AttemptOutcome): Promise<void> {
     // An errored attempt broke outside the model, so it says nothing about the tier.
     if (outcome.result === 'error') return;
-    const key = `${outcome.size}:${outcome.tier}`;
+    const key = outcome.model ? JSON.stringify([outcome.size, outcome.tier, outcome.model]) : `${outcome.size}:${outcome.tier}`;
     const cell = this.cells.get(key) ?? { attempts: 0, passes: 0, totalCostNanos: 0 };
     cell.attempts += 1;
     if (outcome.result === 'passed') {
