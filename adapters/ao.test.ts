@@ -113,6 +113,30 @@ describe('AO per-harness permission selection', () => {
   });
 });
 
+describe('AO host-side task commits', () => {
+  it('quiesces without deleting the checkout and runs normal commit hooks without interactive prompts', async () => {
+    const calls: Array<{ args: string[]; env?: NodeJS.ProcessEnv }> = [];
+    const command: CommandRunner = async (file, args, options) => {
+      calls.push({ args, env: options?.env });
+      if (file === 'ao' && args[1] === 'exit-agent') return { stdout: '', stderr: '' };
+      if (file === 'ao' && args[1] === 'get') return { stdout: JSON.stringify({ session: { branch: 'task', worktreePath: '/tmp/worker' } }), stderr: '' };
+      if (args[0] === 'branch') return { stdout: 'task\n', stderr: '' };
+      if (args[0] === 'diff') return { stdout: 'calc.ts\0', stderr: '' };
+      if (args[0] === 'ls-files') return { stdout: args.includes('--others') ? 'new.ts\0tally.yaml\0' : '', stderr: '' };
+      if (args[0] === 'rev-parse') return { stdout: 'a'.repeat(40), stderr: '' };
+      if (args[0] === '--literal-pathspecs') return { stdout: '', stderr: '' };
+      throw new Error(`unexpected ${file} ${args.join(' ')}`);
+    };
+    const worker = new RealAoCliAdapter({ command, cwd: '/tmp/repo' });
+    await expect(worker.commitChanges('worker')).resolves.toBe('a'.repeat(40));
+    expect(calls[0]?.args).toEqual(['session', 'exit-agent', 'worker']);
+    const commit = calls.find(call => call.args.includes('commit'))!;
+    expect(commit.env?.GIT_TERMINAL_PROMPT).toBe('0');
+    expect(commit.args).toEqual(['--literal-pathspecs', 'commit', '--only', '-m', 'tally: commit completed task edits', '--', 'calc.ts', 'new.ts']);
+    expect(calls.some(call => call.args.includes('kill') || call.args.includes('--no-verify'))).toBe(false);
+  });
+});
+
 describe('AO branch continuation', () => {
   it('launches a clean continuation with its task prompt instead of sending into startup idle', async () => {
     const calls: string[][] = [];
@@ -137,7 +161,7 @@ describe('AO branch continuation', () => {
       await git(['add', 'tracked']);
       await git(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'base']);
       await git(['worktree', 'add', '-b', 'task', worktree]);
-      await writeFile(join(root, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nprintf hook-ran > hook-proof\n', { mode: 0o755 });
+      await writeFile(join(root, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\ntest "$GIT_TERMINAL_PROMPT" = "0" || exit 1\nprintf hook-ran > hook-proof\n', { mode: 0o755 });
       await writeFile(join(worktree, 'tracked'), 'partial implementation');
       await writeFile(join(worktree, 'new-test'), 'partial regression');
       const resolver = new GitWorktreeResolver();
@@ -312,7 +336,7 @@ describe('usageFromAoPayload', () => {
     expect(polls).toBe(3);
   });
 
-  it('kills a worker that asks for input and returns a clear result reason', async () => {
+  it('exits a worker asking for input but preserves its AO worktree for independent verification', async () => {
     const calls: Array<{ file: string; args: string[] }> = [];
     const command: CommandRunner = async (file, args) => {
       calls.push({ file, args });
@@ -330,7 +354,7 @@ describe('usageFromAoPayload', () => {
           stderr: '',
         };
       }
-      if (args.slice(0, 2).join(' ') === 'session kill') return { stdout: '', stderr: '' };
+      if (args.slice(0, 2).join(' ') === 'session exit-agent') return { stdout: '', stderr: '' };
       throw new Error(`unexpected command: ${file} ${args.join(' ')}`);
     };
     const adapter = new AoCliAdapter({ command, sleep: async () => {}, needsInputGracePolls: 1 });
@@ -342,7 +366,7 @@ describe('usageFromAoPayload', () => {
       prUrl: null,
       resultReason: 'worker asked for input: AO session entered needs_input/waiting_input',
     });
-    expect(calls.map((call) => `${call.file} ${call.args.join(' ')}`)).toEqual(['ao session get worker-1 --json', 'ao session kill worker-1']);
+    expect(calls.map((call) => `${call.file} ${call.args.join(' ')}`)).toEqual(['ao session get worker-1 --json', 'ao session exit-agent worker-1']);
   });
 
   it('waits through a transient needs-input state before returning stable idle', async () => {

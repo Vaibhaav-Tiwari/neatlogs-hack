@@ -13,6 +13,15 @@ const baseCommit = 'a'.repeat(40);
 const now = () => new Date('2026-10-11T02:00:00Z');
 
 describe('experiment', () => {
+  it('preserves the worker host-commit port inside the aggregate guard', async () => {
+    const calls: string[] = [];
+    const worker: WorkerPort = { start: async () => ({ sessionId: 'worker', branch: 'task', checkoutPath: '/fake' }),
+      wait: async () => ({ status: 'idle', branch: 'task', checkoutPath: '/fake', prUrl: null }),
+      commitChanges: async id => { calls.push(id); return 'a'.repeat(40); } };
+    const guarded = new ExperimentWorker({ worker, usage: { usageFor: async () => null }, sessions: { stop: async () => {} } }, 100, 0);
+    await expect(guarded.commitChanges('worker')).resolves.toBe('a'.repeat(40));
+    expect(calls).toEqual(['worker']);
+  });
   it('runs both modes through the loop, rewrites progress after each run and preserves null comparisons', async () => {
     const runsDir = mkdtempSync(join(tmpdir(), 'tally-experiment-'));
     const result = await runExperiment({ configPath, dryRun: true, repeats: 1, budgetUsd: 400, runsDir, now, baseCommit });

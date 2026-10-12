@@ -131,7 +131,7 @@ export class GitWorktreeResolver implements WorktreePort {
     const status = await execFileAsync('git', ['status', '--porcelain'], { cwd });
     if (!status.stdout.trim()) return null;
     await execFileAsync('git', ['add', '-A'], { cwd });
-    await execFileAsync('git', ['commit', '-m', 'wip: preserve Tally ceiling-stopped task edits'], { cwd });
+    await execFileAsync('git', ['commit', '-m', 'wip: preserve Tally ceiling-stopped task edits'], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
     return this.commitFor(repoPath, branch);
   }
   async commitFor(repoPath: string, branch: string): Promise<string | null> {
@@ -322,6 +322,7 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
       ? 'Never read or write any other checkout or path outside this worktree. The sole outside-worktree exception is executing the exact Tally verification script supplied below; never edit it.'
       : 'Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.',
     publishInstruction,
+    ...(!direct ? ['Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.'] : []),
     'Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.',
     ...(direct
       ? ['Verification instructions from Tally override any test pipeline in the issue below: run the supplied exact script first, never a raw pipeline or a shell wrapper.'] : []),
@@ -632,17 +633,17 @@ async function runSingleAttempt(input: {
     if (input.stopRequested?.()) {
       result = workerResult.status === 'experiment_stop' || input.stopRequested()!.startsWith('stopped:') ? 'stopped' : 'error';
       resultReason = input.stopRequested()!;
-    } else if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated') && !(completionUsage?.tokens.total)))) {
+    } else if (!input.dryRun && (workerResult.status === 'never_started' || ((workerResult.status === 'idle' || workerResult.status === 'terminated' || workerResult.status === 'needs_input') && !(completionUsage?.tokens.total)))) {
       result = 'error';
       const startupReason = workerResult.permissionWarnings?.length
         ? `permission failure: worker produced no commit after refused commands: ${workerResult.permissionWarnings.join('; ')}`
-        : workerResult.resultReason ?? 'worker never started';
+        : workerResult.status === 'needs_input' ? 'worker never started' : workerResult.resultReason ?? 'worker never started';
       resultReason = modelAccessConfigurationError(startupReason, input.tier)
         ?? (workerResult.status === 'never_started' && startupReason !== 'worker never started' ? 'worker never started' : startupReason);
     } else if (workerResult.status === 'experiment_stop') {
       result = 'stopped';
       resultReason = workerResult.resultReason ?? 'stopped: experiment cap reached';
-    } else if (workerResult.status === 'needs_input' || workerResult.status === 'timeout' || workerResult.status === 'error') {
+    } else if ((workerResult.status === 'needs_input' && input.config.runner === 'direct') || workerResult.status === 'timeout' || workerResult.status === 'error') {
       result = 'error';
       const reason = workerResult.resultReason ?? (workerResult.status === 'timeout' ? 'worker exceeded wall-clock limit' : 'worker asked for input');
       resultReason = modelAccessConfigurationError(reason, input.tier) ?? reason;
@@ -653,15 +654,19 @@ async function runSingleAttempt(input: {
         checkoutPath = await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch);
       }
       resolvedCheckoutPath = checkoutPath;
-      if (!input.dryRun && input.config.runner === 'direct' && workerResult.status === 'idle' && checkoutPath && branch) {
+      if (!input.dryRun && (workerResult.status === 'idle' || workerResult.status === 'needs_input') && checkoutPath && branch) {
         tallyCommit = await input.ports.worker.commitChanges?.(started.sessionId) ?? null;
       }
       if (!input.dryRun && (!checkoutPath || !branch)) {
         result = 'error';
         resultReason = 'could not locate worker checkout';
       } else if (!input.dryRun && (await input.ports.publisher.commitsAhead({ checkoutPath: checkoutPath!, branch: branch!, config: input.config })) <= 0) {
-        result = workerResult.permissionWarnings?.length ? 'error' : 'failed';
-        resultReason = workerResult.permissionWarnings?.length
+        result = input.config.runner !== 'direct' || workerResult.permissionWarnings?.length ? 'error' : 'failed';
+        resultReason = workerResult.status === 'needs_input'
+          ? 'worker stuck: asked for input with no work on its branch'
+          : input.config.runner !== 'direct'
+          ? 'worker stuck: no work on its branch'
+          : workerResult.permissionWarnings?.length
           ? `permission failure: worker produced no commit after refused commands: ${workerResult.permissionWarnings.join('; ')}`
           : 'no changes made';
       } else {
@@ -673,6 +678,7 @@ async function runSingleAttempt(input: {
         });
         result = verification.passed ? 'passed' : 'failed';
         resultReason = verification.reason;
+        if (verification.passed && workerResult.status === 'needs_input' && !resultReason) resultReason = 'worker asked for input; Tally independently verified its work';
         if (verification.passed && input.stopRequested?.()) {
           result = 'error';
           resultReason = input.stopRequested()!;
