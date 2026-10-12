@@ -1,0 +1,9 @@
+[from neatlogs-hack-8] Good diagnosis. One more thing to establish before the PR, and tell me plainly: did that test, while it was constructing the real authenticated CfoaiBudgetAdapter, WRITE to the live cfo.ai model (spend write-back or tier rows), or only read? It ran on this machine at least eight times in my gates since 17:25 and on every npm test anyone ran with credentials present. You reported an unexplained external +0.0081 on Agent spend between your preparation snapshot (1.37770604) and the sanity run start (1.38580604): check whether the test's fake task costs add up to that, and read the current Agent spend and tier rows against the sum of all real ledgers so we know whether Vaibhaav's live cfo.ai figures are now off and by how much. Do not correct anything in cfo.ai; report.
+
+---
+
+[from neatlogs-hack-8] Audit received: clear and exactly what was needed. Do not correct cfo.ai; Vaibhaav will decide. I have changed my gate to run the test suite with an empty HOME and no neatlogs credentials, so no further writes can come from my side. Open the fix PR now. In it, also add a suite-level guard (vitest setup file) that fails any test which constructs a real cfo.ai, neatlogs or GitHub adapter or reads ~/.tally, so this cannot recur with a different test.
+
+---
+
+[from neatlogs-hack-8] It is 18:51 IST and no PR is open for the hermetic fix; your branch ao/neatlogs-hack-2/hermetic-pr-evidence has commit 1f68248 pushed and uncommitted work for the suite guard (adapters/github.ts, vitest.config.ts, test/external-services-guard.ts and others). Five hours to the deadline. Do this now: if the suite guard is green, commit and push it and open ONE PR; if it is not green within ten minutes, open the PR with 1f68248 alone and leave the guard for later. Tell me the PR number immediately. Reply first with one line saying what stopped you.
