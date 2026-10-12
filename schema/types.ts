@@ -152,6 +152,8 @@ export interface TaskState {
   issueUrl: string | null;
   /** null until the sizer has run. */
   size: TaskSize | null;
+  /** Sizer confidence for the selected size, retained for CFO context. */
+  sizingConfidence?: number;
   impact?: TaskImpact;
   changedFiles?: string[];
   status: TaskStatus;
@@ -271,12 +273,16 @@ export interface TallyConfig {
       /** cfo.ai org/workspace id, e.g. "<cfoai-org-id>". */
       orgId?: string;
       scenario?: string;
+      /** cfo.ai page containing the budget and Tally's Ari interpretation note. */
+      pageName?: string;
       table?: string;
       budgetRow?: string;
       spendRow?: string;
       remainingRow?: string;
       spendDetailTable?: string;
       spendDetailTableUrl?: string;
+      /** Share per-attempt operating context with the selected cfo.ai workspace memory for Ari. */
+      publishRunContext?: boolean;
       tierSpendRows?: Record<string, string>;
       runSpendRow?: string;
       cumulativeRunSpendRow?: string;

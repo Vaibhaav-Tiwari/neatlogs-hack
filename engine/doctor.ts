@@ -175,8 +175,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
   const notSelected = 'Optional integration. Not selected until tally init.';
   const disabled = 'Disabled in tally.yaml. This integration is not required.';
   const entireEnabled = config?.integrations.entire === true;
-  lines.push(!entireEnabled ? off('Entire CLI', config ? disabled : notSelected) : await commandLine('Entire CLI', runner, 'entire', ['--version'], 'pipx install entire'));
-  lines.push(!entireEnabled ? off('Entire graph plugin', config ? disabled : notSelected) : await commandLine('Entire graph plugin', runner, 'entire', ['graph', '--help'], 'entire enable'));
+  lines.push(!entireEnabled ? off('Entire CLI', config ? disabled : notSelected) : await commandLine('Entire CLI', runner, 'entire', ['--version'], 'Install from https://docs.entire.io/installation, then rerun tally init'));
+  lines.push(!entireEnabled ? off('Entire graph plugin', config ? disabled : notSelected) : await commandLine('Entire graph plugin', runner, 'entire', ['graph', '--help'], 'entire plugin install graph'));
   if (entireEnabled) {
     const cwd = resolve(dirname(options.configPath!), config.repo.path);
     const recall = await new EntireCheckpointRecallAdapter({ repoPath: cwd, command: runner }).checkAvailability();
@@ -236,9 +236,9 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
     try {
       const output = await runner('entire', ['status', '--json'], { cwd });
       const enabled = JSON.parse(output.stdout).enabled === true;
-      lines.push({ product: 'Entire repository', status: enabled ? 'connected' : 'missing', detail: enabled ? `Entire is enabled in ${cwd}` : `Entire is not enabled in ${cwd}`, fix: enabled ? null : `cd ${JSON.stringify(cwd)} && entire enable` });
+      lines.push({ product: 'Entire repository', status: enabled ? 'connected' : 'missing', detail: enabled ? `Entire is enabled in ${cwd}` : `Entire is not enabled in ${cwd}`, fix: enabled ? null : 'rerun tally init and choose Entire' });
     } catch (error) {
-      lines.push({ product: 'Entire repository', status: 'broken', detail: error instanceof Error ? error.message : 'Entire status failed', fix: `cd ${JSON.stringify(cwd)} && entire enable` });
+      lines.push({ product: 'Entire repository', status: 'broken', detail: error instanceof Error ? error.message : 'Entire status failed', fix: 'rerun tally init and choose Entire' });
     }
   }
   lines.push(
@@ -247,8 +247,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
       : {
           product: 'neatlogs key',
           status: 'missing',
-          detail: 'NEATLOGS_API_KEY is missing from ~/.tally/.env',
-          fix: "mkdir -p ~/.tally && printf 'NEATLOGS_API_KEY=...\\n' >> ~/.tally/.env",
+          detail: 'No project key is configured. Tally already includes the Neatlogs SDK; a separate CLI install is not needed.',
+          fix: 'Create a project key at https://app.neatlogs.com/settings/api-keys, then run tally init',
         },
   );
   const cfoaiEnabled = config?.integrations.cfoai === true || config?.budget.source === 'cfoai';
@@ -256,12 +256,22 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorLine
     lines.push(off('cfo.ai', config ? disabled : notSelected));
     return lines;
   }
-  const cfoai = await cfoaiCheck();
+  const cfoai = await cfoaiCheck({ config: config?.budget.cfoai });
   lines.push({
     product: 'cfo.ai',
     status: cfoai.status === 'ok' ? 'connected' : 'missing',
     detail: cfoai.detail ?? (cfoai.status === 'ok' ? 'Tally cached token works' : 'Tally cfo.ai token is missing or unusable'),
     fix: cfoai.status === 'ok' ? null : 'tally login cfoai',
   });
+  if (config?.budget.cfoai?.publishRunContext) {
+    lines.push({
+      product: 'cfo.ai Ari task context',
+      status: cfoai.status === 'ok' ? 'connected' : 'missing',
+      detail: cfoai.status === 'ok' ? 'Organization-memory tool schema is available. Tally checks each report before sending it.' : 'Ari task-context publishing needs a working cfo.ai connection and organization-memory tool.',
+      fix: cfoai.status === 'ok' ? null : 'tally login cfoai',
+    });
+  } else {
+    lines.push(off('cfo.ai Ari task context', 'Off. Budget and spend tables can still be used.'));
+  }
   return lines;
 }

@@ -23,7 +23,8 @@ import { checkCeiling, CeilingWatcher } from '../agent/watcher.js';
 import { AoCliAdapter } from '../adapters/ao.js';
 import { createDirectRunner } from '../adapters/direct-codex.js';
 import { workerCorrelationPrefix } from './worker-correlation.js';
-import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND } from '../adapters/cfoai.js';
+import { CfoaiBudgetAdapter, CFOAI_FIX_COMMAND, safeCfoaiError } from '../adapters/cfoai.js';
+import { buildCfoaiTaskContext } from '../adapters/cfoai-context.js';
 import { EntireSizingAdapter } from '../adapters/entire.js';
 import { RepositorySizingAdapter } from '../adapters/repository-sizing.js';
 import { EntireCheckpointAdapter } from '../adapters/entire-checkpoints.js';
@@ -100,6 +101,7 @@ export interface CfoaiBudgetPort extends BudgetPort {
   currentSpendNanos?(): Promise<number>;
   writeCumulativeActualSpend(runSpendNanos: number): Promise<void>;
   writeSpendDetail?(input: { attempts: Array<{ tier: string; costNanos: number }>; cumulativeRunSpendNanos: number }): Promise<{ skippedTiers: string[] }>;
+  publishTaskContext?(document: ReturnType<typeof buildCfoaiTaskContext>): Promise<void>;
   status(): IntegrationState;
   tableUrl?(): string | undefined;
 }
@@ -266,7 +268,7 @@ function integrationStates(config: TallyConfig, ports: RealRunPorts, options: { 
   const cfoaiStatus = options.cfoaiReadFailure
     ? { status: 'missing' as const, detail: `cfo.ai budget read failed: ${options.cfoaiReadFailure}; using the fallback budget in tally.yaml${options.dryRun ? '; simulated workers only; spend not written' : ''}` }
     : ports.cfoai?.status() ?? { status: 'missing' as const, detail: CFOAI_FIX_COMMAND };
-  const graph = portStatus(ports.signals, { status: 'missing', detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: run `entire enable` in this repository.' });
+  const graph = portStatus(ports.signals, { status: 'missing', detail: 'Entire sizing adapter is not configured. Falling back to code search. Fix: rerun `tally init` and choose Entire.' });
   const recall = ports.recall?.status?.();
   return {
     neatlogs: config.integrations.neatlogs ? neatlogsStatus(ports) : { status: 'off', detail: null },
@@ -925,6 +927,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   let monthlyLimitNanos = usdToNanos(config.budget.usd);
   let monthlySpentNanos = 0;
   let cfoaiWriteFailure: string | null = null;
+  const cfoaiContextFailures: string[] = [];
   let cfoaiReadFailure: string | null = null;
   let committedBeforeRunNanos = 0;
   if ((config.integrations.cfoai || config.budget.source === 'cfoai') && ports.cfoai) {
@@ -954,24 +957,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const reservations = new Reservations(() => availableRunLimitNanos - ledgerSpend(ledger));
   const decisions = new SerialQueue();
   const accounting = new SerialQueue();
-  const recordSpend = (row: LedgerRow) => accounting.run(async () => {
-    if (options.dryRun) return;
-    const cumulative = ledgerSpend(ledger);
-    const attempts = ledger.map((attempt) => ({ tier: attempt.tier, costNanos: attempt.estimatedCostNanos }));
-    appendCfoaiFallback(outputDir, row, cumulative);
-    if (!config.integrations.cfoai || !ports.cfoai) return;
-    try {
-      await ports.cfoai.writeCumulativeActualSpend(cumulative);
-      await ports.cfoai.writeSpendDetail?.({
-        attempts,
-        cumulativeRunSpendNanos: cumulative,
-      });
-      cfoaiWriteFailure = null;
-    } catch (error) {
-      cfoaiWriteFailure = `write failed: ${error instanceof Error ? error.message : String(error)}; actual spend retained in cfoai-spend-fallback.csv`;
-      // CSV fallback has already preserved the attempted spend for a later sync.
-    }
-  });
+  const pendingCfoaiContexts: Array<{ row: LedgerRow; runSpentNanos: number; spendTableWriteStatus: 'ok' | 'failed' }> = [];
   const tasks = (await ports.intake.tasks(config, options.configPath)).filter((task) => {
     if (options.only === undefined) return true;
     return task.taskId === options.only || String(task.issueNumber) === options.only;
@@ -991,7 +977,32 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const baseCommit = options.requiredBaseCommit ?? savedRun?.baseCommit ?? resolvedBase;
   const taskStates = tasks.map((task) => {
     const saved = savedRun?.tasks.find((state) => state.taskId === task.taskId);
-    return { ...initialTaskState(task), ...(saved?.impact ? { impact: saved.impact } : {}), ...(saved?.changedFiles ? { changedFiles: saved.changedFiles } : {}) };
+    return { ...initialTaskState(task), ...(saved?.sizingConfidence === undefined ? {} : { sizingConfidence: saved.sizingConfidence }),
+      ...(saved?.impact ? { impact: saved.impact } : {}), ...(saved?.changedFiles ? { changedFiles: saved.changedFiles } : {}) };
+  });
+  const recordSpend = (row: LedgerRow) => accounting.run(async () => {
+    if (options.dryRun) return;
+    const cumulative = ledgerSpend(ledger);
+    const attempts = ledger.map((attempt) => ({ tier: attempt.tier, costNanos: attempt.estimatedCostNanos }));
+    appendCfoaiFallback(outputDir, row, cumulative);
+    if (!config.integrations.cfoai || !ports.cfoai) return;
+    let spendTableWriteStatus: 'ok' | 'failed' = 'ok';
+    try {
+      await ports.cfoai.writeCumulativeActualSpend(cumulative);
+      await ports.cfoai.writeSpendDetail?.({ attempts, cumulativeRunSpendNanos: cumulative });
+      cfoaiWriteFailure = null;
+    } catch (error) {
+      spendTableWriteStatus = 'failed';
+      cfoaiWriteFailure = `Spend-table write failed: ${safeCfoaiError(error)}. Actual spend is retained in cfoai-spend-fallback.csv.`;
+    }
+    if (!config.budget.cfoai?.publishRunContext) return;
+    if (!ports.cfoai.publishTaskContext) {
+      cfoaiContextFailures.push('Ari task-context writer is unavailable. Local ledger and spend tables remain the source of truth.');
+      return;
+    }
+    // Wait until checkpoint and Neatlogs URLs have been finalized so Ari gets
+    // review links that can be opened from the report.
+    pendingCfoaiContexts.push({ row, runSpentNanos: cumulative, spendTableWriteStatus });
   });
   const recoveredWorkerTraceAttempts = new Set<string>();
   const liveCosts = new Map<string, number>();
@@ -1048,7 +1059,10 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       tasks: taskStates,
       integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource, cfoaiReadFailure }),
     };
-    if (cfoaiWriteFailure) runState.integrations.cfoai = { status: 'error', detail: cfoaiWriteFailure };
+    if (cfoaiWriteFailure || cfoaiContextFailures.length) runState.integrations.cfoai = {
+      status: 'error',
+      detail: [cfoaiWriteFailure, ...cfoaiContextFailures].filter(Boolean).join(' '),
+    };
     const workerRows = ledger.filter(row => row.sessionId && (row.harness === 'codex' || row.harness === 'claude-code'));
     if (!options.dryRun && config.integrations.neatlogs && workerRows.length > 0 && workerRows.every(row => row.workerTraceId)
       && ports.workerTraceDrain?.status?.().detail?.startsWith('No queued worker trace found')) {
@@ -1234,6 +1248,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       task.size = estimate.size;
       const state = taskStates[index]!;
       state.size = estimate.size;
+      state.sizingConfidence = estimate.confidence;
       state.impact ??= structuredClone(estimate.signals?.impact ?? {
         source: estimate.signals?.source ?? 'none', query: `${task.title}\n${task.body}`.trim(), nodes: [], edges: [],
         totals: { filesTouched: estimate.signals?.filesTouched ?? 0, dependents: estimate.signals?.dependents ?? 0, testsPresent: estimate.signals?.testsPresent ?? false, nodes: 0, edges: 0 }, truncated: false,
@@ -1410,6 +1425,38 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (config.integrations.neatlogs) {
       row.traceUrl ??= neatlogsTraceUrl(row.traceId);
       row.workerTraceUrl ??= neatlogsTraceUrl(row.workerTraceId);
+    }
+  }
+
+  if (!options.dryRun && pendingCfoaiContexts.length && ports.cfoai?.publishTaskContext && config.budget.cfoai) {
+    for (const pending of pendingCfoaiContexts) {
+      try {
+        const taskState = taskStates.find(state => state.taskId === pending.row.taskId);
+        const context = buildCfoaiTaskContext({
+          row: pending.row,
+          repo: repoName(config),
+          runId,
+          scenario: config.budget.cfoai.scenario,
+          contextPageName: config.budget.cfoai.pageName,
+          contextPageUrl: config.budget.cfoai.pageUrl,
+          runLimitNanos: availableRunLimitNanos,
+          runLimitSource: options.budgetUsd === undefined ? budgetSource : 'cli',
+          runSpentNanos: pending.runSpentNanos,
+          budgetSource,
+          spendTableWriteStatus: pending.spendTableWriteStatus,
+          monthlyLimitNanos,
+          monthlySpentBeforeRunNanos: monthlyCommittedBeforeRun,
+          tiers: config.tiers,
+          impact: taskState?.impact,
+          sizingConfidence: taskState?.sizingConfidence,
+          issueUrl: taskState?.issueUrl,
+          budgetTableUrl: config.budget.cfoai.tableUrl,
+          spendTableUrl: config.budget.cfoai.spendDetailTableUrl,
+        });
+        await ports.cfoai.publishTaskContext(context);
+      } catch (error) {
+        cfoaiContextFailures.push(`Ari task-context write failed: ${safeCfoaiError(error)}. Local ledger and spend tables remain the source of truth for this attempt.`);
+      }
     }
   }
 

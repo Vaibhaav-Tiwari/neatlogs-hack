@@ -45,6 +45,7 @@ describe('neatlogs onboarding', () => {
     expect((await module.configure(context)).enabled).toBe(true);
     const messages = vi.mocked(context.ui.print).mock.calls.map(([message]) => message).join('\n');
     expect(messages).toContain('Neatlogs connection');
+    expect(messages).toContain('Tally already includes the Neatlogs SDK. No separate CLI or package install is needed.');
     expect(messages).toContain('Past-run history (optional)');
     expect(messages).toContain('context:read and observability:read');
     expect(messages).toContain('Worker traces (optional)');

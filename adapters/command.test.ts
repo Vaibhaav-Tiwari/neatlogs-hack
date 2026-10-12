@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CommandError, resolveAoBinary, runCommand } from './command.js';
+import { CommandError, resolveAoBinary, resolveEntireBinary, runCommand } from './command.js';
 
 function executable(path: string) {
   writeFileSync(path, '#!/bin/sh\nprintf "ok"\n');
@@ -48,5 +48,17 @@ describe('shared AO executable resolution', () => {
     expect(error).toBeInstanceOf(CommandError);
     expect(error).toMatchObject({ code: 3, stdout: 'verdict', stderr: 'detail' });
     expect(error.message).not.toContain('printf');
+  });
+});
+
+describe('Entire user-local executable resolution', () => {
+  it('finds the official Linux install location when it is missing from PATH', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'tally-entire-bin-'));
+    const local = join(home, '.local', 'bin');
+    mkdirSync(local, { recursive: true });
+    const path = executable(join(local, 'entire'));
+    expect(resolveEntireBinary({ platform: 'linux', home })).toBe(path);
+    expect((await runCommand('entire', ['version'], { platform: 'linux', home })).stdout).toBe('ok');
+    expect(resolveEntireBinary({ platform: 'linux', home: `${home}-missing` })).toBe('entire');
   });
 });

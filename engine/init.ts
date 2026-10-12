@@ -19,6 +19,7 @@ import { formatUsd } from '../schema/money.js';
 import { applyReinit, finishReinit, prepareReinit, readReinit, reinitPath } from './reinit.js';
 import { AO_HARNESS_PERMISSIONS, checkHarness, claudeAllowList, claudeScripts, type Harness } from './harness.js';
 import { readAoDaemonStatus, type AoDaemonStatus } from './ao-status.js';
+import { createTerminalStyle, formatInitPrompt } from '../ui/terminal.js';
 
 export interface InitCommandResult {
   stdout: string;
@@ -102,8 +103,7 @@ export async function defaultReadLine(question: string, defaultValue = ''): Prom
   const controller = new AbortController();
   readline.once('close', () => controller.abort());
   try {
-    const suffix = defaultValue ? ` [${defaultValue}]` : '';
-    const answer = await readline.question(`${question}${suffix}: `, { signal: controller.signal });
+    const answer = await readline.question(formatInitPrompt(question, defaultValue, createTerminalStyle()), { signal: controller.signal });
     return answer.trim() || defaultValue;
   } catch {
     throw new InitError('Init input closed; rerun in a terminal or use --yes with explicit init flags.');
@@ -185,20 +185,20 @@ function parseBudget(value: string): number {
 }
 
 function printSummary(config: TallyConfig, print: (line: string) => void): void {
-  print(`Runner: ${config.runner ?? 'ao'}${config.runner === 'direct' ? ' (one task at a time)' : ' (Agent Orchestrator)'}`);
-  print(`Repository: ${config.repo.slug ?? config.repo.path} (base: ${config.repo.baseBranch})`);
-  print(`Test: ${config.test.command}`);
-  print(`Setup: ${config.test.setupCommand ?? 'none'}`);
-  print(`Issue label: ${config.backlog.issueLabel ?? 'none'}`);
-  print(config.budget.source === 'cfoai' ? `Budget: cfo.ai live account budget (local fallback: $${config.budget.usd})` : `Budget: $${config.budget.usd} from config`);
-  for (const tier of config.tiers) print(`Tier ${tier.name}: ${tier.harness}/${tier.model} (${tier.sessionMode})`);
+  print(`  Runner             ${config.runner ?? 'ao'}${config.runner === 'direct' ? ' · one task at a time' : ' · Agent Orchestrator'}`);
+  print(`  Repository         ${config.repo.slug ?? config.repo.path} · base ${config.repo.baseBranch}`);
+  print(`  Verification       ${config.test.command}`);
+  print(`  Setup              ${config.test.setupCommand ?? 'none'}`);
+  print(`  Issue label        ${config.backlog.issueLabel ?? 'none'}`);
+  print(`  Budget             ${config.budget.source === 'cfoai' ? `cfo.ai live · $${config.budget.usd} fallback` : `$${config.budget.usd} · tally.yaml`}`);
+  for (const tier of config.tiers) print(`  Tier ${tier.name.padEnd(11)} ${tier.harness}/${tier.model} · ${tier.sessionMode}`);
   print('Integrations:');
-  print('  Integration  Status');
   for (const [name, label] of [['neatlogs', 'Neatlogs'], ['entire', 'Entire'], ['cfoai', 'cfo.ai']] as const) {
-    print(`  ${label.padEnd(12)} ${config.integrations[name] ? 'on' : 'off'}`);
+    print(`  ${label.padEnd(18)} ${config.integrations[name] ? 'on' : 'off'}`);
   }
-  print(`Model-access fallback: ${config.modelAccessFallbackTier ?? 'off (fail fast)'}`);
-  print(`Workers: ${config.runner === 'direct' ? 1 : config.parallelWorkers ?? 1} (${config.runner ?? 'ao'})`);
+  if (config.budget.cfoai?.publishRunContext) print('  cfo.ai Ari context   on · per-attempt organization-memory reports');
+  print(`  Model fallback     ${config.modelAccessFallbackTier ?? 'off · fail fast'}`);
+  print(`  Workers            ${config.runner === 'direct' ? 1 : config.parallelWorkers ?? 1} · ${config.runner ?? 'ao'}`);
 }
 
 function tiersFor(choice: 'codex' | 'claude-code' | 'mixed'): TallyConfig['tiers'] {

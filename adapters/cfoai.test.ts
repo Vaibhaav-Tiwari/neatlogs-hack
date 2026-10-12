@@ -3,12 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { usdToNanos } from '../schema/money.js';
-import { CfoaiBudgetAdapter, checkCfoaiConnection, cfoaiMonthColumn, normalizeCfoaiConfig, refreshTokenRequest, type CfoaiMcpClient } from './cfoai.js';
+import { CfoaiBudgetAdapter, checkCfoaiConnection, cfoaiMonthColumn, normalizeCfoaiConfig, refreshTokenRequest, safeCfoaiError, type CfoaiMcpClient } from './cfoai.js';
 
 class FakeCfoaiClient implements CfoaiMcpClient {
   connected = 0;
   closed = 0;
   tools = ['inspect_table_blocks', 'edit_table_blocks'];
+  memorySchema: Record<string, unknown> = {
+    type: 'object', required: ['org_id', 'idempotency_key', 'retain_document'],
+    properties: { org_id: { type: 'string' }, idempotency_key: { type: 'string' }, retain_document: { type: 'object' } },
+  };
   calls: { name: string; args: Record<string, unknown> }[] = [];
   values = new Map<string, number>([
     ['Agent budget', 40],
@@ -22,7 +26,7 @@ class FakeCfoaiClient implements CfoaiMcpClient {
   }
 
   async listTools() {
-    return { tools: this.tools.map((name) => ({ name })) };
+    return { tools: this.tools.map((name) => ({ name, ...(name === 'edit_memory' ? { inputSchema: this.memorySchema } : {}) })) };
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
@@ -39,6 +43,7 @@ class FakeCfoaiClient implements CfoaiMcpClient {
       }
       return { structuredContent: { status: this.editStatus, reason: this.editReason } };
     }
+    if (name === 'edit_memory') return { structuredContent: { status: 'applied' } };
     throw new Error(`unexpected tool ${name}`);
   }
 
@@ -72,6 +77,13 @@ class LiveShapeCfoaiClient extends FakeCfoaiClient {
 const now = () => new Date('2026-10-10T12:00:00.000Z');
 
 describe('CfoaiBudgetAdapter', () => {
+  it('redacts credentials from cfo.ai errors before displaying them', () => {
+    const message = safeCfoaiError(new Error('Authorization: Bearer cfoai-secret-value https://app.cfo.ai/callback?access_token=oauth-secret'));
+    expect(message).not.toContain('cfoai-secret-value');
+    expect(message).not.toContain('oauth-secret');
+    expect(message).toContain('[redacted]');
+  });
+
   it('normalizes the documented Tally table defaults', () => {
     expect(
       normalizeCfoaiConfig({
@@ -156,6 +168,27 @@ describe('CfoaiBudgetAdapter', () => {
         update: { target: 'Tally agent budget', values: { columns: ['2026-10'], rows: [['Agent spend', 7]] } },
       },
     ]);
+  });
+
+  it('saves an idempotent Ari report only when the live organization-memory schema accepts it', async () => {
+    const client = new FakeCfoaiClient();
+    client.tools.push('edit_memory');
+    const adapter = new CfoaiBudgetAdapter({ client, config: { orgId: '103210', scenario: 'Tally E2E' } });
+    const report = { content: '# Tally attempt', filename: 'tally-attempt-123.md', tags: ['tally'],
+      metadata: { source: 'tally-agents' }, idempotencyKey: 'tally-attempt-123' };
+    await adapter.publishTaskContext(report);
+    expect(client.calls.find(call => call.name === 'edit_memory')?.args).toEqual({
+      org_id: '103210', idempotency_key: 'tally-attempt-123',
+      retain_document: { content: report.content, filename: report.filename, scope: 'organization', tags: report.tags, metadata: report.metadata },
+    });
+    expect(adapter.status()).toMatchObject({ status: 'ok', detail: 'Ari task context was shared with organization memory.' });
+
+    const invalidClient = new FakeCfoaiClient();
+    invalidClient.tools.push('edit_memory');
+    invalidClient.memorySchema = { type: 'object', required: ['wrong_field'] };
+    const invalidAdapter = new CfoaiBudgetAdapter({ client: invalidClient, config: { orgId: '103210', scenario: 'Tally E2E' } });
+    await expect(invalidAdapter.publishTaskContext(report)).rejects.toThrow('cfo.ai memory tool rejected its published schema');
+    expect(invalidClient.calls.some(call => call.name === 'edit_memory')).toBe(false);
   });
 
   it('writes tier and run spend detail, seeding prior Agent spend so tier rows sum to the budget table spend', async () => {
@@ -256,6 +289,28 @@ describe('CfoaiBudgetAdapter', () => {
 
     await expect(adapter.writeCumulativeActualSpend(usdToNanos(1))).rejects.toThrow(/did not apply/);
   });
+
+  it('validates and writes one idempotent organization-scoped Ari report', async () => {
+    const client = new FakeCfoaiClient();
+    client.tools.push('edit_memory');
+    const adapter = new CfoaiBudgetAdapter({ client, now, config: { orgId: '103210', scenario: 'Tally E2E' } });
+    const document = { content: '# Tally attempt report', filename: 'tally-run-a-attempt-a.md',
+      tags: ['tally', 'tally-run-a'], metadata: { source: 'tally-agents' }, idempotencyKey: 'tally-attempt-stable' };
+    await adapter.publishTaskContext(document);
+    const write = client.calls.find(call => call.name === 'edit_memory');
+    expect(write?.args).toMatchObject({ org_id: '103210', idempotency_key: 'tally-attempt-stable',
+      retain_document: { content: '# Tally attempt report', filename: 'tally-run-a-attempt-a.md', scope: 'organization', tags: ['tally', 'tally-run-a'] } });
+    expect(adapter.status()).toMatchObject({ status: 'ok', detail: expect.stringContaining('organization memory') });
+  });
+
+  it('refuses an enabled context write when the current cfo.ai tool schema is missing', async () => {
+    const client = new FakeCfoaiClient();
+    client.tools.push('edit_memory');
+    client.listTools = async () => ({ tools: client.tools.map(name => ({ name })) });
+    const adapter = new CfoaiBudgetAdapter({ client, now, config: { orgId: '103210' } });
+    await expect(adapter.publishTaskContext({ content: 'report', filename: 'report.md', tags: ['tally'], metadata: {}, idempotencyKey: 'stable' })).rejects.toThrow(/input schema/);
+    expect(client.calls.some(call => call.name === 'edit_memory')).toBe(false);
+  });
 });
 
 describe('checkCfoaiConnection', () => {
@@ -278,6 +333,39 @@ describe('checkCfoaiConnection', () => {
       detail: 'Tally cached token works against https://api.cfo.ai/mcp',
     });
     expect(client.connected).toBe(1);
+  });
+
+  it('checks the organization-memory schema without writing memory when context sharing is enabled', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-cfoai-token-'));
+    const tokenPath = join(dir, 'cfoai-oauth.json');
+    writeFileSync(tokenPath, JSON.stringify({ tokens: { access_token: 'redacted', token_type: 'Bearer' } }));
+    const client = new FakeCfoaiClient();
+    client.tools.push('edit_memory');
+    await expect(checkCfoaiConnection({ tokenPath, client, config: { publishRunContext: true } })).resolves.toMatchObject({ status: 'ok' });
+    expect(client.calls.some(call => call.name === 'edit_memory')).toBe(false);
+  });
+
+  it('reports a missing Ari memory schema before an enabled run can start', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-cfoai-token-'));
+    const tokenPath = join(dir, 'cfoai-oauth.json');
+    writeFileSync(tokenPath, JSON.stringify({ tokens: { access_token: 'redacted', token_type: 'Bearer' } }));
+    const client = new FakeCfoaiClient();
+    await expect(checkCfoaiConnection({ tokenPath, client, config: { publishRunContext: true } })).resolves.toMatchObject({
+      status: 'missing', detail: expect.stringContaining('edit_memory'),
+    });
+  });
+
+  it('redacts server credentials in the doctor connection result', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-cfoai-token-'));
+    const tokenPath = join(dir, 'cfoai-oauth.json');
+    writeFileSync(tokenPath, JSON.stringify({ tokens: { access_token: 'redacted', token_type: 'Bearer' } }));
+    const client = new FakeCfoaiClient();
+    client.connect = async () => { throw new Error('Authorization: Bearer cfoai-secret https://cfo.ai/?access_token=oauth-secret'); };
+    const result = await checkCfoaiConnection({ tokenPath, client });
+    expect(result.status).toBe('missing');
+    expect(result.detail).not.toContain('cfoai-secret');
+    expect(result.detail).not.toContain('oauth-secret');
+    expect(result.detail).toContain('[redacted]');
   });
 
   it('is missing when Tally has no cached cfo.ai token', async () => {

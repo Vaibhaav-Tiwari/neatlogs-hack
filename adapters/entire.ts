@@ -84,7 +84,7 @@ export class EntireSizingAdapter implements SizingSignalsPort {
   private readonly fallback: SizingSignalsPort;
   private graphStatus: IntegrationState = {
     status: 'missing',
-    detail: 'Entire graph has not succeeded yet. Falling back to code search. Fix: run `entire enable` in this repository.',
+    detail: 'Entire graph has not succeeded yet. Falling back to code search. Fix: rerun `tally init` and choose Entire.',
   };
 
   constructor(options: EntireSizingOptions) {
@@ -106,7 +106,7 @@ export class EntireSizingAdapter implements SizingSignalsPort {
     } catch (e) {
       this.graphStatus = {
         status: 'missing',
-        detail: `Entire graph is unavailable (${(e as Error).message}). Falling back to code search. Fix: run \`entire enable\` in this repository.`,
+        detail: `Entire graph is unavailable (${(e as Error).message}). Falling back to code search. Fix: rerun \`tally init\` and choose Entire.`,
       };
       return this.fallback.signalsFor(task);
     }

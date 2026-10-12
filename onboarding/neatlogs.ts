@@ -86,6 +86,7 @@ export class NeatlogsOnboarding implements IntegrationOnboarding {
     const ui = context.ui;
     let key = this.env().NEATLOGS_API_KEY ?? null;
     ui.print('Neatlogs connection');
+    ui.print('  Tally already includes the Neatlogs SDK. No separate CLI or package install is needed.');
     ui.print('  Tally sends routing and task traces to your Neatlogs project.');
     if (key) {
       ui.print('  A project API key is already configured.');

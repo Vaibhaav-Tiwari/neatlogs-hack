@@ -85,7 +85,7 @@ describe('EntireSizingAdapter', () => {
     expect(signals?.impact?.nodes.map((node) => node.id)).toEqual(['src/refund/validator.ts', 'tests/refund.test.ts']);
     expect(signals?.impact?.nodes.every((node) => node.kind === 'target')).toBe(true);
     expect(adapter.status()).toMatchObject({ status: 'missing' });
-    expect(adapter.status().detail).toContain('entire enable');
+    expect(adapter.status().detail).toContain('tally init');
   });
 
   it('returns null when neither graph nor code search can find anything', async () => {

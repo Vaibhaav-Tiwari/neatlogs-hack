@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -10,6 +11,7 @@ import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprot
 import type { IntegrationState, TallyConfig } from '../schema/types.js';
 import { formatUsd, nanosToUsd, usdToNanos } from '../schema/money.js';
 import type { BudgetPort } from '../agent/ports.js';
+import type { CfoaiTaskContextDocument } from './cfoai-context.js';
 
 export const CFOAI_SERVER_URL = 'https://api.cfo.ai/mcp';
 export const CFOAI_FIX_COMMAND = 'Run `tally login cfoai` to connect cfo.ai.';
@@ -17,12 +19,14 @@ export const CFOAI_FIX_COMMAND = 'Run `tally login cfoai` to connect cfo.ai.';
 export interface CfoaiBudgetConfig {
   orgId?: string;
   scenario?: string;
+  pageName?: string;
   table?: string;
   budgetRow?: string;
   spendRow?: string;
   remainingRow?: string;
   spendDetailTable?: string;
   spendDetailTableUrl?: string;
+  publishRunContext?: boolean;
   tierSpendRows?: Record<string, string>;
   runSpendRow?: string;
   cumulativeRunSpendRow?: string;
@@ -275,6 +279,7 @@ export class CfoaiBudgetAdapter implements BudgetPort {
   private baseDetailSpendNanos: Map<string, number> | null = null;
   private seededDetailGapNanos = 0;
   private readyPromise: Promise<void> | null = null;
+  private readonly toolSchemas = new Map<string, Record<string, unknown> | undefined>();
 
   constructor(options: CfoaiBudgetAdapterOptions = {}) {
     this.config = normalizeCfoaiConfig(options.config);
@@ -382,6 +387,42 @@ export class CfoaiBudgetAdapter implements BudgetPort {
     return { skippedTiers: [...skippedTiers] };
   }
 
+  async publishTaskContext(document: CfoaiTaskContextDocument): Promise<void> {
+    await this.ensureReady();
+    if (!this.config.orgId) throw new Error('cfo.ai organization memory needs the selected workspace ID');
+    const schema = this.toolSchemas.get('edit_memory');
+    if (!schema) throw new Error('cfo.ai memory tool is unavailable or did not publish an input schema');
+    const args = {
+      org_id: this.config.orgId,
+      idempotency_key: document.idempotencyKey,
+      retain_document: {
+        content: document.content,
+        filename: document.filename,
+        scope: 'organization',
+        tags: document.tags,
+        metadata: document.metadata,
+      },
+    };
+    const validate = new Ajv2020({ strict: false, allErrors: true }).compile(schema);
+    if (!validate(args)) {
+      const detail = validate.errors?.slice(0, 3).map(error => `${error.instancePath || '/'} ${error.message ?? 'is invalid'}`).join('; ');
+      throw new Error(`cfo.ai memory tool rejected its published schema${detail ? `: ${detail}` : ''}`);
+    }
+    try {
+      const result = await this.client.callTool('edit_memory', args);
+      if (isRecord(result) && result.isError === true) throw new Error('cfo.ai refused the Ari context write');
+      const parsed = unwrapToolResult(result);
+      if (isRecord(parsed) && (parsed.status === 'rejected' || parsed.status === 'error')) {
+        throw new Error('cfo.ai refused the Ari context write');
+      }
+      this.setOkStatus('Ari task context was shared with organization memory.');
+    } catch (error) {
+      const detail = safeCfoaiError(error);
+      this.statusState = { status: 'error', detail: `Ari task context write failed: ${detail}` };
+      throw new Error(detail);
+    }
+  }
+
   private async ensureReady(): Promise<void> {
     if (this.usable) return;
     if (this.readyPromise) return this.readyPromise;
@@ -400,6 +441,8 @@ export class CfoaiBudgetAdapter implements BudgetPort {
       if (!this.toolsChecked) {
         const listed = await this.client.listTools();
         const names = new Set(listed.tools.map((tool) => tool.name));
+        this.toolSchemas.clear();
+        for (const tool of listed.tools) this.toolSchemas.set(tool.name, tool.inputSchema);
         for (const name of ['inspect_table_blocks', 'edit_table_blocks']) {
           if (!names.has(name)) throw new Error(`cfo.ai MCP tool ${name} is missing`);
         }
@@ -491,6 +534,36 @@ function successfulEdit(value: unknown): boolean {
   if (isRecord(value) && value.isError === true) return false;
   const parsed = unwrapToolResult(value);
   return isRecord(parsed) && (parsed.status === 'applied' || (parsed.status === 'no_op' && parsed.reason === 'already_satisfied'));
+}
+
+export function safeCfoaiError(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error))
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+    .replace(/\b(access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|authorization|password)(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1$2[redacted]')
+    .replace(/([?&](?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|client[_-]?secret|signature|code|password)=)[^&#\s]+/gi, '$1[redacted]')
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{16,})\b/g, '[redacted]')
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240) || 'cfo.ai returned an unspecified error';
+}
+
+function supportsOrganizationMemory(schema: Record<string, unknown> | undefined): boolean {
+  if (!schema) return false;
+  try {
+    const validate = new Ajv2020({ strict: false }).compile(schema);
+    return validate({
+      org_id: 'tally-workspace',
+      idempotency_key: 'tally-doctor-schema-check',
+      retain_document: {
+        content: 'Schema check only. No cfo.ai memory write is made.',
+        filename: 'tally-schema-check.md',
+        scope: 'organization',
+        tags: ['tally'],
+        metadata: { source: 'tally-agents' },
+      },
+    });
+  } catch { return false; }
 }
 
 function extractUsd(value: unknown, row: string, column: string): number {
@@ -717,6 +790,10 @@ export async function checkCfoaiConnection(options: CfoaiConnectionCheckOptions 
     for (const name of ['inspect_table_blocks', 'edit_table_blocks']) {
       if (!names.has(name)) throw new Error(`cfo.ai MCP tool ${name} is missing`);
     }
+    if (options.config?.publishRunContext) {
+      const memory = listed.tools.find(tool => tool.name === 'edit_memory');
+      if (!supportsOrganizationMemory(memory?.inputSchema)) throw new Error('cfo.ai organization memory is enabled in tally.yaml, but edit_memory does not support the required organization-scoped document schema');
+    }
     await client.close();
     return { status: 'ok', detail: `Tally cached token works against ${normalized.serverUrl}` };
   } catch (e) {
@@ -725,6 +802,6 @@ export async function checkCfoaiConnection(options: CfoaiConnectionCheckOptions 
     } catch {
       // The connection was not open.
     }
-    return { status: 'missing', detail: `${(e as Error).message}. ${CFOAI_FIX_COMMAND}` };
+    return { status: 'missing', detail: `${safeCfoaiError(e)}. ${CFOAI_FIX_COMMAND}` };
   }
 }

@@ -87,8 +87,8 @@ describe('runInit', () => {
     expect(config.test).not.toHaveProperty('setupCommand');
     expect(config.budget.usd).toBe(5);
     expect(config.backlog.issueLabel).toBe('ready');
-    expect(output.join('\n')).toContain('Test: node --check js/app.js');
-    expect(output.join('\n')).toContain('Integrations:\n  Integration  Status\n  Neatlogs     off\n  Entire       off\n  cfo.ai       off');
+    expect(output.join('\n')).toContain('Verification       node --check js/app.js');
+    expect(output.join('\n')).toContain('Integrations:\n  Neatlogs           off\n  Entire             off\n  cfo.ai             off');
     expect(output.join('\n')).toContain('Optional integrations\n  Integration  What it adds\n  Neatlogs     Tally traces and optional history from past tasks\n  Entire       Code graph sizing and local session checkpoints\n  cfo.ai       Live monthly budget and spend records');
     expect(output.join('\n')).not.toContain(';');
     expect(output.join('\n')).not.toContain('priceNote:');

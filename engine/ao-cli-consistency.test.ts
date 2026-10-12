@@ -47,7 +47,7 @@ describe('ordinary-terminal AO CLI consistency', () => {
         expect(result.applied).toBe(false);
         expect(result.tiers.every((tier) => tier.includes('claude-code'))).toBe(true);
         expect(existsSync(join(dir, '.tally'))).toBe(false);
-        expect(proposal.some(line => line.startsWith('Runner: ao'))).toBe(true);
+        expect(proposal.some(line => line.startsWith('  Runner             ao'))).toBe(true);
       }
       if (consumer === 'doctor') {
         const lines = await runDoctor({ env: {}, cfoaiCheck: async () => ({ status: 'missing', detail: 'test disabled' }) });

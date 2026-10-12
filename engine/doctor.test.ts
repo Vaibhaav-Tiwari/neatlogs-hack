@@ -172,6 +172,22 @@ describe('runDoctor', () => {
     expect(lines.find((line) => line.product === 'cfo.ai')).toMatchObject({ status: 'connected' });
   });
 
+  it('shows Ari task-context sharing as a separately configured and checked integration', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-cfo-context-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'direct';
+    config.integrations = { neatlogs: false, entire: false, cfoai: true, slack: false };
+    config.budget.cfoai = { orgId: '42', scenario: 'Tally', publishRunContext: true };
+    writeFileSync(configPath, stringify(config));
+    const cfoaiCheck = vi.fn(async () => ({ status: 'ok' as const, detail: 'cfo.ai tools ready' }));
+    const lines = await runDoctor({ configPath, env: {}, cfoaiCheck, runner: async (_file, _args) => ({ stdout: 'ok', stderr: '' }) });
+    expect(lines.find(line => line.product === 'cfo.ai Ari task context')).toMatchObject({
+      status: 'connected', detail: expect.stringContaining('Tally checks each report before sending it.'),
+    });
+    expect(cfoaiCheck).toHaveBeenCalledWith({ config: config.budget.cfoai });
+  });
+
   it('reports cfo.ai from Tally token state with the Tally login fix', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-cfoai-'));
     const configPath = join(dir, 'tally.yaml');

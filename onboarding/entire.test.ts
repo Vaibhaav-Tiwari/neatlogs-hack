@@ -102,6 +102,34 @@ describe('Entire onboarding', () => {
     expect((await f.module.configure(f.context)).enabled).toBe(true);
     expect(f.calls.find(call => call.args[0] === 'login')?.interactive).toBe(true);
   });
+  it('offers the official CLI installer after an ENOENT and verifies the installed command', async () => {
+    const f = fixture([true, true]);
+    let installed = false;
+    const base = f.command;
+    const command: EntireOnboardingCommand = async (file, args, options) => {
+      if (file === 'entire' && args[0] === '--version' && !installed) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      return base(file, args, options);
+    };
+    const install = vi.fn(async () => { installed = true; return 'entire'; });
+    const module = new EntireOnboarding({ cwd: f.context.repoRoot, command, install });
+    expect((await module.configure(f.context)).enabled).toBe(true);
+    expect(install).toHaveBeenCalledOnce();
+    expect(f.context.ui.confirm).toHaveBeenCalledWith('Install Entire CLI using its official installer?');
+    expect(vi.mocked(f.context.ui.print).mock.calls.join(' ')).toContain('https://docs.entire.io/installation');
+  });
+  it('does not install Entire unless the user explicitly accepts', async () => {
+    const f = fixture([false]);
+    const base = f.command;
+    const command: EntireOnboardingCommand = async (file, args, options) => {
+      if (file === 'entire' && args[0] === '--version') throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      return base(file, args, options);
+    };
+    const install = vi.fn(async () => 'entire');
+    const module = new EntireOnboarding({ cwd: f.context.repoRoot, command, install });
+    expect((await module.configure(f.context)).enabled).toBe(false);
+    expect(install).not.toHaveBeenCalled();
+    expect(f.calls.some(call => call.file === 'entire' && ['login', 'enable'].includes(call.args[0]!))).toBe(false);
+  });
   it('gives a sign-up address and fallback when login is declined', async () => {
     const f = fixture([false]);
     f.state.loggedIn = false;
