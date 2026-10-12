@@ -168,3 +168,7 @@ status? continue
 ---
 
 figure out the 1 and 2. 3rd is my chatgpt account restrictions. it should still be able to handle those situations no? also, previously the entire wasnt asking for mirrored repo, why now? the neatlogs error was happening before too ig or it did now only? I want you to do the full analysis, from their docs to our files, everything. the main has moved forward if you see the repo so update accordingly. its like onboarding has to be smooth yk, we have published npm for gods sake. we can make these things opt in able or something right, like they currently are too ig? also i installed entire app on my github, I can see the e2e test repo. also I have trails feature on my entire, does ti get enabled or not, its a nice feature no so check. the final output from you should be the analysis and suggested issues to raise in the main repo with enough context
+
+---
+
+okay fix the issues and raise. what will be the user flow in different scenario after this is done?
