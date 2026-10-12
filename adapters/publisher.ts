@@ -5,7 +5,7 @@ import type { TallyConfig } from '../schema/index.js';
 
 const execFileAsync = runCommand;
 
-export type PublishCommand = (file: string, args: string[], options?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }>;
+export type PublishCommand = (file: string, args: string[], options?: { cwd?: string; timeout?: number }) => Promise<{ stdout: string; stderr: string }>;
 
 export interface WorkerBranchInput {
   checkoutPath: string;
@@ -52,8 +52,8 @@ export function replacePrEvidence(body: string, links: PrEvidenceLink[]): string
   return `${body.trimEnd()}${body.trim() ? '\n\n' : ''}${evidence}`;
 }
 
-function defaultCommand(file: string, args: string[], options?: { cwd?: string }) {
-  return execFileAsync(file, args, { cwd: options?.cwd });
+function defaultCommand(file: string, args: string[], options?: { cwd?: string; timeout?: number }) {
+  return execFileAsync(file, args, { cwd: options?.cwd, timeout: options?.timeout });
 }
 
 function errorMessage(error: unknown): string {
@@ -123,9 +123,10 @@ export class GitHubPublisher implements PublishPort {
   async updatePrEvidence(input: UpdatePrEvidenceInput): Promise<void> {
     if (!input.config.repo.slug) throw new Error('repo.slug is required to update a GitHub pull request');
     if (!input.links.length) return;
-    const { stdout } = await this.command('gh', ['pr', 'view', input.prUrl, '--repo', input.config.repo.slug, '--json', 'body', '-q', '.body']);
+    // Evidence is best-effort after publishing: never wait indefinitely on gh.
+    const { stdout } = await this.command('gh', ['pr', 'view', input.prUrl, '--repo', input.config.repo.slug, '--json', 'body', '-q', '.body'], { timeout: 15_000 });
     const body = replacePrEvidence(stdout.replace(/\r?\n$/, ''), input.links);
-    await this.command('gh', ['pr', 'edit', input.prUrl, '--repo', input.config.repo.slug, '--body', body]);
+    await this.command('gh', ['pr', 'edit', input.prUrl, '--repo', input.config.repo.slug, '--body', body], { timeout: 15_000 });
   }
 
   private async pushCheckpoints(input: PublishPrInput): Promise<void> {

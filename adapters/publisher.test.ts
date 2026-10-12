@@ -118,8 +118,10 @@ describe('GitHubPublisher', () => {
 
   it('adds verified integration links to an existing PR body without replacing its content', async () => {
     const calls: string[][] = [];
-    const publisher = new GitHubPublisher(async (_file, args) => {
+    const timeouts: Array<number | undefined> = [];
+    const publisher = new GitHubPublisher(async (_file, args, options) => {
       calls.push(args);
+      timeouts.push(options?.timeout);
       return { stdout: args[1] === 'view' ? 'Task details\n\nCloses #7\n' : '', stderr: '' };
     });
     await publisher.updatePrEvidence!({
@@ -132,6 +134,7 @@ describe('GitHubPublisher', () => {
       ],
     });
     expect(calls[0]).toEqual(['pr', 'view', 'https://github.com/acme/payments/pull/42', '--repo', 'acme/payments', '--json', 'body', '-q', '.body']);
+    expect(timeouts).toEqual([15_000, 15_000]);
     expect(calls[1]!.slice(0, 5)).toEqual(['pr', 'edit', 'https://github.com/acme/payments/pull/42', '--repo', 'acme/payments']);
     const body = calls[1]![calls[1]!.indexOf('--body') + 1]!;
     expect(body).toContain('Task details\n\nCloses #7');
