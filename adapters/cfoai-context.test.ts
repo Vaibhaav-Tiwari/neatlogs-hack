@@ -41,6 +41,8 @@ describe('buildCfoaiTaskContext', () => {
     expect(report.content).toContain('https://app.cfo.ai/s/tally');
     expect(report.content).not.toContain('should-not-leak');
     expect(report.content).not.toContain('source code snippet');
+    expect(report.metadata).toMatchObject({ producer: 'tally-agents' });
+    expect(report.metadata).not.toHaveProperty('source');
     expect(Buffer.byteLength(report.content, 'utf8')).toBeLessThanOrEqual(30_000);
     expect(report).toMatchObject({ filename: expect.stringMatching(/^tally-run-1-attempt-[0-9a-f]{16}\.md$/),
       tags: ['tally', 'tally-scenario-tally-e2e', 'tally-run-run-1', 'tally-task-t-1', expect.stringMatching(/^tally-attempt-/)],

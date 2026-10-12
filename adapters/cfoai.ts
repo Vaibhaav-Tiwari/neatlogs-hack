@@ -541,7 +541,12 @@ function cfoaiRefusalMessage(value: unknown): string {
   const parsed = unwrapToolResult(value);
   let detail: unknown;
   if (typeof parsed === 'string') detail = parsed;
-  else if (isRecord(parsed)) detail = parsed.message ?? parsed.error ?? parsed.reason ?? parsed.detail;
+  else if (isRecord(parsed)) {
+    const error = parsed.error;
+    if (isRecord(error)) {
+      detail = [error.code, error.message, error.hint].filter((part): part is string => typeof part === 'string').join(': ');
+    } else detail = parsed.message ?? error ?? parsed.reason ?? parsed.detail;
+  }
   const safeDetail = typeof detail === 'string' ? safeCfoaiError(new Error(detail)) : null;
   return safeDetail && safeDetail !== 'cfo.ai returned an unspecified error'
     ? `cfo.ai refused the Ari context write: ${safeDetail}`
@@ -572,7 +577,7 @@ function supportsOrganizationMemory(schema: Record<string, unknown> | undefined)
         filename: 'tally-schema-check.md',
         scope: 'organization',
         tags: ['tally'],
-        metadata: { source: 'tally-agents' },
+        metadata: { producer: 'tally-agents' },
       },
     });
   } catch { return false; }

@@ -176,7 +176,7 @@ describe('CfoaiBudgetAdapter', () => {
     client.tools.push('edit_memory');
     const adapter = new CfoaiBudgetAdapter({ client, config: { orgId: '103210', scenario: 'Tally E2E' } });
     const report = { content: '# Tally attempt', filename: 'tally-attempt-123.md', tags: ['tally'],
-      metadata: { source: 'tally-agents' }, idempotencyKey: 'tally-attempt-123' };
+      metadata: { producer: 'tally-agents' }, idempotencyKey: 'tally-attempt-123' };
     await adapter.publishTaskContext(report);
     expect(client.calls.find(call => call.name === 'edit_memory')?.args).toEqual({
       org_id: '103210', idempotency_key: 'tally-attempt-123',
@@ -202,6 +202,18 @@ describe('CfoaiBudgetAdapter', () => {
     await expect(adapter.publishTaskContext(report)).rejects.toThrow('403 organization memory access denied');
     expect(adapter.status()).toEqual({ status: 'ok', detail: 'https://app.cfo.ai/s/table' });
     expect(adapter.status().detail).not.toContain('secret-value');
+  });
+
+  it('reports structured cfo.ai memory validation errors', async () => {
+    const client = new FakeCfoaiClient();
+    client.tools.push('edit_memory');
+    client.memoryResult = { isError: true, structuredContent: { error: {
+      code: 'invalid', message: 'metadata.source is reserved for trusted ownership and source details',
+      hint: 'Use safe metadata names.', transient: false,
+    } } };
+    const adapter = new CfoaiBudgetAdapter({ client, config: { orgId: '103210', scenario: 'Tally E2E' } });
+    await expect(adapter.publishTaskContext({ content: '# Tally attempt', filename: 'tally-attempt.md', tags: ['tally'], metadata: {}, idempotencyKey: 'stable' }))
+      .rejects.toThrow('invalid: metadata.source is reserved for trusted ownership and source details: Use safe metadata names.');
   });
 
   it('writes tier and run spend detail, seeding prior Agent spend so tier rows sum to the budget table spend', async () => {
@@ -308,7 +320,7 @@ describe('CfoaiBudgetAdapter', () => {
     client.tools.push('edit_memory');
     const adapter = new CfoaiBudgetAdapter({ client, now, config: { orgId: '103210', scenario: 'Tally E2E' } });
     const document = { content: '# Tally attempt report', filename: 'tally-run-a-attempt-a.md',
-      tags: ['tally', 'tally-run-a'], metadata: { source: 'tally-agents' }, idempotencyKey: 'tally-attempt-stable' };
+      tags: ['tally', 'tally-run-a'], metadata: { producer: 'tally-agents' }, idempotencyKey: 'tally-attempt-stable' };
     await adapter.publishTaskContext(document);
     const write = client.calls.find(call => call.name === 'edit_memory');
     expect(write?.args).toMatchObject({ org_id: '103210', idempotency_key: 'tally-attempt-stable',
