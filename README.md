@@ -415,6 +415,18 @@ these are labelled current text, not run-start snapshots. No paid workers or
 cfo.ai writes are performed. Before/after savings require matched measured
 tasks; missing baseline or v2 cohorts are reported as **not measured**.
 
+For the matched three-pass experiment, add `--comparison-dir <folder>`.
+The folder contains `mentor-comparison-plan-signals.json` and, when results
+arrive, `comparison-passes.json`: an object mapping `A`, `B`, `C` to arrays of
+real run-directory paths (absolute or relative to that folder). A is top-tier
+baseline, B is Tally v1/priors, C is Tally v2/trace history. Missing passes stay
+pending. The report joins signals only at the exact pinned base SHA and task
+text, reports cost/verdict/attempts per task and per pass, and charts sizing
+against real costs with per-pass correlations. A pass C label does not itself
+prove that history influenced every route or that any cap was learned.
+Use `--comparison-passes <json>` to keep the labelled path manifest elsewhere
+without changing the measured signals folder.
+
 ## Layout
 
 Routing history is isolated by task size, tier name and actual model id. Changing

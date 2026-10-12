@@ -31,11 +31,12 @@ describe('real-run evidence', () => {
     expect(rows[0]?.cohort).toBe('unattributed');
   });
 
-  it('requires the selected tier, not another candidate, to have trace-driven cap evidence', () => {
+  it('requires selected-tier observed trace statistics, not another candidate or a learned-cap claim', () => {
     const first = ledger[0]!;
     const decision = `${first.tier} neatlogs: 5 observations, observed statistics, P90 $0.01 x 1.5; other local: 8 observations, observed statistics.`;
     expect(taskEvidence(run, [{ ...first, decision }], 'fake')[0]?.cohort).toBe('trace-driven');
-    expect(taskEvidence(run, [{ ...first, decision: `other neatlogs: 5 observations, observed statistics, P90; ${first.tier} neatlogs: 3 observations, observed statistics, config cap` }], 'fake')[0]?.cohort).toBe('unattributed');
+    expect(taskEvidence(run, [{ ...first, decision: `other neatlogs: 5 observations, observed statistics, P90; ${first.tier} neatlogs: 3 observations, observed statistics, config cap` }], 'fake')[0]?.cohort).toBe('trace-driven');
+    expect(taskEvidence(run, [{ ...first, decision: `other neatlogs: 5 observations, observed statistics, P90; ${first.tier} neatlogs: 1 observations, uses the prior, config cap` }], 'fake')[0]?.cohort).not.toBe('trace-driven');
   });
 
   it('uses missing rather than zero for an unmeasured comparison cohort', () => {

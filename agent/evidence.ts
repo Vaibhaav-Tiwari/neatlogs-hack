@@ -6,6 +6,7 @@ export interface TaskEvidence {
   repo: string;
   taskId: string;
   cohort: RoutingCohort;
+  decision: string | null;
   costNanos: number;
   passed: boolean;
   errored: boolean;
@@ -16,7 +17,9 @@ export interface TaskEvidence {
   filesTouched: number | null;
   issueLength: number | null;
   filesNamed: number | null;
-  textSource: 'run-query' | 'current-issue' | 'missing';
+  textSource: 'run-query' | 'current-issue' | 'plan-query' | 'missing';
+  signalSource?: 'comparison-plan';
+  comparisonPass?: 'A' | 'B' | 'C';
   models: string[];
   source: string;
 }
@@ -66,7 +69,7 @@ function cohort(run: RunState, first?: LedgerRow): RoutingCohort {
   if (!first) return 'unattributed';
   const name = first.tier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const selected = first.decision.split(';').find(part => new RegExp(`^\\s*${name} (?:neatlogs|local): \\d+ observations`).test(part));
-  if (selected?.includes('neatlogs:') && selected.includes('observed statistics') && selected.includes('P90')) return 'trace-driven';
+  if (selected?.includes('neatlogs:') && selected.includes('observed statistics')) return 'trace-driven';
   if (selected?.includes('local:') && selected.includes('observed statistics')) return 'local-history';
   if (first.decision.includes(`No usable history exists for ${first.tier} on ${first.size}`)
     || new RegExp(`History has only \\d+ ${name} attempts? for ${first.size}, so it uses the prior`).test(first.decision)) return 'prior-only';
@@ -89,7 +92,7 @@ export function taskEvidence(run: RunState, ledger: LedgerRow[], source: string,
     const query = task.impact?.query || (issue ? `${issue.title}\n${issue.body}` : null);
     const files = query?.match(/\b(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]+\b/g);
     result.push({
-      runId: run.runId, repo: run.repo, taskId: task.taskId, cohort: cohort(run, first),
+      runId: run.runId, repo: run.repo, taskId: task.taskId, cohort: cohort(run, first), decision: first?.decision ?? null,
       costNanos: rows.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
       passed: last?.result === 'passed', errored: last?.result === 'error', skipped, attempts: attempts.length,
       size: task.size, graphNodes: task.impact?.source === 'entire-graph' ? task.impact.totals.nodes : null,
