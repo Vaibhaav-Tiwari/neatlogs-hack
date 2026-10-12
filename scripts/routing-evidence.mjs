@@ -23,15 +23,15 @@ for (const entry of manifest) {
   const path = await realpath(entry);
   const run = JSON.parse(await readFile(join(path, 'run.json'), 'utf8'));
   const ledger = JSON.parse(await readFile(join(path, 'ledger.json'), 'utf8'));
-  if (path.includes('/fixtures/') || seen.has(run.runId) || run.dryRun !== false || run.status !== 'finished') {
-    exclusions.push({ path, reason: 'fixture, duplicate, dry run or unfinished' }); continue;
+  if (path.includes('/fixtures/') || seen.has(run.runId) || run.dryRun !== false || run.status === 'running') {
+    exclusions.push({ path, reason: 'fixture, duplicate, dry run or active run' }); continue;
   }
   const errors = [...validateRunState(run).errors, ...validateLedger(ledger).errors];
   if (errors.length) { exclusions.push({ path, reason: 'schema validation failed', errors }); continue; }
   seen.add(run.runId);
   const rows = taskEvidence(run, ledger, path, issues);
   tasks.push(...rows); sources.push({ runId: run.runId, path, mode: run.mode, repo: run.repo });
-  attempts.push(...ledger.filter(row => row.costSource !== 'simulated' && !row.attemptId.endsWith(':handoff')));
+  attempts.push(...ledger.filter(row => row.runId === run.runId && row.costSource !== 'simulated' && !row.attemptId.endsWith(':handoff')));
 }
 
 let readback = { retrievedAt: null, history: [], workers: [], truncated: false, errors: [] };
@@ -93,11 +93,12 @@ const matched = attempts.filter(row => readback.history.some(history => history.
   && history.tier === row.tier && history.result === row.result && history.costNanos === row.estimatedCostNanos));
 const reportData = { generatedAt: new Date().toISOString(), sources, exclusions, cohorts, signals, tasks,
   traceReadback: { retrievedAt: readback.retrievedAt, matchedHistoryAttempts: matched.length,
-    verifiedWorkers: readback.workers.filter(row => row.verified).length, availableWorkerIds: attempts.filter(row => row.workerTraceId).length,
+    verifiedWorkers: attempts.filter(row => readback.workers.some(worker => worker.attemptId === row.attemptId && worker.traceId === row.workerTraceId && worker.verified)).length,
+    availableWorkerIds: attempts.filter(row => row.workerTraceId).length,
     historyWindowTruncated: readback.truncated, errors: readback.errors } };
 await writeFile(join(out, 'results.json'), JSON.stringify(reportData, null, 2) + '\n');
 const csv = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
-const keys = ['runId', 'repo', 'taskId', 'cohort', 'costNanos', 'passed', 'errored', 'attempts', 'size', 'graphNodes', 'filesTouched', 'issueLength', 'filesNamed', 'textSource', 'models', 'source'];
+const keys = ['runId', 'repo', 'taskId', 'cohort', 'costNanos', 'passed', 'errored', 'skipped', 'attempts', 'size', 'graphNodes', 'filesTouched', 'issueLength', 'filesNamed', 'textSource', 'models', 'source'];
 await writeFile(join(out, 'tasks.csv'), [keys.join(','), ...tasks.map(task => keys.map(key => csv(task[key])).join(','))].join('\n') + '\n');
 
 const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
@@ -125,14 +126,14 @@ await writeFile(join(out, 'size-cost.svg'), svg('Sizing signals versus completed
 
 const fmt = value => value === null ? 'not measured' : value.toFixed(3);
 const lines = [
-  '# Routing evidence', '', `Generated ${reportData.generatedAt}. ${sources.length} finished real runs; ${tasks.length} task executions.`, '',
+  '# Routing evidence', '', `Generated ${reportData.generatedAt}. ${sources.length} closed real runs; ${tasks.length} task outcomes (including skipped).`, '',
   '## Before and after', '',
-  '| Routing evidence | Task executions | Passed | Operational errors | Mean cost (USD) | Pass rate |',
-  '|---|---:|---:|---:|---:|---:|',
-  ...cohorts.map(row => `| ${row.cohort} | ${row.tasks} | ${row.passed} | ${row.errors} | ${row.meanCostUsd === null ? 'not measured' : row.meanCostUsd.toFixed(5)} | ${row.successRate === null ? 'not measured' : (row.successRate * 100).toFixed(1) + '%'} |`), '',
+  '| Routing evidence | Task outcomes | Passed | Operational errors | Skipped | Mean cost (USD) | Pass rate |',
+  '|---|---:|---:|---:|---:|---:|---:|',
+  ...cohorts.map(row => `| ${row.cohort} | ${row.tasks} | ${row.passed} | ${row.errors} | ${row.skipped} | ${row.meanCostUsd === null ? 'not measured' : row.meanCostUsd.toFixed(5)} | ${row.successRate === null ? 'not measured' : (row.successRate * 100).toFixed(1) + '%'} |`), '',
   '![Estimated cost by routing](cost-by-routing.svg)', '', '![Success rate by routing](success-by-routing.svg)', '',
   'Prior-only requires an explicit prior statement for the chosen tier. Trace-driven requires explicit neatlogs provenance and an observed P90 cap for the chosen tier. Old ambiguous decisions are unattributed, not silently assigned to either group.', '',
-  'No v1/v2 savings claim or baseline comparison is valid until both have measured, matched tasks. Missing cohorts mean not measured, never zero cost or 0% success. Independent task executions are counted; repeated issues across runs are not independent experiments.', '',
+  'No v1/v2 savings claim or baseline comparison is valid until both have measured, matched tasks. Missing cohorts mean not measured, never zero cost or 0% success. Closed interrupted runs and skipped tasks stay in the denominator; zero spend on an unstarted task is not savings. Repeated issues across runs are not independent experiments.', '',
   '## Does sizing predict cost?', '',
   '| Signal | Paired successful tasks | Pearson r | Spearman rho | Interpretation |', '|---|---:|---:|---:|---|',
   ...signals.map(signal => `| ${signal.label} | ${signal.n} | ${fmt(signal.pearson)} | ${fmt(signal.spearman)} | ${signal.interpretation} |`), '',

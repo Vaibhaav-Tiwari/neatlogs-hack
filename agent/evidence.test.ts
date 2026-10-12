@@ -42,6 +42,17 @@ describe('real-run evidence', () => {
     expect(cohortSummary([], 'baseline')).toMatchObject({ tasks: 0, meanCostUsd: null, successRate: null });
   });
 
+  it('retains skipped baseline tasks and interrupted attempts in the denominator', () => {
+    const first = ledger[0]!;
+    const task = run.tasks.find(task => task.taskId === first.taskId)!;
+    const closed = { ...run, mode: 'baseline' as const, tasks: [task, { ...task, taskId: 'skipped-task', status: 'skipped' as const }] };
+    const rows = taskEvidence(closed, [first], 'fake');
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ skipped: true, passed: false, costNanos: 0, attempts: 0, cohort: 'baseline' });
+    expect(cohortSummary(rows, 'baseline')).toMatchObject({ tasks: 2, passed: 1, skipped: 1, successRate: 0.5 });
+    expect(taskEvidence({ ...closed, status: 'interrupted' }, [{ ...first, result: 'stopped' }], 'fake')[0]?.passed).toBe(false);
+  });
+
   it('reports Pearson and tied-rank Spearman, not a prediction claim', () => {
     expect(correlate([[1, 2], [2, 4], [3, 6]])).toMatchObject({ n: 3, pearson: 1, spearman: 1 });
     expect(correlate([[1, 3], [2, 2], [3, 1]])).toMatchObject({ n: 3, pearson: -1, spearman: -1 });

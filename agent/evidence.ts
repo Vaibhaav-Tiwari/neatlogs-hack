@@ -9,6 +9,7 @@ export interface TaskEvidence {
   costNanos: number;
   passed: boolean;
   errored: boolean;
+  skipped: boolean;
   attempts: number;
   size: string | null;
   graphNodes: number | null;
@@ -60,8 +61,9 @@ export function correlate(input: [number | null, number][]): Correlation {
   };
 }
 
-function cohort(run: RunState, first: LedgerRow): RoutingCohort {
+function cohort(run: RunState, first?: LedgerRow): RoutingCohort {
   if (run.mode === 'baseline') return 'baseline';
+  if (!first) return 'unattributed';
   const name = first.tier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const selected = first.decision.split(';').find(part => new RegExp(`^\\s*${name} (?:neatlogs|local): \\d+ observations`).test(part));
   if (selected?.includes('neatlogs:') && selected.includes('observed statistics') && selected.includes('P90')) return 'trace-driven';
@@ -71,24 +73,25 @@ function cohort(run: RunState, first: LedgerRow): RoutingCohort {
   return 'unattributed';
 }
 
-/** Deliberately excludes simulated ledgers and unfinished runs; callers supply audited real-run paths. */
+/** Only closed real runs from an audited manifest; missing metrics remain missing. */
 export function taskEvidence(run: RunState, ledger: LedgerRow[], source: string,
   issues: Record<string, { title: string; body: string }> = {}): TaskEvidence[] {
-  if (run.dryRun !== false || run.status !== 'finished') return [];
+  if (run.dryRun !== false || run.status === 'running') return [];
   const real = ledger.filter(row => row.runId === run.runId && row.costSource !== 'simulated');
   const result: TaskEvidence[] = [];
   for (const task of run.tasks) {
     const rows = real.filter(row => row.taskId === task.taskId).sort((a, b) => a.attempt - b.attempt);
     const attempts = rows.filter(row => !row.attemptId.endsWith(':handoff'));
-    if (!attempts.length) continue;
-    const first = attempts[0]!, last = attempts.at(-1)!;
+    const skipped = !attempts.length && (task.status === 'skipped' || run.status === 'interrupted');
+    if (!attempts.length && !skipped) continue;
+    const first = attempts[0], last = attempts.at(-1);
     const issue = task.issueUrl ? issues[task.issueUrl] : undefined;
     const query = task.impact?.query || (issue ? `${issue.title}\n${issue.body}` : null);
     const files = query?.match(/\b(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]+\b/g);
     result.push({
       runId: run.runId, repo: run.repo, taskId: task.taskId, cohort: cohort(run, first),
       costNanos: rows.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
-      passed: last.result === 'passed', errored: last.result === 'error', attempts: attempts.length,
+      passed: last?.result === 'passed', errored: last?.result === 'error', skipped, attempts: attempts.length,
       size: task.size, graphNodes: task.impact?.source === 'entire-graph' ? task.impact.totals.nodes : null,
       filesTouched: task.impact?.totals.filesTouched ?? null,
       issueLength: query?.length ?? null, filesNamed: query === null ? null : new Set(files ?? []).size,
@@ -103,7 +106,7 @@ export function cohortSummary(tasks: TaskEvidence[], group: RoutingCohort) {
   const rows = tasks.filter(task => task.cohort === group);
   const spent = rows.reduce((sum, row) => sum + row.costNanos, 0);
   return { cohort: group, tasks: rows.length, passed: rows.filter(row => row.passed).length,
-    errors: rows.filter(row => row.errored).length, totalCostUsd: spent / 1e9,
+    errors: rows.filter(row => row.errored).length, skipped: rows.filter(row => row.skipped).length, totalCostUsd: spent / 1e9,
     meanCostUsd: rows.length ? spent / rows.length / 1e9 : null,
     successRate: rows.length ? rows.filter(row => row.passed).length / rows.length : null };
 }
