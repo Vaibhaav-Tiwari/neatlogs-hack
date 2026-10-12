@@ -251,6 +251,21 @@ h3 { font: 600 18px/1.35 var(--sans); }
 .criterion summary:hover { border-color: var(--ink); }
 .plain { list-style: none; padding: 0; margin-top: 14px; display: grid; gap: 8px; font-size: 14.5px; color: #333848; max-width: 78ch; }
 
+.bars.compare li { grid-template-areas: 'name cost' 'track track' 'detail detail'; grid-template-columns: minmax(0, 1fr) auto; }
+.bars.compare .b-cost { font-size: 15px; }
+.bars.compare .b-track i { background: var(--accent); }
+.bars.compare .base .b-track i { background: var(--ink); }
+.b-detail { grid-area: detail; font-size: 13px; color: #555b6c; }
+.b-detail:empty { display: none; }
+.ev > p + .bars { margin-top: 16px; }
+.limits { margin: 18px 0 0; padding: 14px 0 0 18px; border-top: 1px solid rgba(27, 30, 39, .12); display: grid; gap: 6px; font-size: 13.5px; line-height: 1.55; color: #333848; }
+/* the same comparison, compact, on the dark page */
+.measure { margin: clamp(36px, 5vw, 64px) 0 0; padding: clamp(20px, 2.6vw, 30px); border-radius: 12px; background: var(--panel); border: 1px solid var(--line); max-width: 760px; }
+.measure figcaption { font: 400 clamp(19px, 2vw, 24px)/1.35 var(--serif); margin-bottom: 20px; }
+.measure .b-track { background: var(--panel-2); }
+.measure .bars.compare .base .b-track i { background: var(--text); }
+.measure .note { margin-top: 16px; font-size: 13.5px; color: var(--muted); }
+
 /* ---------- contact ---------- */
 
 .ways { list-style: none; padding: 0; margin-top: clamp(28px, 4vw, 44px); border-top: 1px solid var(--line); }
