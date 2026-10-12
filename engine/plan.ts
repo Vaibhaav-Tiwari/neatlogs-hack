@@ -56,6 +56,12 @@ export interface PlanBudgetInfo {
   warning?: string;
 }
 
+/** Mirrors the real runner's effective concurrency for a plan preview. */
+export function usesParallelReservations(config: TallyConfig, options: Pick<PlanOptions, 'baseline' | 'parallel'>): boolean {
+  const requestedConcurrency = options.parallel ?? config.parallelWorkers ?? 1;
+  return config.runner !== 'direct' && !options.baseline && requestedConcurrency > 1;
+}
+
 class PlanBudget implements BudgetPort {
   private reservedNanos = 0;
   constructor(private readonly limitNanos: number) {}
@@ -106,6 +112,7 @@ export async function readPlanBudget(config: TallyConfig, options: Pick<PlanOpti
 
 export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
   const config = loadConfig(options.configPath);
+  const parallelReservations = usesParallelReservations(config, options);
   if (!options.dryRun) await validateRealRunConfig(config, options.configPath, options.preflightRunner);
   const configDir = dirname(options.configPath);
   const dryRunPorts = options.dryRun ? createDryRunPorts({ config, configPath: options.configPath }) : {};
@@ -149,7 +156,7 @@ export async function planTally(options: PlanOptions): Promise<PlannedTask[]> {
         model: route.tier.model,
         harness: route.tier.harness,
         ceilingNanos: ceiling,
-        ...(Math.max(options.parallel ?? config.parallelWorkers ?? 1, 1) > 1 ? { reservationNanos: reservationNanos(config, estimate.size, route.tier, ceiling) } : {}),
+        ...(parallelReservations ? { reservationNanos: reservationNanos(config, estimate.size, route.tier, ceiling) } : {}),
         decision: task.firstAttemptCeilingUsd === undefined || options.baseline ? route.reason : `${route.reason} Deliberate first-attempt ceiling override: $${task.firstAttemptCeilingUsd.toFixed(3)} (normal ceiling remains an upper bound).`,
         historySources: sources,
         ...(entire ? { entire } : {}),

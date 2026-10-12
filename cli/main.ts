@@ -8,7 +8,7 @@ import { InitError, runInit } from '../engine/init.js';
 import { CommandError } from '../adapters/command.js';
 import { runUninstall } from '../engine/uninstall.js';
 import { runExperiment } from '../engine/experiment.js';
-import { planTally, readPlanBudget } from '../engine/plan.js';
+import { planTally, readPlanBudget, usesParallelReservations } from '../engine/plan.js';
 import { RunError, runDemo, runTally, type RunProgress, type RunResult } from '../engine/run.js';
 import { recoverRunTraces } from '../engine/trace-recovery.js';
 import { loginCfoai } from '../adapters/cfoai.js';
@@ -387,8 +387,8 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
         if (task.historyDetail) printPlanText('History note', task.historyDetail, io);
         printPlanText('Decision', task.decision, io);
       }
-      const parallelWorkers = Math.max(options.parallel ?? config.parallelWorkers ?? 1, 1);
-      if (parallelWorkers > 1) {
+      const parallelWorkers = options.parallel ?? config.parallelWorkers ?? 1;
+      if (usesParallelReservations(config, options)) {
         const firstWave = plan.filter(task => !task.skipped).slice(0, parallelWorkers);
         const reservation = firstWave.reduce((sum, task) => sum + (task.reservationNanos ?? 0), 0);
         const cap = Math.min(budget.limitNanos, budget.monthlyRemainingNanos);
