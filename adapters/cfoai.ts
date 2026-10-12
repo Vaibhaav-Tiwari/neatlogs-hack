@@ -266,11 +266,17 @@ export interface CfoaiBudgetAdapterOptions {
   config?: CfoaiBudgetConfig;
   client?: CfoaiMcpClient;
   now?: () => Date;
+  /** The run directory is used to make spend write-back resumable. */
+  runFolder?: string;
 }
+
+const SPEND_WRITEBACK_FILE = 'cfoai-spend-writeback.json';
+const SPEND_WRITEBACK_ATTEMPTS = 4;
 
 export class CfoaiBudgetAdapter implements BudgetPort {
   private readonly config: NormalizedCfoaiBudgetConfig;
   private readonly now: () => Date;
+  private readonly runFolder?: string;
   private connected = false;
   private usable = false;
   private statusState: IntegrationState = { status: 'missing', detail: CFOAI_FIX_COMMAND };
@@ -280,10 +286,17 @@ export class CfoaiBudgetAdapter implements BudgetPort {
   private seededDetailGapNanos = 0;
   private readyPromise: Promise<void> | null = null;
   private readonly toolSchemas = new Map<string, Record<string, unknown> | undefined>();
+  private writtenSpendNanos = 0;
+  private writtenDetailNanos = new Map<string, number>();
 
   constructor(options: CfoaiBudgetAdapterOptions = {}) {
     this.config = normalizeCfoaiConfig(options.config);
     this.now = options.now ?? (() => new Date());
+    this.runFolder = options.runFolder;
+    const saved = this.readWriteback();
+    this.runBaseSpendNanos = saved.runBaseSpendNanos;
+    this.writtenSpendNanos = saved.agentSpendNanos;
+    this.writtenDetailNanos = new Map(Object.entries(saved.detailNanos));
     this.client =
       options.client ??
       new SdkCfoaiMcpClient(this.config.serverUrl, new CfoaiOAuthProvider(new FileTokenStore(), undefined, async () => undefined));
@@ -327,22 +340,15 @@ export class CfoaiBudgetAdapter implements BudgetPort {
   async writeCumulativeActualSpend(runSpendNanos: number): Promise<void> {
     await this.ensureReady();
     try {
-      if (this.runBaseSpendNanos === null) this.runBaseSpendNanos = await this.currentSpendNanos();
-      const total = this.runBaseSpendNanos + runSpendNanos;
-      const usd = Number(nanosToUsd(total).toFixed(9));
-      const result = await this.client.callTool('edit_table_blocks', {
-        ...this.scopeArgs(),
-        update: {
-          target: this.config.table,
-          values: { columns: [this.monthColumn()], rows: [[this.config.spendRow, usd]] },
-        },
-      });
-      if (!successfulEdit(result)) {
-        throw new Error('cfo.ai did not apply the spend update');
+      if (this.runBaseSpendNanos === null) {
+        this.runBaseSpendNanos = await this.currentSpendNanos();
+        this.saveWriteback();
       }
-      const readBack = usdToNanos(await this.readUsd(this.config.spendRow));
-      if (Math.abs(readBack - total) > 1) {
-        throw new Error('cfo.ai spend read-back did not match the applied update');
+      const delta = runSpendNanos - this.writtenSpendNanos;
+      if (delta > 1) {
+        await this.addToCell(this.config.table, this.config.spendRow, delta, 'spend');
+        this.writtenSpendNanos = runSpendNanos;
+        this.saveWriteback();
       }
     } catch (e) {
       this.statusState = { status: 'error', detail: `write failed: ${(e as Error).message}; actual spend is retained in the run CSV fallback.` };
@@ -367,17 +373,34 @@ export class CfoaiBudgetAdapter implements BudgetPort {
       await this.loadBaseDetailSpend(mappedRows);
     }
     const updates = new Map<string, number>();
-    for (const row of mappedRows) {
-      updates.set(row, this.baseDetailSpendNanos!.get(row) ?? 0);
-    }
+    for (const row of mappedRows) updates.set(row, this.baseDetailSpendNanos!.get(row) ?? 0);
     for (const [row, runSpend] of runTotals) {
       updates.set(row, (updates.get(row) ?? 0) + runSpend);
     }
-    updates.set(this.config.runSpendRow, input.cumulativeRunSpendNanos);
-    updates.set(this.config.cumulativeRunSpendRow, (this.runBaseSpendNanos ?? (await this.currentSpendNanos())) + input.cumulativeRunSpendNanos);
-
-    await this.writeRows(this.config.spendDetailTable, updates);
-    await this.verifyRows(this.config.spendDetailTable, updates);
+    // Tier rows are shared ledgers too: write only the contribution this run
+    // has not successfully recorded yet, rather than a stale absolute total.
+    const deltas = new Map<string, number>();
+    for (const [row, target] of updates) {
+      const delta = target - (this.writtenDetailNanos.get(row) ?? 0);
+      if (delta > 1) deltas.set(row, delta);
+    }
+    if (deltas.size > 0) {
+      for (const [row, delta] of deltas) {
+        await this.addToCell(this.config.spendDetailTable, row, delta, row);
+        this.writtenDetailNanos.set(row, updates.get(row)!);
+        this.saveWriteback();
+      }
+    }
+    const runRow = new Map([[this.config.runSpendRow, input.cumulativeRunSpendNanos]]);
+    await this.writeRows(this.config.spendDetailTable, runRow);
+    const cumulativeTarget = (this.runBaseSpendNanos ?? (await this.currentSpendNanos())) + input.cumulativeRunSpendNanos;
+    const cumulativeDelta = cumulativeTarget - (this.writtenDetailNanos.get(this.config.cumulativeRunSpendRow) ?? 0);
+    if (cumulativeDelta > 1) {
+      await this.addToCell(this.config.spendDetailTable, this.config.cumulativeRunSpendRow, cumulativeDelta, this.config.cumulativeRunSpendRow);
+      this.writtenDetailNanos.set(this.config.cumulativeRunSpendRow, cumulativeTarget);
+      this.saveWriteback();
+    }
+    await this.verifyRows(this.config.spendDetailTable, new Map([...updates, [this.config.cumulativeRunSpendRow, cumulativeTarget]]), true);
     await this.verifyAgentSpendMatchesTierRows(mappedRows, skippedTiers.size === 0);
 
     const notes: string[] = [];
@@ -497,21 +520,59 @@ export class CfoaiBudgetAdapter implements BudgetPort {
     if (!successfulEdit(result)) throw new Error(`cfo.ai did not apply the ${table} update`);
   }
 
-  private async verifyRows(table: string, rows: Map<string, number>): Promise<void> {
+  private async addToCell(table: string, row: string, deltaNanos: number, label: string): Promise<void> {
+    let lastReadBack = 0;
+    for (let attempt = 0; attempt < SPEND_WRITEBACK_ATTEMPTS; attempt += 1) {
+      const before = usdToNanos(await this.readUsdFrom(table, row));
+      const target = before + deltaNanos;
+      const result = await this.client.callTool('edit_table_blocks', {
+        ...this.scopeArgs(),
+        update: { target: table, values: { columns: [this.monthColumn()], rows: [[row, Number(nanosToUsd(target).toFixed(9))]] } },
+      });
+      if (!successfulEdit(result)) throw new Error(`cfo.ai did not apply the ${label} update`);
+      lastReadBack = usdToNanos(await this.readUsdFrom(table, row));
+      if (Math.abs(lastReadBack - target) <= 1) return;
+      // A larger read-back means our increment was applied and another writer
+      // won immediately after us. Retrying would double count this delta.
+      if (lastReadBack > target) return;
+      await new Promise(resolve => setTimeout(resolve, 5 * (attempt + 1)));
+    }
+    throw new Error(`cfo.ai ${label} read-back did not match after ${SPEND_WRITEBACK_ATTEMPTS} retries (got ${lastReadBack})`);
+  }
+
+  private readWriteback(): { agentSpendNanos: number; detailNanos: Record<string, number>; runBaseSpendNanos: number | null } {
+    if (!this.runFolder) return { agentSpendNanos: 0, detailNanos: {}, runBaseSpendNanos: null };
+    try {
+      const value = JSON.parse(readFileSync(join(this.runFolder, SPEND_WRITEBACK_FILE), 'utf8')) as { agentSpendNanos?: number; detailNanos?: Record<string, number>; runBaseSpendNanos?: number | null };
+      return { agentSpendNanos: value.agentSpendNanos ?? 0, detailNanos: value.detailNanos ?? {}, runBaseSpendNanos: value.runBaseSpendNanos ?? null };
+    } catch { return { agentSpendNanos: 0, detailNanos: {}, runBaseSpendNanos: null }; }
+  }
+
+  private saveWriteback(): void {
+    if (!this.runFolder) return;
+    mkdirSync(this.runFolder, { recursive: true });
+    writeFileSync(join(this.runFolder, SPEND_WRITEBACK_FILE), `${JSON.stringify({ agentSpendNanos: this.writtenSpendNanos, detailNanos: Object.fromEntries(this.writtenDetailNanos), runBaseSpendNanos: this.runBaseSpendNanos }, null, 2)}\n`);
+  }
+
+  private async verifyRows(table: string, rows: Map<string, number>, allowHigher = false): Promise<void> {
     for (const [row, nanos] of rows) {
       const readBack = usdToNanos(await this.readUsdFrom(table, row));
-      if (Math.abs(readBack - nanos) > 1) throw new Error(`cfo.ai ${table} read-back did not match ${row}`);
+      if (allowHigher ? readBack + 1 < nanos : Math.abs(readBack - nanos) > 1) throw new Error(`cfo.ai ${table} read-back did not match ${row}`);
     }
   }
 
   private async verifyAgentSpendMatchesTierRows(mappedRows: string[], completeMapping: boolean): Promise<void> {
     if (!completeMapping) return;
-    const [agentSpend, tierSpend] = await Promise.all([
-      this.currentSpendNanos(),
-      Promise.all(mappedRows.map((row) => this.readUsdFrom(this.config.spendDetailTable, row))),
-    ]);
-    const tierSum = tierSpend.reduce((sum, usd) => sum + usdToNanos(usd), 0);
-    if (Math.abs(agentSpend - tierSum) > 1) throw new Error('cfo.ai Agent spend does not equal the sum of tier spend rows');
+    for (let attempt = 0; attempt < SPEND_WRITEBACK_ATTEMPTS; attempt += 1) {
+      const [agentSpend, tierSpend] = await Promise.all([
+        this.currentSpendNanos(),
+        Promise.all(mappedRows.map((row) => this.readUsdFrom(this.config.spendDetailTable, row))),
+      ]);
+      const tierSum = tierSpend.reduce((sum, usd) => sum + usdToNanos(usd), 0);
+      if (Math.abs(agentSpend - tierSum) <= 1) return;
+      await new Promise(resolve => setTimeout(resolve, 5 * (attempt + 1)));
+    }
+    throw new Error('cfo.ai Agent spend does not equal the sum of tier spend rows');
   }
 
   private setOkStatus(note?: string): void {

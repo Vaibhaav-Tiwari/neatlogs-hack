@@ -177,7 +177,7 @@ function hasPort<K extends keyof RealRunPorts>(ports: Partial<RealRunPorts>, key
   return Object.prototype.hasOwnProperty.call(ports, key);
 }
 
-function resolvePorts(config: TallyConfig, configPath: string, overrides: Partial<RealRunPorts> = {}, requiredBaseCommit?: string): RealRunPorts {
+function resolvePorts(config: TallyConfig, configPath: string, overrides: Partial<RealRunPorts> = {}, requiredBaseCommit?: string, runFolder?: string): RealRunPorts {
   const configDir = dirname(configPath);
   const repoPath = resolve(configDir, config.repo.path);
   const runner = config.runner === 'direct'
@@ -187,7 +187,7 @@ function resolvePorts(config: TallyConfig, configPath: string, overrides: Partia
   const cfoai = hasPort(overrides, 'cfoai')
     ? overrides.cfoai
     : config.integrations.cfoai || config.budget.source === 'cfoai'
-      ? new CfoaiBudgetAdapter({ config: config.budget.cfoai })
+      ? new CfoaiBudgetAdapter({ config: config.budget.cfoai, runFolder })
       : undefined;
   const entireCheckpoints =
     config.integrations.entire && (!hasPort(overrides, 'handoff') || !hasPort(overrides, 'checkpoints'))
@@ -931,12 +931,12 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
   const stopRequested = () => safetyStop ?? options.stopRequested?.() ?? null;
   if (options.baseline && (options.parallel ?? 1) > 1) throw new Error('parallel AO workers require per-attempt ceilings; baseline remains sequential');
   if (concurrency > 1 && config.entire?.generatedSummaries) throw new Error('parallel workers require metadata-only handoffs; generated summary cost cannot be reserved');
-  const ports = resolvePorts(config, options.configPath, options.ports, options.requiredBaseCommit);
   const now = options.now ?? (() => new Date());
   const started = now();
   const runId = options.runId ?? runIdFrom(started);
   const mode: RunMode = options.baseline ? 'baseline' : 'tally';
   const outputDir = options.outputDir ? resolve(options.outputDir) : defaultOutputDir(runId);
+  const ports = resolvePorts(config, options.configPath, options.ports, options.requiredBaseCommit, outputDir);
   const ledgerPath = resolve(outputDir, 'ledger.json');
   const ledger = loadLedger(ledgerPath);
   let budgetLimitNanos = usdToNanos(options.budgetUsd ?? config.budget.usd);
