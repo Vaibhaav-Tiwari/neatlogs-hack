@@ -1,0 +1,15 @@
+Tally run-20261012-211342Z #168 a1: Add docs/TROUBLESHOOTING.md with the real failure messages and their fixes
+Neatlogs correlation: runId=run-20261012-211342Z taskId=#168 attempt=1.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+Create a new file `docs/TROUBLESHOOTING.md` and add one link to it from `docs/GETTING_STARTED.md` (edit nothing else). One short entry per failure, each with the exact message Tally prints (find it in the source, do not paraphrase), what it means, and the fix: `ao command failed (1)` when the recorded Agent Orchestrator project no longer exists; `tally.yaml: file not found`; `AO project <id> belongs to <path>` when init is run in a nested or renamed clone; `not started: reservation does not fit the run cap and monthly budget`; missing Claude Code consent (`claudeCode.allow`); a signed-out or missing agent; `No test command found`; an Entire graph that matches no code symbols for a task; a cfo.ai read that times out. Under 120 lines. Quote messages exactly as they appear in the code on main.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier cheap (codex/gpt-5.6-luna).
