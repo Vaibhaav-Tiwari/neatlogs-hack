@@ -506,3 +506,235 @@ you can use a fork on my own previous repo or soething so it doesnt look like a 
 ---
 
 the npm serves 0.2.0, can you cehck again
+
+---
+
+Okay, so here are the things which are wrong I've pasted the output below. Just fit this ship the other things which I noticed is that the Y section on the dashboard is a little too big that is too much we need to give it concise and the second thing is I don't know why it's showing neatlogs to be not connected on the dashboard other than that I don't know why all these runs failed can you please check that out also do not ask about yes no always for the session context or something right that is not the Ui that UX I HINTED it has to be automatic why dodo the NewCloud thing not work out? Please fix this shit and yeah: Tally init proposed changes:
+  Runner             direct · one task at a time
+  Repository         adot-7/penny-ledger · base main
+  Verification       npm test
+  Setup              none
+  Issue label        tally
+  Budget             cfo.ai live · $40 fallback
+  Tier cheap       codex/gpt-5.6-luna · tui
+  Tier middle      codex/gpt-5.6-terra · tui
+  Tier top         codex/gpt-5.6-sol · tui
+Integrations:
+  Neatlogs           ● ON
+  Entire             ● ON
+  cfo.ai             ● ON
+  cfo.ai Ari context   ● ON · per-attempt organization-memory reports
+  Model fallback     cheap
+  Workers            1 · direct
+Create /tmp/tally-onboarding-preview/penny-ledger/tally.yaml: repository configuration (use --verbose for full YAML).
+Create /tmp/tally-onboarding-preview/penny-ledger/.tally/install.json: installation ownership record for uninstall.
+Direct setup: no AO registration, post-create hooks, or AO worker permission changes.
+Integration connection changes require separate approval. The config proposal contains no credentials.
+› Apply these changes? y/N [N]: y
+Saved  /tmp/tally-onboarding-preview/penny-ledger/tally.yaml
+Project  direct runner
+Verify   npm test
+Tiers    cheap:codex/gpt-5.6-luna, middle:codex/gpt-5.6-terra, top:codex/gpt-5.6-sol
+POST-SETUP CHECK
+  ○ OFF            AO daemon
+      Direct runner selected. Agent Orchestrator is not required.
+  ● CONNECTED      Codex
+      codex is installed and signed in. Model access was not probed.
+  ● CONNECTED      GitHub CLI
+  ● CONNECTED      Entire CLI
+  ● CONNECTED      Entire graph plugin
+  ● CONNECTED      Entire checkpoint recall
+      checkpoint search available
+  ● CONNECTED      Entire Web mirror
+      GitHub repository mirror is ready on aws-ap-south-1.entire.io, aws-us-east-2.entire.io.
+  ● CONNECTED      Entire repository
+      Entire is enabled in /tmp/tally-onboarding-preview/penny-ledger
+  ● CONNECTED      Neatlogs key
+      NEATLOGS_API_KEY is set
+  ● CONNECTED      cfo.ai
+      Tally cached token works against https://api.cfo.ai/mcp
+  ● CONNECTED      cfo.ai Ari task context
+      Organization-memory tool schema is available. Tally checks each report before sending it.
+┌─[adot@adot] - [/tmp/tally-onboarding-preview/penny-ledger] - [Mon Oct 12, 19:34]
+└─[$]> tally run --plan --budget 5
+Budget availability
+  Monthly remaining  $0.6146 of $1.00  (cfo.ai)
+  Run cap            $5.00  (CLI --budget)
+  Available now      $0.6146
+Planning tasks. Enabled history reads are bounded. No workers will start.
+#5: medium (confidence 1.00) -> skip
+  History source: none
+  Decision:
+    - Not started because only $0.6146 of budget is left and the smallest ceiling for
+      this medium task is $0.80
+    - top none: 0 observations, prior 90% pass rate and $4.00 average cost, uses the
+      prior, config cap $4.00 (0 successful samples, 5 needed), model gpt-5.6-sol only
+      (unknown-model observations excluded)
+    - cheap none: 0 observations, prior 45% pass rate and $0.80 average cost, uses the
+      prior, config cap $0.80 (0 successful samples, 5 needed), model gpt-5.6-luna only
+      (unknown-model observations excluded)
+    - middle none: 0 observations, prior 68% pass rate and $2.00 average cost, uses the
+      prior, config cap $2.00 (0 successful samples, 5 needed), model gpt-5.6-terra only
+      (unknown-model observations excluded).
+#4: small (confidence 0.70) -> cheap codex/gpt-5.6-luna ceiling $0.30
+  History source: remote Neatlogs
+  Decision:
+    - History for cheap uses neatlogs: 4 observations, 75% pass rate and $0.0104 average
+      cost
+    - small task with 2 files touched from the issue text and a search of the repository
+      (create: src/summary.js, test/summary.test.js), dependents unmeasured and no tests
+    - related context (not targets): src/transaction.js, src/balance.js, src/ledger.js
+      starts on cheap capped at $0.30, expected to cost $0.6750 against $1.50 for going
+      straight to top
+    - top none: 0 observations, prior 95% pass rate and $1.50 average cost, uses the
+      prior, config cap $1.50 (0 successful samples, 5 needed), model gpt-5.6-sol only
+      (unknown-model observations excluded)
+    - cheap neatlogs: 4 observations, 75% pass rate, $0.0104 average cost, observed
+      statistics, config cap $0.30 (3 successful samples, 5 needed), model gpt-5.6-luna
+      only (unknown-model observations excluded)
+    - middle none: 0 observations, prior 83% pass rate and $0.75 average cost, uses the
+      prior, config cap $0.75 (0 successful samples, 5 needed), model gpt-5.6-terra only
+      (unknown-model observations excluded).
+#3: small (confidence 0.70) -> cheap codex/gpt-5.6-luna ceiling $0.30
+  History source: remote Neatlogs
+  Decision:
+    - History for cheap uses neatlogs: 4 observations, 75% pass rate and $0.0104 average
+      cost
+    - small task with 2 files touched from the issue text and a search of the repository
+      (create: src/csv.js, test/csv.test.js), dependents unmeasured and no tests
+    - related context (not targets): src/balance.js, src/transaction.js, src/ledger.js,
+      ... starts on cheap capped at $0.30, expected to cost $0.6750 against $1.50 for
+      going straight to top
+    - top none: 0 observations, prior 95% pass rate and $1.50 average cost, uses the
+      prior, config cap $1.50 (0 successful samples, 5 needed), model gpt-5.6-sol only
+      (unknown-model observations excluded)
+    - cheap neatlogs: 4 observations, 75% pass rate, $0.0104 average cost, observed
+      statistics, config cap $0.30 (3 successful samples, 5 needed), model gpt-5.6-luna
+      only (unknown-model observations excluded)
+    - middle none: 0 observations, prior 83% pass rate and $0.75 average cost, uses the
+      prior, config cap $0.75 (0 successful samples, 5 needed), model gpt-5.6-terra only
+      (unknown-model observations excluded).
+#2: small (confidence 0.64) -> skip
+  History source: remote Neatlogs
+  Decision:
+    - Not started because only $0.0146 of budget is left and the smallest ceiling for
+      this small task is $0.30
+    - top none: 0 observations, prior 95% pass rate and $1.50 average cost, uses the
+      prior, config cap $1.50 (0 successful samples, 5 needed), model gpt-5.6-sol only
+      (unknown-model observations excluded)
+    - cheap neatlogs: 4 observations, 75% pass rate, $0.0104 average cost, observed
+      statistics, config cap $0.30 (3 successful samples, 5 needed), model gpt-5.6-luna
+      only (unknown-model observations excluded)
+    - middle none: 0 observations, prior 83% pass rate and $0.75 average cost, uses the
+      prior, config cap $0.75 (0 successful samples, 5 needed), model gpt-5.6-terra only
+      (unknown-model observations excluded).
+#1: small (confidence 0.64) -> skip
+  History source: remote Neatlogs
+  Decision:
+    - Not started because only $0.0146 of budget is left and the smallest ceiling for
+      this small task is $0.30
+    - top none: 0 observations, prior 95% pass rate and $1.50 average cost, uses the
+      prior, config cap $1.50 (0 successful samples, 5 needed), model gpt-5.6-sol only
+      (unknown-model observations excluded)
+    - cheap neatlogs: 4 observations, 75% pass rate, $0.0104 average cost, observed
+      statistics, config cap $0.30 (3 successful samples, 5 needed), model gpt-5.6-luna
+      only (unknown-model observations excluded)
+    - middle none: 0 observations, prior 83% pass rate and $0.75 average cost, uses the
+      prior, config cap $0.75 (0 successful samples, 5 needed), model gpt-5.6-terra only
+      (unknown-model observations excluded).
+┌─[adot@adot] - [/tmp/tally-onboarding-preview/penny-ledger] - [Mon Oct 12, 19:36]
+└─[$]> tally run --budget 5 --dashboard --open --port 0
+dashboard http://127.0.0.1:40043/?data=%2Fruns%2Flatest%2F
+data /runs/latest/
+Budget availability
+  Monthly remaining  $0.6146 of $1.00  (cfo.ai)
+  Run cap            $5.00  (CLI --budget)
+  Available now      $0.6146
+#5: medium (confidence 1.00) -> skip
+  Not started because only $0.6146 of budget is left and the smallest ceiling for this medium task is $0.80; top none: 0 observations, prior 90% pass rate and $4.00 average cost, uses the prior, config cap $4.00 (0 successful samples; 5 needed), model gpt-5.6-sol only (unknown-model observations excluded); cheap none: 0 observations, prior 45% pass rate and $0.80 average cost, uses the prior, config cap $0.80 (0 successful samples; 5 needed), model gpt-5.6-luna only (unknown-model observations excluded); middle none: 0 observations, prior 68% pass rate and $2.00 average cost, uses the prior, config cap $2.00 (0 successful samples; 5 needed), model gpt-5.6-terra only (unknown-model observations excluded).
+#4: small (confidence 0.70) -> cheap codex/gpt-5.6-luna ceiling $0.30
+  History for cheap uses neatlogs: 4 observations, 75% pass rate and $0.0104 average cost; small task with 2 files touched from the issue text and a search of the repository (create: src/summary.js, test/summary.test.js), dependents unmeasured and no tests; related context (not targets): src/transaction.js, src/balance.js, src/ledger.js starts on cheap capped at $0.30, expected to cost $0.6750 against $1.50 for going straight to top; top none: 0 observations, prior 95% pass rate and $1.50 average cost, uses the prior, config cap $1.50 (0 successful samples; 5 needed), model gpt-5.6-sol only (unknown-model observations excluded); cheap neatlogs: 4 observations, 75% pass rate, $0.0104 average cost, observed statistics, config cap $0.30 (3 successful samples; 5 needed), model gpt-5.6-luna only (unknown-model observations excluded); middle none: 0 observations, prior 83% pass rate and $0.75 average cost, uses the prior, config cap $0.75 (0 successful samples; 5 needed), model gpt-5.6-terra only (unknown-model observations excluded).
+#4 attempt 1: worker 01a13070-0a47-72b3-a04f-01e2fc126ae6 started on cheap
+#4 attempt 1: spend $0.00
+#4 attempt 1: spend $0.0030
+#4 attempt 1: spend $0.0038
+#4 attempt 1: spend $0.0066
+#4 attempt 1: spend $0.0066
+#4 attempt 1: spend $0.0133
+#4 attempt 1: spend $0.0152
+
+Entire: Active Codex session detected
+  Last prompt: Tally run-20261012-140638Z #4 a1: Build a monthly income and expense summary ...
+
+Link this commit to session context?
+  [Y]es / [n]o / [a]lways (remember my choice): y
+#4 attempt 1: spend $0.0168
+#4 attempt 1: failed $0.0168 (PR publish failed: git command failed (1); check the command in your terminal before retrying.; Tally committed task changes as f2065176b077c82a4ebb8c5afe30c98020ce2867)
+#3: small (confidence 0.70) -> cheap codex/gpt-5.6-luna ceiling $0.30
+  History for cheap uses neatlogs: 4 observations, 75% pass rate and $0.0104 average cost; small task with 2 files touched from the issue text and a search of the repository (create: src/csv.js, test/csv.test.js), dependents unmeasured and no tests; related context (not targets): src/balance.js, src/transaction.js, src/ledger.js starts on cheap capped at $0.30, expected to cost $0.6750 against $1.50 for going straight to top; top none: 0 observations, prior 95% pass rate and $1.50 average cost, uses the prior, config cap $1.50 (0 successful samples; 5 needed), model gpt-5.6-sol only (unknown-model observations excluded); cheap neatlogs: 4 observations, 75% pass rate, $0.0104 average cost, observed statistics, config cap $0.30 (3 successful samples; 5 needed), model gpt-5.6-luna only (unknown-model observations excluded); middle none: 0 observations, prior 83% pass rate and $0.75 average cost, uses the prior, config cap $0.75 (0 successful samples; 5 needed), model gpt-5.6-terra only (unknown-model observations excluded).
+#3 attempt 1: worker 01a13071-df5b-7191-be15-b844323d7a13 started on cheap
+#3 attempt 1: spend $0.00
+#3 attempt 1: spend $0.0030
+#3 attempt 1: spend $0.0055
+#3 attempt 1: spend $0.0104
+#3 attempt 1: spend $0.0126
+
+Entire: Active Codex session detected
+  Last prompt: Tally run-20261012-140638Z #3 a1: Export transactions as correctly escaped CS...
+
+Link this commit to session context?
+  [Y]es / [n]o / [a]lways (remember my choice): #3 attempt 1: spend $0.0143
+#3 attempt 1: error $0.0143 (git command failed (unknown error); check the command in your terminal before retrying.)
+#2: small (confidence 0.64) -> cheap codex/gpt-5.6-luna ceiling $0.30
+  History for cheap uses neatlogs: 4 observations, 75% pass rate and $0.0104 average cost; small task with 2 files touched from the issue text and a search of the repository (create: src/filters.js, test/filters.test.js), dependents unmeasured and no tests; related context (not targets): src/ledger.js, src/transaction.js, src/balance.js starts on cheap capped at $0.30, expected to cost $0.6750 against $1.50 for going straight to top; top none: 0 observations, prior 95% pass rate and $1.50 average cost, uses the prior, config cap $1.50 (0 successful samples; 5 needed), model gpt-5.6-sol only (unknown-model observations excluded); cheap neatlogs: 4 observations, 75% pass rate, $0.0104 average cost, observed statistics, config cap $0.30 (3 successful samples; 5 needed), model gpt-5.6-luna only (unknown-model observations excluded); middle none: 0 observations, prior 83% pass rate and $0.75 average cost, uses the prior, config cap $0.75 (0 successful samples; 5 needed), model gpt-5.6-terra only (unknown-model observations excluded).
+#2 attempt 1: worker 01a13073-6146-7bd0-b170-1347270f3186 started on cheap
+#2 attempt 1: spend $0.00
+#2 attempt 1: spend $0.0030
+#2 attempt 1: spend $0.0036
+#2 attempt 1: spend $0.0076
+#2 attempt 1: spend $0.0102
+
+Entire: Active Codex session detected
+  Last prompt: Tally run-20261012-140638Z #2 a1: Filter transactions by category and date ra...
+
+Link this commit to session context?
+  [Y]es / [n]o / [a]lways (remember my choice): #2 attempt 1: spend $0.0115
+a
+#2 attempt 1: error $0.0115 (git command failed (unknown error); check the command in your terminal before retrying.)
+#1: small (confidence 0.64) -> cheap codex/gpt-5.6-luna ceiling $0.30
+  History for cheap uses neatlogs: 4 observations, 75% pass rate and $0.0104 average cost; small task with 2 files touched from the issue text and a search of the repository (create: src/money.js, test/money.test.js), dependents unmeasured and no tests; related context (not targets): src/transaction.js, src/balance.js, src/ledger.js starts on cheap capped at $0.30, expected to cost $0.6750 against $1.50 for going straight to top; top none: 0 observations, prior 95% pass rate and $1.50 average cost, uses the prior, config cap $1.50 (0 successful samples; 5 needed), model gpt-5.6-sol only (unknown-model observations excluded); cheap neatlogs: 4 observations, 75% pass rate, $0.0104 average cost, observed statistics, config cap $0.30 (3 successful samples; 5 needed), model gpt-5.6-luna only (unknown-model observations excluded); middle none: 0 observations, prior 83% pass rate and $0.75 average cost, uses the prior, config cap $0.75 (0 successful samples; 5 needed), model gpt-5.6-terra only (unknown-model observations excluded).
+#1 attempt 1: worker 01a13074-df42-76f3-8675-55f6575f822a started on cheap
+#1 attempt 1: spend $0.00
+#1 attempt 1: spend $0.0032
+#1 attempt 1: spend $0.0065
+#1 attempt 1: spend $0.0114
+
+Entire: Active Codex session detected
+  Last prompt: Tally run-20261012-140638Z #1 a1: Format integer cents as USD for display Tal...
+
+Link this commit to session context?
+  [Y]es / [n]o / [a]lways (remember my choice): #1 attempt 1: spend $0.0114
+#1 attempt 1: error $0.0114 (git command failed (unknown error); check the command in your terminal before retrying.)
+wrote /tmp/tally-onboarding-preview/penny-ledger/.tally/runs/run-20261012-140638Z/run.json
+wrote /tmp/tally-onboarding-preview/penny-ledger/.tally/runs/run-20261012-140638Z/ledger.json
+updated /tmp/tally-onboarding-preview/penny-ledger/.tally/runs/latest
+finished run-20261012-140638Z: 5 tasks, 4 attempts
+Sponsor integrations
+  Neatlogs     ● SETUP NEEDED
+    15ee1449298e92ac4f9972e7bc4a8bb4; No usable Neatlogs price-history observations matched small/middle model gpt-5.6-terra (unknown-model observations excluded); using local history.; Neatlogs worker span read-back failed (HTTP 409).
+  Entire       ● CONNECTED
+    Graph sizing: ok (Graph search available; no matching target symbols, sizing from repository evidence.); checkpoint search available
+  cfo.ai       ● ERROR
+    Ari task-context write failed: cfo.ai refused the Ari context write. Local ledger and spend tables remain the source of truth for this attempt. Ari task-context write failed: cfo.ai refused the Ari context write. Local ledger and spend tables remain the source of truth for this attempt. Ari task-context write failed: cfo.ai refused the Ari context write. Local ledger and spend tables remain the source of truth for this attempt. Ari task-context write failed: cfo.ai refused the Ari context write. Local ledger and spend tables remain the source of truth for this attempt.
+  GitHub       ● CONNECTED
+  Slack        ○ OFF
+Run summary
+  Tasks: 0 passed, 4 failed, 1 skipped
+  Total spend: $0.0540
+  Run cap: $5.00
+Budget availability
+  Monthly remaining  $0.5606 of $1.00  (cfo.ai)
+  Run cap            $5.00  (CLI --budget)
+  Available now      $0.5606
+run folder /tmp/tally-onboarding-preview/penny-ledger/.tally/runs/run-20261012-140638Z
+dashboard http://127.0.0.1:40043/?data=%2Fruns%2Flatest%2F (serving until Ctrl+C)
