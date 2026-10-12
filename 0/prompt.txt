@@ -742,3 +742,7 @@ dashboard http://127.0.0.1:40043/?data=%2Fruns%2Flatest%2F (serving until Ctrl+C
 ---
 
 What I want to know is it was working before right. So is it a report related issue? I we just want to demo this perfectly, right? So I can just do that teled to end repo itself which was working before we can just remove the PRs and rename the repo to something better and then work on that. Can you do that? And can you let me know what is the issue and has it been fixed now so can I merge it or not?
+
+---
+
+I want you to do is now run from your side and see that it works and see why the Git issue is happening if it is happening. Meanwhile, I am seeing how I can actually show it in the demo video, but you just make sure that when this run actually performs perfectly, we can show the dashboard we can then the links are working fine so just fix this okay I want you to test it locally do as you have the budget
