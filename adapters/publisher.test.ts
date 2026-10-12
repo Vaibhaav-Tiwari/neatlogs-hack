@@ -119,6 +119,25 @@ describe('GitHubPublisher', () => {
     expect(calls[1]?.env?.GIT_TERMINAL_PROMPT).toBe('0');
   });
 
+  it('retries one rejected Git push before reporting PR publication failure', async () => {
+    let pushes = 0;
+    const calls: string[][] = [];
+    const publisher = new GitHubPublisher(async (file, args) => {
+      calls.push([file, ...args]);
+      if (file === 'git' && args.includes('push')) {
+        pushes += 1;
+        if (pushes === 1) throw new Error('remote rejected HEAD -> tally/task (failed)');
+      }
+      if (file === 'gh' && args[0] === 'pr' && args[1] === 'create') return { stdout: 'https://github.com/acme/payments/pull/43', stderr: '' };
+      return { stdout: '', stderr: '' };
+    });
+    await expect(publisher.publishPr({ checkoutPath: '/worker', branch: 'tally/task', config,
+      task: { taskId: 'T1', title: 'Fix math', body: 'Body', issueNumber: 7, issueUrl: null, size: 'small', outcomes: ['passed'] }, runId: 'run-1', attempt: 1 }))
+      .resolves.toBe('https://github.com/acme/payments/pull/43');
+    expect(pushes).toBe(2);
+    expect(calls.filter(([file, ...args]) => file === 'git' && args.includes('push'))).toHaveLength(2);
+  });
+
   it('adds verified integration links to an existing PR body without replacing its content', async () => {
     const calls: string[][] = [];
     const timeouts: Array<number | undefined> = [];

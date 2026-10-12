@@ -61,9 +61,18 @@ const GH_GIT_CREDENTIAL = ['-c', 'credential.helper=', '-c', 'credential.helper=
 function pushWithGithubCli(command: PublishCommand, remote: string, refspecs: string[], cwd: string, upstream = false): Promise<{ stdout: string; stderr: string }> {
   const useGhCredential = remote === 'origin';
   const credentialArgs = useGhCredential ? GH_GIT_CREDENTIAL : [];
-  return command('git', [...credentialArgs, 'push', ...(upstream ? ['-u'] : []), remote, ...refspecs], {
+  const args = [...credentialArgs, 'push', ...(upstream ? ['-u'] : []), remote, ...refspecs];
+  const options = {
     cwd,
     ...(useGhCredential ? { env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } } : {}),
+  };
+  return command('git', args, options).catch(async () => {
+    // A GitHub receive-pack can reject a push without a useful reason during a
+    // transient remote failure. Repeating the same ref update is safe: an
+    // already accepted push is reported as up to date, and a permanent
+    // rejection still surfaces from this single retry.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return command('git', args, options);
   });
 }
 
