@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4QXJXSCZDC7JBZ4T01B4RD8",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/release-020",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "cli/main.ts",
+    "cli/version.test.ts",
+    "engine/ao-cli-consistency.test.ts",
+    "engine/ao-status.test.ts",
+    "engine/ao-status.ts",
+    "engine/upgrade-compatibility.test.ts",
+    "package-lock.json",
+    "package.json",
+    "schema/fixtures/init-010/tally.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6169120,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 242208896,
+    "output_tokens": 821520,
+    "api_call_count": 1782
+  }
+}
