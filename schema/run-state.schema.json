@@ -114,6 +114,8 @@
         "sizingConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
         "status": { "enum": ["pending", "running", "passed", "failed", "skipped"] },
         "statusReason": { "type": ["string", "null"] },
+        "reservationNanos": { "type": "integer", "minimum": 0 },
+        "reservationCapNanos": { "type": "integer", "minimum": 0 },
         "attempts": { "type": "integer", "minimum": 0 },
         "tier": { "type": ["string", "null"] },
         "model": { "type": ["string", "null"] },

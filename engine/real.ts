@@ -1161,6 +1161,9 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
               .filter((tier): tier is Tier => Boolean(tier))
               .reduce((maximum, tier) => Math.max(maximum, ceilingNanos(config, input.task.size, tier)), 0);
             const amount = cost + retryCeiling;
+            const state = taskStates[index]!;
+            state.reservationNanos = amount;
+            state.reservationCapNanos = availableRunLimitNanos - ledgerSpend(ledger);
             const fits = reservations.reserve(task.taskId, amount);
             return { fits, wait: fits ? null : reservations.waiting(task.taskId) };
           });

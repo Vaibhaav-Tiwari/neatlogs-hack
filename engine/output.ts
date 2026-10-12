@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { formatUsd } from '../schema/index.js';
 import type { Ledger, RunState } from '../schema/index.js';
 
 export const DEFAULT_LATEST_RUN_DIR = '.tally/runs/latest';
@@ -9,6 +10,16 @@ export interface WrittenRunFiles {
   runStatePath: string;
   ledgerPath: string;
   latestRunDir: string;
+}
+
+/** Terminal lines explaining budget-based skips recorded in run state. */
+export function skippedTaskBudgetLines(runState: RunState): string[] {
+  return runState.tasks
+    .filter((task) => task.status === 'skipped'
+      && task.statusReason === 'not started: reservation does not fit the run cap and monthly budget'
+      && task.reservationNanos !== undefined
+      && task.reservationCapNanos !== undefined)
+    .map((task) => `${task.taskId}: skipped; reservation ${formatUsd(task.reservationNanos!)} does not fit the ${formatUsd(task.reservationCapNanos!)} cap. Raise --budget or lower ceilings.`);
 }
 
 function writeJson(path: string, value: unknown): void {
