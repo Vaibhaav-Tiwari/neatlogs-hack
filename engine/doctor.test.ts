@@ -10,6 +10,25 @@ import { claudeAllowList } from './harness.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 describe('runDoctor', () => {
+  it('reports a recorded AO project that no longer exists with the init repair', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-missing-project-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.repo.aoProject = 'missing-project';
+    config.integrations = { entire: false, neatlogs: false, cfoai: false, slack: false };
+    writeFileSync(configPath, stringify(config));
+    const lines = await runDoctor({ configPath, env: {}, runner: async (file, args) => {
+      if (file === 'ao' && args[0] === 'status') return { stdout: '{"state":"running"}', stderr: '' };
+      if (file === 'ao' && args[0] === 'project') throw new CommandError('AO project missing-project not found', 'PROJECT_NOT_FOUND');
+      return { stdout: file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT' : 'ok', stderr: '' };
+    } });
+    expect(lines.find(line => line.product === 'AO worker auto mode')).toMatchObject({
+      status: 'broken',
+      detail: 'Agent Orchestrator project missing-project not found; run tally init',
+      fix: 'run tally init',
+    });
+  });
+
   it('checks harness sign-in without adding a model-access warning or making a model request', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-models-'));
     const configPath = join(dir, 'tally.yaml');

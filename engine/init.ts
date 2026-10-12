@@ -9,7 +9,7 @@ import { tierPriceNote } from './pricing.js';
 import { CommandError, resolveAoBinary, runCommand } from '../adapters/command.js';
 import { checkCfoaiConnection } from '../adapters/cfoai.js';
 import { loadEnv } from './env.js';
-import { aoWorkerMode, withWorkerPermissionMode } from './preflight.js';
+import { aoWorkerMode, isAoProjectNotFound, withWorkerPermissionMode } from './preflight.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 import { aoProjectCommand } from '../adapters/ao-project.js';
 import { configureIntegrations } from '../onboarding/index.js';
@@ -92,7 +92,7 @@ export async function defaultCommand(file: string, args: string[], options?: { c
 async function projectOrNull(command: InitCommandRunner, projectId: string, cwd: string): Promise<string | null> {
   try { return (await command('ao', ['project', 'get', projectId, '--json'], { cwd })).stdout; }
   catch (error) {
-    if (error instanceof Error && /missing project|not found|HTTP 404/i.test(error.message)) return null;
+    if (isAoProjectNotFound(error)) return null;
     throw error;
   }
 }
@@ -401,11 +401,15 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
   const validation = validateConfig(config);
   if (!validation.ok) throw new InitError(`Proposed configuration is invalid: ${validation.errors.join('; ')}; nothing was changed.`);
   const result = { configPath, projectId: config.repo.aoProject ?? '', testCommand: config.test.command, setupCommand: config.test.setupCommand ?? null, baseBranch: config.repo.baseBranch, tiers: config.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
-  if (!pending && configHash(config) === configHash(before)) {
+  const command: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: config.repo.aoBin ? resolve(dirname(configPath), config.repo.aoBin) : undefined }));
+  const recordPath = installRecordPath(configPath);
+  const record = existsSync(recordPath) ? JSON.parse(readFileSync(recordPath, 'utf8')) as InstallRecord : null;
+  const repairProject = !pending && (config.runner ?? 'ao') === 'ao' && !!config.repo.aoProject && record?.projectId === config.repo.aoProject
+    && await projectOrNull(command, config.repo.aoProject, targetRepo) === null;
+  if (!pending && configHash(config) === configHash(before) && !repairProject) {
   print('No changes proposed. Existing configuration and installation ownership are unchanged.');
     return { ...result, applied: false, doctor: [] };
   }
-  const command: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: config.repo.aoBin ? resolve(dirname(configPath), config.repo.aoBin) : undefined }));
   await initPrerequisites(config, command, targetRepo, options);
   const plan = pending ?? prepareReinit(configPath, stringifyYaml(config));
   print(`Tally re-init proposed diff for ${configPath}:`);
@@ -416,9 +420,20 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
       print(options.verbose || key === 'integrations' ? `+ ${key}: ${JSON.stringify(config[key])}` : `+ ${key}: proposed setting shown above`);
     }
   }
-  print(`Preserve all other settings. ${plan.beforeRecord === null ? 'No installation ownership record will be created' : 'Installation ownership and consented harness modes will be updated'}. AO project, setup hooks and worker permissions will not change.`);
+  if (repairProject) print(`Re-register AO project ${config.repo.aoProject} at ${targetRepo} with the recorded Tally worker settings.`);
+  print(repairProject
+    ? `Preserve all other settings. ${plan.beforeRecord === null ? 'No installation ownership record will be created' : 'Installation ownership and consented harness modes will be preserved'}. The missing AO project will be restored with its recorded worker settings.`
+    : `Preserve all other settings. ${plan.beforeRecord === null ? 'No installation ownership record will be created' : 'Installation ownership and consented harness modes will be updated'}. AO project, setup hooks and worker permissions will not change.`);
   if (pending) print(`Resume interrupted re-init from ${reinitPath(configPath)}.`);
   if (options.dryRun || (!options.yes && !parseYes(await readLine('Apply these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
+  if (repairProject) {
+    const projectId = config.repo.aoProject!;
+    const workerMode = record?.workerPermissionMode ?? aoWorkerMode(config);
+    const setupCommand = record?.addedSetupCommand ?? (config.tiers.some(tier => tier.harness === 'claude-code') ? aoClaudeSetupCommand(configPath) : config.test.setupCommand ?? null);
+    const projectConfig = withWorkerPermissionMode(withPostCreate({}, setupCommand), workerMode);
+    await command('ao', ['project', 'add', '--path', targetRepo, '--id', projectId], { cwd: targetRepo });
+    await command('ao', ['project', 'set-config', projectId, '--config-json', JSON.stringify(projectConfig), '--json'], { cwd: targetRepo });
+  }
   applyReinit(plan);
   try {
     const doctor = await (options.doctor ?? ((path) => runDoctor({ configPath: path })))(configPath);
