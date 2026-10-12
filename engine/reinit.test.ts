@@ -2,12 +2,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from './config.js';
 import { contentHash, installRecordPath } from './install-record.js';
 import { runInit, type InitCommandRunner } from './init.js';
 import { reinitPath } from './reinit.js';
 import { claudeAllowList } from './harness.js';
+import type { OnboardingContext } from '../onboarding/types.js';
 
 function fixture(owned = true) {
   const cwd = mkdtempSync(join(tmpdir(), 'tally-reinit-'));
@@ -39,7 +40,7 @@ describe('consented integration re-init', () => {
     const before = readFileSync(f.path, 'utf8');
     const recordBefore = readFileSync(installRecordPath(f.path), 'utf8');
     const output: string[] = [];
-    const result = await runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, dryRun: mode === 'dry-run', print: (line) => output.push(line),
+    const result = await runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, dryRun: mode === 'dry-run', print: (line) => output.push(line), onboarding: async () => {},
       readLine: async (question, fallback) => {
         if (question.startsWith('Enable neatlogs')) return 'y';
         if (question === 'Apply these changes? y/N') { expect(fallback).toBe('N'); return ''; }
@@ -56,6 +57,7 @@ describe('consented integration re-init', () => {
   it.each([true, false])('connects a skipped product, preserving all other settings and ownership: owned=%s', async (owned) => {
     const f = fixture(owned);
     const result = await runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, print: () => {}, doctor: async () => [],
+      onboarding: async ({ config }) => { config.integrations.neatlogs = true; },
       readLine: async (question, fallback) => question.startsWith('Enable neatlogs') || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
     expect(result.applied).toBe(true);
     expect(loadConfig(f.path)).toEqual({ ...f.config, integrations: { ...f.config.integrations, neatlogs: true } });
@@ -75,10 +77,27 @@ describe('consented integration re-init', () => {
     expect(f.commands).toEqual(['git rev-parse --show-toplevel']);
   });
 
+  it('refreshes enabled integrations on interactive re-init even when YAML settings are unchanged', async () => {
+    const f = fixture();
+    const existing = loadConfig(f.path);
+    existing.integrations.neatlogs = true;
+    writeFileSync(f.path, stringify(existing));
+    let receivedConfig: OnboardingContext['config'] | undefined;
+    const onboarding = vi.fn(async ({ config }: OnboardingContext) => { receivedConfig = config; });
+    const output: string[] = [];
+    const result = await runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, onboarding,
+      print: (line) => output.push(line), readLine: async (_question, fallback) => fallback ?? '' });
+    expect(result.applied).toBe(false);
+    expect(onboarding).toHaveBeenCalledOnce();
+    expect(receivedConfig?.integrations.neatlogs).toBe(true);
+    expect(output.join('\n')).toContain('No changes proposed');
+  });
+
   it('checks prerequisites before writing any re-init changes', async () => {
     const f = fixture();
     const before = readFileSync(f.path, 'utf8');
     await expect(runInit({ cwd: f.cwd, command: f.command, env: {}, print: () => {},
+      onboarding: async () => {},
       readLine: async (question, fallback) => question.startsWith('Enable neatlogs') ? 'y' : fallback ?? '' })).rejects.toThrow('NEATLOGS_API_KEY');
     expect(readFileSync(f.path, 'utf8')).toBe(before);
     expect(existsSync(reinitPath(f.path))).toBe(false);
@@ -96,6 +115,7 @@ describe('consented integration re-init', () => {
   it('recovers after doctor fails but refuses intervening user edits', async () => {
     const f = fixture();
     await expect(runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, print: () => {}, doctor: async () => { throw new Error('doctor stopped'); },
+      onboarding: async () => {},
       readLine: async (question, fallback) => question.startsWith('Enable neatlogs') || question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' })).rejects.toThrow('rerun tally init');
     const proposed = readFileSync(f.path, 'utf8');
     writeFileSync(f.path, `${proposed}\n# user edit\n`);
