@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4QWC1Z1VRRK1QJEH1PCZG2M",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-12T11:01:15.744394Z",
+  "branch": "ao/neatlogs-hack-5/startup-retry-evidence",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "agent/comparison-evidence.test.ts",
+    "agent/comparison-evidence.ts",
+    "agent/evidence.ts",
+    "scripts/routing-evidence.mjs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "efd923226159",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 6099602,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 237005184,
+    "output_tokens": 807030,
+    "api_call_count": 1741
+  },
+  "session_metrics": {
+    "turn_count": 30
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-12T11:01:14.934997Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 20,
+    "human_modified": 8,
+    "human_removed": 0,
+    "total_committed": 20,
+    "total_lines_changed": 28,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
