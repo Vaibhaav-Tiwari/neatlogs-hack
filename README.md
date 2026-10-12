@@ -316,7 +316,7 @@ npm test
 | Command | What it will do |
 |---|---|
 | `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`, `--plan`, `--dashboard`/`--open`. |
-| `tally experiment` | Run simulated baseline and Tally modes with `--dry-run --repeats N` (default 2). Real experiment execution is currently gated. `--budget <usd>` is the aggregate safety cap. Baseline keeps no per-task ceiling; real worker base validation and safety monitoring are implemented but have not been exercised live. |
+| `tally experiment` | Compare baseline and Tally modes with `--dry-run --repeats N` (default 2). Paid AO experiments require explicit `--yes --budget <usd>` consent and a configured test timeout. The budget is an aggregate safety cap; baseline has no per-task ceiling. Both modes verify locally without pushing or opening PRs, run sequentially from the same pinned base, and close workers on interruption. Real comparison safety monitoring has not yet been exercised live. |
 | `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to light up read-only integrations while workers stay fake. |
 | `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
 | `tally init` | Preview files and AO changes, then ask final default-No consent. `--dry-run` previews; `--yes` applies defaults without prompts. Claude workers require the consented scoped allow-list. |

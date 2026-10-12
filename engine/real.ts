@@ -296,7 +296,7 @@ function initialTaskState(task: BacklogTask): TaskState {
   };
 }
 
-function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSummary: string | null, runId: string, attempt: number): string {
+function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSummary: string | null, runId: string, attempt: number, publish = true): string {
   const direct = config.runner === 'direct';
   const directCodex = direct && tier.harness === 'codex';
   const setup = config.test.setupCommand
@@ -304,7 +304,9 @@ function promptFor(task: BacklogTask, config: TallyConfig, tier: Tier, handoffSu
         `The environment has already been set up before you started. Do not run setup (${config.test.setupCommand}), install dependencies, or use the network.`,
       ]
     : ['Do not install dependencies or use the network unless the task explicitly requires it.'];
-  const publishInstruction = directCodex
+  const publishInstruction = !publish && !direct
+    ? 'Commit your changes locally on your current branch. This is a verification-only experiment: do not push or open a PR; Tally will not publish this branch.'
+    : directCodex
     ? 'Leave your finished changes uncommitted in the working tree; Tally stages and commits them. Do not run git add, git commit or any command that writes git metadata: your sandbox cannot write it. Do not push or open a pull request; Tally verifies and publishes your changes.'
     : direct
     ? 'You do not need to commit; Tally commits your work. Do not push or open a pull request; Tally verifies and publishes your changes.'
@@ -538,6 +540,7 @@ async function runSingleAttempt(input: {
   retrySuffix?: string;
   onEvent?: RunOptions['onEvent'];
   stopRequested?: RunOptions['stopRequested'];
+  publish?: boolean;
 }): Promise<LedgerRow> {
   let startedAt = input.now().toISOString();
   const repoPath = resolve(dirname(input.configPath), input.config.repo.path);
@@ -551,7 +554,7 @@ async function runSingleAttempt(input: {
     sessionMode: input.tier.sessionMode,
     model: input.tier.model,
     name: `tally-${input.runId}-${input.task.taskId}-${input.attempt}`,
-    prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary, input.runId, input.attempt),
+    prompt: promptFor(input.task, input.config, input.tier, input.handoffSummary, input.runId, input.attempt, input.publish),
     aoProject: input.config.repo.aoProject,
     continueBranch: input.continueBranch,
     continueSessionId: input.continueSessionId,
@@ -678,6 +681,8 @@ async function runSingleAttempt(input: {
           if (scopeWarnings.length && input.config.repo.blockOutOfScopeChanges) {
             result = 'error';
             resultReason = `out-of-scope changes: ${scopeWarnings.join(', ')}`;
+          } else if (input.publish === false) {
+            resultReason = resultReason ?? 'verified locally; publishing disabled for experiment';
           } else if (input.config.repo.workerPublishesPr) {
             prUrl = workerResult.prUrl;
             if (!prUrl) {
@@ -1095,7 +1100,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         }
       }
       if (stopRequested()) throw new Error(stopRequested()!);
-      return runAttemptWithRetry({ ...input, stopRequested });
+      return runAttemptWithRetry({ ...input, stopRequested, publish: options.publish });
     };
     try {
       const stopReason = stopRequested();

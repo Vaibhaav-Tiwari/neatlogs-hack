@@ -116,7 +116,7 @@ Options:
   --port <number>   Dashboard port (default: 5177; use 0 for any free port)
   --plan            Size and route tasks, but do not spawn workers
   --live            For demo: use live read-only integrations with fake workers
-  --yes             For init: approve the final change summary without prompting
+  --yes             Approve init changes or explicitly budgeted paid experiments
   --test-command <cmd> For init: verification shell command
   --setup-command <cmd> For init: setup shell command (empty means none)
   --issue-label <label> For init: GitHub issue label (default: tally)
@@ -560,14 +560,20 @@ const handlers: Record<Command, Handler> = {
     }
   },
   experiment: async (options, io) => {
+    let interrupted: string | null = null;
+    const interrupt = () => { interrupted = 'stopped: experiment interrupted'; };
+    process.on('SIGINT', interrupt);
+    process.on('SIGTERM', interrupt);
     try {
       if (options.plan || options.baseline || options.live) throw new RunError(['experiment runs both modes; --plan/--baseline/--live are not supported here. Use tally run --plan to preview a mode.']);
-      const result = await runExperiment({ configPath: options.config, dryRun: options.dryRun, repeats: options.repeats, budgetUsd: options.budgetUsd, only: options.only });
+      const result = await runExperiment({ configPath: options.config, dryRun: options.dryRun, repeats: options.repeats, budgetUsd: options.budgetUsd, only: options.only,
+        allowReal: options.yes, stopRequested: () => interrupted, onEvent: progressPrinter(io), beforeRun: async run => { io.stdout(`starting ${run.mode} repeat ${run.repeat}: ${run.runId} (verification only; no pushes or PRs)`); } });
       io.stdout(`wrote ${result.summaryPath}`);
       io.stdout(`experiment ${result.summary.status}: ${result.summary.reason ?? result.summary.experimentId}`);
       if (options.dashboard) await dashboardCommand(options, io);
       return result.summary.status === 'finished' ? 0 : 1;
     } catch (error) { return reportError('tally experiment', error, io); }
+    finally { process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt); }
   },
   publish: async (options, io) => {
     try {

@@ -1303,6 +1303,24 @@ describe('runRealTally', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it.each([false, true])('verifies an experiment without publishing, even with worker publishing=%s', async workerPublishesPr => {
+    const { dir, configPath } = fixture();
+    const config = loadConfig(configPath);
+    config.repo.workerPublishesPr = workerPublishesPr;
+    writeFileSync(configPath, stringifyYaml(config));
+    const worker = new FakeWorker();
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, publish: false,
+      outputDir: join(dir, 'experiment'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier, usage: worker, sessions: worker, publisher: worker } });
+    expect(verifier.calls).toBe(1);
+    expect(worker.commitChecks).toHaveLength(1);
+    expect(worker.published).toEqual([]);
+    expect(worker.starts[0]?.prompt).toContain('do not push or open a PR');
+    expect(result.ledger[0]).toMatchObject({ result: 'passed', prUrl: null, resultReason: 'verified locally; publishing disabled for experiment' });
+    expect(worker.stopped).toEqual(['session-1']);
+  });
+
   it('publishes the verified worker branch from Tally and records the PR URL', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
