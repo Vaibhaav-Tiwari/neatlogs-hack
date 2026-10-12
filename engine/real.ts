@@ -244,13 +244,30 @@ function traceStatus(trace: TracePort | undefined): RunState['integrations']['ne
 }
 
 function neatlogsStatus(ports: RealRunPorts, traceState?: RunState['integrations']['neatlogs']): RunState['integrations']['neatlogs'] {
-  const workerTraceStatus = ports.workerTraceDrain?.status?.();
-  const traces = traceState ?? (workerTraceStatus?.status === 'missing' ? workerTraceStatus : traceStatus(ports.trace));
+  const traces = traceState ?? traceStatus(ports.trace);
   const history = ports.history.status?.();
-  if (!history) return traces;
+  const workerTrace = ports.workerTraceReader?.status?.();
+  const workerDrain = ports.workerTraceDrain?.status?.();
+  if (!history) {
+    const detail = [traces.detail, workerTrace?.detail, workerDrain?.status === 'ok' ? null : workerDrain?.detail]
+      .filter((value): value is string => Boolean(value));
+    return { ...traces, detail: detail.length ? [...new Set(detail)].join('; ') : null };
+  }
   const priority: Record<IntegrationState['status'], number> = { off: 0, ok: 1, missing: 2, error: 3 };
-  const status = priority[history.status] > priority[traces.status] ? history.status : traces.status;
-  const detail = [traces.detail, history.detail].filter((value): value is string => Boolean(value));
+  const primary = [traces.status, history.status];
+  const highest = primary.reduce((left, right) => priority[right] > priority[left] ? right : left, 'off' as IntegrationState['status']);
+  // Missing worker-span read-back is a per-attempt delivery warning. It must
+  // not make Neatlogs look disconnected when trace ingest or remote history works.
+  // The card represents whether Neatlogs is reachable for any enabled core
+  // operation. A broken history read or worker projection is a feature warning
+  // when the routing trace or another remote feature still works.
+  const status = primary.includes('ok') ? 'ok' : highest;
+  const detail = [
+    traces.detail,
+    history.detail,
+    workerTrace?.status === 'ok' ? workerTrace.detail : workerTrace?.detail,
+    workerDrain?.status === 'ok' ? workerDrain.detail : workerDrain?.detail,
+  ].filter((value): value is string => Boolean(value));
   return { status, detail: detail.length > 0 ? [...new Set(detail)].join('; ') : null };
 }
 
@@ -1060,8 +1077,14 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource, cfoaiReadFailure }),
     };
     if (cfoaiWriteFailure || cfoaiContextFailures.length) runState.integrations.cfoai = {
-      status: 'error',
-      detail: [cfoaiWriteFailure, ...cfoaiContextFailures].filter(Boolean).join(' '),
+      status: cfoaiWriteFailure ? 'error' : runState.integrations.cfoai.status,
+      detail: [
+        runState.integrations.cfoai.detail,
+        cfoaiWriteFailure,
+        cfoaiContextFailures.length
+          ? `Ari context report failed for ${cfoaiContextFailures.length} ${cfoaiContextFailures.length === 1 ? 'attempt' : 'attempts'}: ${cfoaiContextFailures[0]}. Budget and spend tables remain connected; the local ledger is the source of truth.`
+          : null,
+      ].filter((value): value is string => Boolean(value)).join(' '),
     };
     const workerRows = ledger.filter(row => row.sessionId && (row.harness === 'codex' || row.harness === 'claude-code'));
     if (!options.dryRun && config.integrations.neatlogs && workerRows.length > 0 && workerRows.every(row => row.workerTraceId)
@@ -1086,7 +1109,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         ...(workerDetails.length ? [] : ['Decision traces sent; worker trace delivery is unverified or pending. Run `tally traces drain --run ' + runId + '` to retry.']),
       ].filter((value): value is string => Boolean(value));
       runState.integrations.neatlogs = {
-        status: runState.integrations.neatlogs.status === 'error' ? 'error' : 'missing',
+        status: runState.integrations.neatlogs.status,
         detail: [...new Set(details)].join('; '),
       };
     }
@@ -1455,7 +1478,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
         });
         await ports.cfoai.publishTaskContext(context);
       } catch (error) {
-        cfoaiContextFailures.push(`Ari task-context write failed: ${safeCfoaiError(error)}. Local ledger and spend tables remain the source of truth for this attempt.`);
+        cfoaiContextFailures.push(safeCfoaiError(error));
       }
     }
   }

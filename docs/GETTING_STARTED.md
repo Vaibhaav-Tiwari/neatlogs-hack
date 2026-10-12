@@ -74,6 +74,8 @@ git status --short
 gh auth status
 ```
 
+Tally uses the active GitHub CLI authentication for HTTPS pushes in the individual Git command, so a separate password prompt is not needed and your global Git credential settings are left alone.
+
 Sign in to the agent you intend to use, not both unless you want both:
 
 ```sh
@@ -152,7 +154,7 @@ Plans share one bounded Neatlogs history snapshot across tier lookups. The full 
 
 Worker tracing needs usable read access for Tally to verify delivery. If read access is unavailable, the decision trace can still be sent, but worker-trace delivery may be reported as unverified.
 
-**Entire:** if its CLI is missing, init offers the official OS installer after a separate confirmation. It then offers login, Graph plugin installation, repository capture settings, missing harness hooks, and an optional browser mirror, each with its own consent. It lists generated files before asking to enable capture, then separately asks before committing those settings and pushing them to the repository's default branch. The mirror prompt is separate: approving it sends the GitHub repository copy to the Entire region or regions you choose in the Entire CLI. Decline to keep the existing setup without a mirror. Capture settings must reach the base branch for future workers; uncommitted settings are not enough. Finally, review and trust the Entire hooks in your coding agent's hooks view; Tally cannot approve them for you.
+**Entire:** if its CLI is missing, init offers the official OS installer after a separate confirmation. It then offers login, Graph plugin installation, repository capture settings, missing harness hooks, and an optional browser mirror, each with its own consent. Capture setup sets `commit_linking: always` for the repository, so Tally's automated commits link to their sessions without prompting during a run; the setting applies to commits made in that repository. Init lists generated files before asking to enable capture, then separately asks before committing only those settings and pushing them to the default branch. The mirror prompt is separate: approving it sends the GitHub repository copy to the Entire region or regions you choose in the Entire CLI. Decline to keep the existing setup without a mirror. Capture settings must reach the base branch for future workers; uncommitted settings are not enough. Finally, review and trust the Entire hooks in your coding agent's hooks view; Tally cannot approve them for you.
 
 Entire being off does not prevent Tally sizing tasks from issue text and repository evidence. Being on adds Graph and local checkpoints. **Hosted past-failure checkpoint recall and clickable Entire session links need an accessible repository mirrored to Entire.** Init can offer this as a separate opt-in and verifies that the mirror is ready. If you skip it, local capture and normal runs remain available, but the PR shows a checkpoint ID instead of a hosted session link. Brain is a separate memory extension; Tally does not install or use it. Generated summaries are off by default and require separate approval.
 

@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve, join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolveEntireBinary } from '../adapters/command.js';
 import type { IntegrationState } from '../schema/types.js';
@@ -57,6 +58,60 @@ const json = (text: string): Record<string, unknown> => {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Unreadable Entire status');
   return parsed as Record<string, unknown>;
 };
+
+async function readSettings(repoRoot: string, name: 'settings.json' | 'settings.local.json'): Promise<Record<string, unknown> | null> {
+  const directory = join(repoRoot, '.entire');
+  const path = join(directory, name);
+  try {
+    const dirInfo = await lstat(directory);
+    if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) throw new Error('Entire settings directory is not a regular directory');
+    const fileInfo = await lstat(path);
+    if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) throw new Error(`Entire ${name} is not a regular file`);
+    return json(await readFile(path, 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function writeSettings(repoRoot: string, name: 'settings.json' | 'settings.local.json', value: Record<string, unknown>): Promise<void> {
+  const directory = join(repoRoot, '.entire');
+  const path = join(directory, name);
+  const dirInfo = await lstat(directory);
+  if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) throw new Error('Entire settings directory is not a regular directory');
+  let mode = 0o644;
+  try {
+    const fileInfo = await lstat(path);
+    if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) throw new Error(`Entire ${name} is not a regular file`);
+    mode = fileInfo.mode & 0o777;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode });
+}
+
+async function automaticCommitLinkingChanges(repoRoot: string): Promise<{ project: boolean; local: boolean }> {
+  const project = await readSettings(repoRoot, 'settings.json');
+  const local = await readSettings(repoRoot, 'settings.local.json');
+  return {
+    project: project?.commit_linking !== 'always',
+    local: Boolean(local && Object.hasOwn(local, 'commit_linking') && local.commit_linking !== 'always'),
+  };
+}
+
+async function enableAutomaticCommitLinking(repoRoot: string): Promise<void> {
+  const project = await readSettings(repoRoot, 'settings.json') ?? {};
+  project.commit_linking = 'always';
+  await writeSettings(repoRoot, 'settings.json', project);
+
+  // A local override takes precedence over the shared project setting. Update it
+  // only when the user already has one; do not create ignored local state.
+  const local = await readSettings(repoRoot, 'settings.local.json');
+  if (local && Object.hasOwn(local, 'commit_linking') && local.commit_linking !== 'always') {
+    local.commit_linking = 'always';
+    await writeSettings(repoRoot, 'settings.local.json', local);
+  }
+}
 
 export interface EntireOnboardingOptions {
   cwd?: string;
@@ -214,28 +269,61 @@ export class EntireOnboarding implements IntegrationOnboarding {
       let status = await this.status();
       const agents = new Set(Array.isArray(status.agents) ? status.agents.map(a => String(a).toLowerCase().replace(/ /g, '-')) : []);
       const required = [...new Set(context.config.tiers.map(t => t.harness))].filter(a => a === 'codex' || a === 'claude-code');
-      if (status.enabled !== true || required.some(agent => !agents.has(agent))) {
+      const captureNeedsUpdate = status.enabled !== true || required.some(agent => !agents.has(agent));
+      const linkingChanges = await automaticCommitLinkingChanges(this.cwd);
+      const linkingNeedsUpdate = linkingChanges.project || linkingChanges.local;
+      if (linkingChanges.local && await this.run('git', ['ls-files', '--', '.entire/settings.local.json'])) {
+        return off('The Entire local settings override is tracked by Git. Remove its commit_linking override manually before Tally enables automatic session linking.');
+      }
+      let approvedPublishBranch: string | null = null;
+      if (!captureNeedsUpdate && linkingChanges.project) {
+        const branch = await this.run('git', ['branch', '--show-current']);
+        const remoteHead = await this.run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).catch(() => '');
+        const defaultBranch = remoteHead.startsWith('origin/') ? remoteHead.slice('origin/'.length) : null;
+        if (!defaultBranch || branch !== defaultBranch) return off('Entire session-linking update needs the repository default branch. No settings changed.');
+        const local = await this.run('git', ['rev-parse', 'HEAD']);
+        const remote = await this.run('git', ['rev-parse', `refs/remotes/origin/${defaultBranch}`]);
+        if (local !== remote) return off('Default branch has unpublished commits. Entire will not publish unrelated work or change session linking.');
+        approvedPublishBranch = defaultBranch;
+      }
+      if (captureNeedsUpdate || linkingNeedsUpdate) {
         // A dirty checkout may contain unrelated or pre-existing settings changes. Never stage them.
-        if (await this.run('git', ['status', '--porcelain'])) return off('Entire capture setup needs a clean checkout so existing edits remain untouched.');
-        context.ui.print('Entire repository capture');
+        if (captureNeedsUpdate && await this.run('git', ['status', '--porcelain'])) return off('Entire capture setup needs a clean checkout so existing edits remain untouched.');
+        if (!captureNeedsUpdate && await this.run('git', ['status', '--porcelain', '--', '.entire/settings.json'])) {
+          return off('Entire settings already contain unpublished edits. Review them before Tally changes commit linking.');
+        }
+        context.ui.print(captureNeedsUpdate ? 'Entire repository capture' : 'Entire automatic session linking');
         context.ui.print(`  Repository: ${this.cwd}`);
-        context.ui.print('  Settings that may be added or updated:');
-        for (const file of SETTINGS_FILES) context.ui.print(`    ${file}`);
-        context.ui.print('  Entire also updates local Git hooks.');
-        context.ui.print('  Settings must reach the default branch for worker worktrees to inherit them.');
-        context.ui.print('  Codex requires you to review and trust its hooks in /hooks. Telemetry and generated summaries stay off.');
-        if (!await context.ui.confirm('Enable these repository capture settings?')) return off('Entire repository setup declined.');
+        if (captureNeedsUpdate) {
+          context.ui.print('  Settings that may be added or updated:');
+          for (const file of SETTINGS_FILES) context.ui.print(`    ${file}`);
+          context.ui.print('  Entire also updates local Git hooks.');
+          context.ui.print('  Settings must reach the default branch for worker worktrees to inherit them.');
+          context.ui.print('  Review and trust the Entire hooks in your coding agent. Telemetry and generated summaries stay off.');
+        }
+        if (linkingNeedsUpdate) context.ui.print('  Commit linking: automatic for this repository; Tally worker commits will not stop for a session-context prompt.');
+        if (linkingChanges.local) context.ui.print('  Local override: .entire/settings.local.json will be updated in this checkout and will not be staged or pushed.');
+        const approval = captureNeedsUpdate
+          ? linkingNeedsUpdate ? 'Enable these repository capture settings and automatic session linking?' : 'Enable these repository capture settings?'
+          : linkingChanges.project
+            ? `Enable automatic session linking and publish only this setting to origin/${approvedPublishBranch}?`
+            : 'Enable automatic session linking for this checkout?';
+        if (!await context.ui.confirm(approval)) return off('Entire repository setup declined.');
         const primary = required[0] ?? 'claude-code';
         if (status.enabled !== true) {
           await this.run('entire', ['enable', '--agent', primary, '--telemetry=false', '--project', '--no-init-repo', '--skip-initial-commit']);
           agents.add(primary);
         }
         for (const agent of required) if (!agents.has(agent)) await this.run('entire', ['agent', 'add', agent]);
+        if (linkingNeedsUpdate) await enableAutomaticCommitLinking(this.cwd);
         status = await this.status();
         if (status.enabled !== true) throw new Error('Capture was not enabled');
-        const lines = (await this.run('git', ['status', '--porcelain', '--untracked-files=all'])).split('\n').filter(Boolean);
+        const statusArgs = captureNeedsUpdate
+          ? ['status', '--porcelain', '--untracked-files=all']
+          : ['status', '--porcelain', '--', '.entire/settings.json'];
+        const lines = (await this.run('git', statusArgs)).split('\n').filter(Boolean);
         const files = lines.map(line => line.slice(3));
-        if (files.some(file => !SETTINGS_FILES.includes(file))) return off('Entire generated unexpected files. Review them before publishing. Nothing was committed or pushed.');
+        if (captureNeedsUpdate && files.some(file => !SETTINGS_FILES.includes(file))) return off('Entire generated unexpected files. Review them before publishing. Nothing was committed or pushed.');
         if (files.length) {
           context.ui.print('Generated settings to publish:');
           for (const file of files) context.ui.print(`  ${file}`);
@@ -246,8 +334,11 @@ export class EntireOnboarding implements IntegrationOnboarding {
           const local = await this.run('git', ['rev-parse', 'HEAD']);
           const remote = await this.run('git', ['rev-parse', `refs/remotes/origin/${defaultBranch}`]);
           if (local !== remote) return off('Default branch has unpublished commits. Entire setup will not publish unrelated work.');
-          context.ui.print('Entire Git hooks may also publish checkpoint and session evidence.');
-          if (!await context.ui.confirm(`Commit only these settings and push them to origin/${defaultBranch}?`)) return off('Publishing settings declined. Local capture settings remain for review.');
+          const publishAlreadyApproved = !captureNeedsUpdate && linkingChanges.project;
+          if (!publishAlreadyApproved) {
+            context.ui.print('Entire Git hooks may also publish checkpoint and session evidence.');
+            if (!await context.ui.confirm(`Commit only these settings and push them to origin/${defaultBranch}?`)) return off('Publishing settings declined. Local capture settings remain for review.');
+          }
           if (await this.run('git', ['branch', '--show-current']) !== defaultBranch || await this.run('git', ['rev-parse', 'HEAD']) !== local) {
             return off('Checkout moved while awaiting approval; no settings were committed or pushed.');
           }

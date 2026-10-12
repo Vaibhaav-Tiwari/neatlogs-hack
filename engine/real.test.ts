@@ -890,7 +890,8 @@ describe('runRealTally', () => {
     expect(events.at(-1)).toBe('result');
     if (!dryRun && enabled) {
       expect(result.ledger[0]?.workerTraceId).toBe(delivered ? 'a'.repeat(32) : null);
-      expect(result.runState.integrations.neatlogs.status).toBe(delivered ? 'ok' : 'missing');
+      expect(result.runState.integrations.neatlogs.status).toBe('ok');
+      if (!delivered) expect(result.runState.integrations.neatlogs.detail).toContain('No queued worker trace found');
     }
     expect(result.runState.status).toBe('finished');
   });
@@ -926,7 +927,7 @@ describe('runRealTally', () => {
       expect(reads).toBe(1);
       expect(drains).toBe(harness === 'codex' ? 1 : 0);
       expect(result.ledger[0]?.workerTraceId).toBe(delivered ? 'c'.repeat(32) : null);
-      expect(result.runState.integrations.neatlogs.status).toBe(delivered ? 'ok' : 'missing');
+      expect(result.runState.integrations.neatlogs.status).toBe('ok');
       if (!delivered) {
         expect(result.ledger[0]?.workerTraceDetail).toContain('HTTP 401');
         expect(result.runState.integrations.neatlogs.detail).toContain('HTTP 401');
@@ -977,7 +978,8 @@ describe('runRealTally', () => {
     } else {
       expect(result.ledger[0]?.workerTraceId).toBeNull();
       expect(result.ledger[0]?.workerTraceDetail).toContain('tally traces drain --run run-20261011-030000Z');
-      expect(result.runState.integrations.neatlogs.status).toBe('missing');
+      expect(result.runState.integrations.neatlogs.status).toBe('ok');
+      expect(result.runState.integrations.neatlogs.detail).toContain('another drain holds the lock');
     }
   });
 
@@ -2126,7 +2128,10 @@ describe('runRealTally', () => {
         verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker, cfoai } });
     expect(result.runState.tasks[0]?.status).toBe('passed');
     expect(cfoai.writes).toHaveLength(1);
-    expect(result.runState.integrations.cfoai).toMatchObject({ status: 'error', detail: expect.stringContaining('Ari task-context write failed') });
+    expect(result.runState.integrations.cfoai).toMatchObject({
+      status: 'ok',
+      detail: expect.stringContaining('Ari context report failed for 1 attempt: memory write refused'),
+    });
   });
 
   it('reports scripted dry-run Entire sizing as neutral instead of missing', async () => {
@@ -2181,7 +2186,7 @@ describe('runRealTally', () => {
     expect(result.runState.integrations.neatlogs).toEqual({ status: 'ok', detail: 'https://app.neatlogs.com/traces/test-trace' });
   });
 
-  it('includes price-history fallback failures in the saved Neatlogs integration status', async () => {
+  it('keeps Neatlogs connected when remote price history fails but routing traces work', async () => {
     const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
     const worker = new FakeWorker();
 
@@ -2210,9 +2215,42 @@ describe('runRealTally', () => {
     });
 
     expect(result.runState.integrations.neatlogs).toEqual({
-      status: 'error',
+      status: 'ok',
       detail: 'https://app.neatlogs.com/traces/test-trace; Neatlogs price-history read failed; using local history. HTTP 400',
     });
+  });
+
+  it('keeps Neatlogs connected when worker span read-back is still indexing', async () => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
+    const worker = new FakeWorker();
+    const result = await runRealTally({
+      configPath,
+      dryRun: true,
+      baseline: false,
+      outputDir: join(dir, 'neatlogs-worker-indexing'),
+      now: fixedNow,
+      latestRunDir: join(dir, 'latest'),
+      ports: {
+        intake,
+        signals,
+        worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        usage: worker,
+        sessions: worker,
+        publisher: worker,
+        trace: new FakeTrace(),
+        history: {
+          lookup: async () => null,
+          record: async () => {},
+          status: () => ({ status: 'ok' as const, detail: 'No matching remote price history; using local history.' }),
+        },
+        workerTraceReader: { verifyFor: async () => null, status: () => ({ status: 'missing' as const, detail: 'Neatlogs worker span read-back failed (HTTP 409).' }) },
+        workerTraceDrain: { drainWorker: async () => {}, status: () => ({ status: 'missing' as const, detail: 'No queued worker trace found.' }) },
+      },
+    });
+
+    expect(result.runState.integrations.neatlogs).toMatchObject({ status: 'ok' });
+    expect(result.runState.integrations.neatlogs.detail).toContain('HTTP 409');
   });
 
   it.each([

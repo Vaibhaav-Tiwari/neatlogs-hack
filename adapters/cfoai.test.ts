@@ -20,6 +20,7 @@ class FakeCfoaiClient implements CfoaiMcpClient {
   ]);
   editStatus = 'applied';
   editReason: string | undefined;
+  memoryResult: unknown;
 
   async connect() {
     this.connected += 1;
@@ -43,7 +44,7 @@ class FakeCfoaiClient implements CfoaiMcpClient {
       }
       return { structuredContent: { status: this.editStatus, reason: this.editReason } };
     }
-    if (name === 'edit_memory') return { structuredContent: { status: 'applied' } };
+    if (name === 'edit_memory') return this.memoryResult ?? { structuredContent: { status: 'applied' } };
     throw new Error(`unexpected tool ${name}`);
   }
 
@@ -189,6 +190,18 @@ describe('CfoaiBudgetAdapter', () => {
     const invalidAdapter = new CfoaiBudgetAdapter({ client: invalidClient, config: { orgId: '103210', scenario: 'Tally E2E' } });
     await expect(invalidAdapter.publishTaskContext(report)).rejects.toThrow('cfo.ai memory tool rejected its published schema');
     expect(invalidClient.calls.some(call => call.name === 'edit_memory')).toBe(false);
+  });
+
+  it('keeps budget integration connected and reports the sanitized memory refusal reason', async () => {
+    const client = new FakeCfoaiClient();
+    client.tools.push('edit_memory');
+    client.memoryResult = { isError: true, content: [{ type: 'text', text: '403 organization memory access denied; token=secret-value' }] };
+    const adapter = new CfoaiBudgetAdapter({ client, now, config: { orgId: '103210', scenario: 'Tally E2E', tableUrl: 'https://app.cfo.ai/s/table' } });
+    const report = { content: '# Tally attempt', filename: 'tally-attempt.md', tags: ['tally'], metadata: {}, idempotencyKey: 'stable' };
+
+    await expect(adapter.publishTaskContext(report)).rejects.toThrow('403 organization memory access denied');
+    expect(adapter.status()).toEqual({ status: 'ok', detail: 'https://app.cfo.ai/s/table' });
+    expect(adapter.status().detail).not.toContain('secret-value');
   });
 
   it('writes tier and run spend detail, seeding prior Agent spend so tier rows sum to the budget table spend', async () => {

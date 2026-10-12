@@ -5,7 +5,7 @@ import type { TallyConfig } from '../schema/index.js';
 
 const execFileAsync = runCommand;
 
-export type PublishCommand = (file: string, args: string[], options?: { cwd?: string; timeout?: number }) => Promise<{ stdout: string; stderr: string }>;
+export type PublishCommand = (file: string, args: string[], options?: { cwd?: string; timeout?: number; env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string; stderr: string }>;
 
 export interface WorkerBranchInput {
   checkoutPath: string;
@@ -52,8 +52,19 @@ export function replacePrEvidence(body: string, links: PrEvidenceLink[]): string
   return `${body.trimEnd()}${body.trim() ? '\n\n' : ''}${evidence}`;
 }
 
-function defaultCommand(file: string, args: string[], options?: { cwd?: string; timeout?: number }) {
-  return execFileAsync(file, args, { cwd: options?.cwd, timeout: options?.timeout });
+function defaultCommand(file: string, args: string[], options?: { cwd?: string; timeout?: number; env?: NodeJS.ProcessEnv }) {
+  return execFileAsync(file, args, { cwd: options?.cwd, timeout: options?.timeout, env: options?.env });
+}
+
+const GH_GIT_CREDENTIAL = ['-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential'];
+
+function pushWithGithubCli(command: PublishCommand, remote: string, refspecs: string[], cwd: string, upstream = false): Promise<{ stdout: string; stderr: string }> {
+  const useGhCredential = remote === 'origin';
+  const credentialArgs = useGhCredential ? GH_GIT_CREDENTIAL : [];
+  return command('git', [...credentialArgs, 'push', ...(upstream ? ['-u'] : []), remote, ...refspecs], {
+    cwd,
+    ...(useGhCredential ? { env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } } : {}),
+  });
 }
 
 function errorMessage(error: unknown): string {
@@ -88,7 +99,7 @@ export class GitHubPublisher implements PublishPort {
 
   async publishPr(input: PublishPrInput): Promise<string> {
     if (!input.config.repo.slug) throw new Error('repo.slug is required to open a GitHub pull request');
-    await this.command('git', ['push', '-u', 'origin', `HEAD:${input.branch}`], { cwd: input.checkoutPath });
+    await pushWithGithubCli(this.command, 'origin', [`HEAD:${input.branch}`], input.checkoutPath, true);
     if (input.config.integrations.entire) await this.pushCheckpoints(input);
     try {
       const { stdout } = await this.command(
@@ -143,7 +154,7 @@ export class GitHubPublisher implements PublishPort {
     }
     const { stdout: remotes } = await this.command('git', ['remote'], options);
     for (const remote of ['origin', ...(remotes.split(/\r?\n/).includes('entire') ? ['entire'] : [])]) {
-      await this.command('git', ['push', remote, ...refs.map((ref) => `${ref}:${ref}`)], options);
+      await pushWithGithubCli(this.command, remote, refs.map((ref) => `${ref}:${ref}`), input.checkoutPath);
     }
   }
 }

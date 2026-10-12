@@ -52,14 +52,14 @@ describe('GitHubPublisher', () => {
       if (args[0] === 'log') return { stdout: 'task\nEntire-Checkpoint: 01M4PROOF\n', stderr: '' };
       if (args[0] === 'for-each-ref') return { stdout: `${ref}\nrefs/entire/checkpoints/XX/OTHER\n`, stderr: '' };
       if (args[0] === 'remote') return { stdout: `origin\n${entireRemote ? 'entire\n' : ''}`, stderr: '' };
-      if (args[0] === 'push') return { stdout: '', stderr: '' };
+      if (args.includes('push')) return { stdout: '', stderr: '' };
       return { stdout: 'https://github.com/acme/payments/pull/42', stderr: '' };
     });
     await publisher.publishPr({ checkoutPath: '/worker', branch: 'worker', config: { ...config, integrations: { ...config.integrations, entire: true } },
       task: { taskId: 'T1', title: 'Fix', body: '', issueNumber: null, issueUrl: null, size: 'small', outcomes: ['passed'] }, runId: 'r', attempt: 1 });
-    expect(calls.filter((call) => call[1] === 'push')).toEqual([
-      ['git', 'push', '-u', 'origin', 'HEAD:worker'],
-      ['git', 'push', 'origin', `${ref}:${ref}`],
+    expect(calls.filter((call) => call.includes('push'))).toEqual([
+      ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential', 'push', '-u', 'origin', 'HEAD:worker'],
+      ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential', 'push', 'origin', `${ref}:${ref}`],
       ...(entireRemote ? [['git', 'push', 'entire', `${ref}:${ref}`]] : []),
     ]);
   });
@@ -83,15 +83,17 @@ describe('GitHubPublisher', () => {
     });
     await publisher.publishPr({ checkoutPath: '/worker', branch: 'worker', config: { ...config, integrations: { ...config.integrations, entire: true } },
       task: { taskId: 'T1', title: 'Fix', body: '', issueNumber: null, issueUrl: null, size: 'small', outcomes: ['passed'] }, runId: 'r', attempt: 1 });
-    expect(calls.filter((call) => call.startsWith('git push'))).toEqual(['git push -u origin HEAD:worker']);
+    expect(calls.filter((call) => call.includes('push'))).toEqual([
+      'git -c credential.helper= -c credential.helper=!gh auth git-credential push -u origin HEAD:worker',
+    ]);
     expect(calls.some((call) => call.includes('for-each-ref'))).toBe(false);
   });
   it('counts commits ahead of the base branch and publishes a PR from Tally', async () => {
-    const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
+    const calls: Array<{ file: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }> = [];
     const command: PublishCommand = async (file, args, options) => {
-      calls.push({ file, args, cwd: options?.cwd });
+      calls.push({ file, args, cwd: options?.cwd, env: options?.env });
       if (file === 'git' && args[0] === 'rev-list') return { stdout: '2\n', stderr: '' };
-      if (file === 'git' && args[0] === 'push') return { stdout: '', stderr: '' };
+      if (file === 'git' && args.includes('push')) return { stdout: '', stderr: '' };
       if (file === 'gh' && args[0] === 'pr' && args[1] === 'create') return { stdout: 'https://github.com/acme/payments/pull/42\n', stderr: '' };
       throw new Error(`unexpected command: ${file} ${args.join(' ')}`);
     };
@@ -111,9 +113,10 @@ describe('GitHubPublisher', () => {
 
     expect(calls.map((call) => `${call.file} ${call.args.join(' ')}`)).toEqual([
       'git rev-list --count origin/main..HEAD',
-      'git push -u origin HEAD:ao/task/root',
+      'git -c credential.helper= -c credential.helper=!gh auth git-credential push -u origin HEAD:ao/task/root',
       'gh pr create --repo acme/payments --head ao/task/root --base main --title T1: Fix math --body Tally run run-1, task T1, attempt 1.\n\nBody\n\n\nCloses #7',
     ]);
+    expect(calls[1]?.env?.GIT_TERMINAL_PROMPT).toBe('0');
   });
 
   it('adds verified integration links to an existing PR body without replacing its content', async () => {
