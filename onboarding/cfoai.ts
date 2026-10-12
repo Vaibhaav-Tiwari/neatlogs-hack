@@ -74,21 +74,23 @@ export class CfoaiOnboarding implements IntegrationOnboarding {
 
   async check(): Promise<IntegrationState> {
     try { return await (this.options.check ?? checkCfoaiConnection)(); }
-    catch { return { status: 'missing', detail: 'cfo.ai is unavailable; run tally login cfoai.' }; }
+    catch { return { status: 'missing', detail: 'cfo.ai is unavailable. Run tally login cfoai.' }; }
   }
 
   async connect(context: OnboardingContext): Promise<IntegrationState> {
     const current = await this.check();
     if (current.status === 'ok') return current;
-    context.ui.print('cfo.ai needs a Tally connection. No account? Sign up at https://app.cfo.ai; you can skip for now.');
+    context.ui.print('cfo.ai connection');
+    context.ui.print('  Sign in to let Tally read the budget and record spend.');
+    context.ui.print('  No account? Sign up at https://app.cfo.ai. You can skip this integration.');
     if (!await context.ui.confirm('Open the browser to connect Tally to cfo.ai?')) {
-      return { status: 'off', detail: 'cfo.ai skipped; the tally.yaml budget remains available.' };
+      return { status: 'off', detail: 'cfo.ai skipped. The tally.yaml budget remains available.' };
     }
     try {
       await (this.options.login ?? loginCfoai)();
       return await this.check();
     } catch {
-      return { status: 'missing', detail: 'cfo.ai login did not complete; run tally login cfoai to retry.' };
+      return { status: 'missing', detail: 'cfo.ai login did not complete. Run tally login cfoai to retry.' };
     }
   }
 
@@ -162,11 +164,23 @@ export class CfoaiOnboarding implements IntegrationOnboarding {
       const detailRows = [...Object.values(tierSpendRows), runSpendRow, cumulativeRunSpendRow];
       const missing = [!find(table) ? table : null, !find(detailTable) ? detailTable : null].filter((x): x is string => x !== null);
       if (missing.length) {
-        context.ui.print(`Create on page Tally in ${workspace.name}, scenario ${scenario}, monthly USD columns starting ${month}:`);
-        if (missing.includes(table)) context.ui.print(`${table}: ${budgetRow} = $${context.config.budget.usd}; ${spendRow} = $0; ${remainingRow} = ${budgetRow} - ${spendRow} (formula).`);
-        if (missing.includes(detailTable)) context.ui.print(`${detailTable}: ${detailRows.join(', ')} = $0 each.`);
-        context.ui.print('Existing tables and spend are not reset. New tables get their own variables.');
-        if (!await context.ui.confirm('Create these missing cfo.ai tables?')) return off('cfo.ai skipped: table creation declined.');
+        context.ui.print('cfo.ai table setup');
+        context.ui.print(`  Workspace: ${workspace.name}`);
+        context.ui.print(`  Scenario: ${scenario}`);
+        context.ui.print(`  Page: Tally`);
+        context.ui.print(`  Monthly values start: ${month}`);
+        if (missing.includes(table)) {
+          context.ui.print(`  Create ${table}:`);
+          context.ui.print(`    ${budgetRow}: $${context.config.budget.usd}`);
+          context.ui.print(`    ${spendRow}: $0`);
+          context.ui.print(`    ${remainingRow}: formula (${budgetRow} - ${spendRow})`);
+        }
+        if (missing.includes(detailTable)) {
+          context.ui.print(`  Create ${detailTable}:`);
+          for (const row of detailRows) context.ui.print(`    ${row}: $0`);
+        }
+        context.ui.print('Only missing tables will be created. Existing tables and spend will not be changed.');
+        if (!await context.ui.confirm('Create the listed tables in cfo.ai?')) return off('cfo.ai skipped. Table creation was declined.');
         const end = `${now.getUTCFullYear() + 1}-12-31`;
         for (const name of missing) {
           const rows = name === table ? budgetRows : detailRows;
@@ -213,8 +227,9 @@ export class CfoaiOnboarding implements IntegrationOnboarding {
         budget: { source: 'cfoai', usd: context.config.budget.usd, cfoai } };
     } catch (error) {
       const reason = safeFailureReason(error);
-      context.ui.print(`cfo.ai setup could not be verified: ${reason}. Using the local budget; rerun onboarding to retry. Existing model data was not reset.`);
-      return off(`cfo.ai setup incomplete: ${reason}; local budget selected.`);
+      context.ui.print(`cfo.ai setup could not be verified: ${reason}.`);
+      context.ui.print('Tally will use the local budget. Existing model data was not changed. Rerun tally init to retry.');
+      return off(`cfo.ai setup incomplete: ${reason}. Tally selected the local budget.`);
     } finally { await client.close().catch(() => undefined); }
   }
 }

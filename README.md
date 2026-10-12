@@ -317,7 +317,7 @@ npm test
 |---|---|
 | `tally run` | Run the backlog against the budget in `tally.yaml`. Flags: `--dry-run`, `--budget <usd>`, `--only <task>`, `--baseline`, `--config <path>`, `--plan`, `--dashboard`/`--open`. |
 | `tally experiment` | Compare baseline and Tally modes with `--dry-run --repeats N` (default 2). Paid AO experiments require explicit `--yes --budget <usd>` consent and a configured test timeout. The budget is an aggregate safety cap; baseline has no per-task ceiling. Both modes verify locally without pushing or opening PRs, run sequentially from the same pinned base, and close workers on interruption. Real comparison safety monitoring has not yet been exercised live. |
-| `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to light up read-only integrations while workers stay fake. |
+| `tally demo` | Run the full loop with simulated workers on `demo/tally.yaml` and `demo/sample-backlog.yaml`. No accounts or keys. Writes `.tally/runs/<run-id>/run.json` and `ledger.json`; add `--dashboard` for the one-command demo, or `--live` to use read-only integrations while workers stay fake. `--live` does not write CFO spend, but may send decision traces to Neatlogs. |
 | `tally dashboard` | Serve `dashboard/` and `.tally/runs/` read-only on `127.0.0.1`. The printed URL passes `?data=/runs/latest/` so the page reads the stable latest-run mirror. |
 | `tally init` | Preview files and AO changes, then ask final default-No consent. `--dry-run` previews; `--yes` applies defaults without prompts. Claude workers require the consented scoped allow-list. |
 | `tally uninstall` | Confirm removal of init-owned configuration and AO settings; preserve history and credentials. |
@@ -336,10 +336,14 @@ immediately. `--open` also opens that URL in the system browser. The server
 continues after the run for inspection, until Ctrl+C. Terminal output includes
 routes, worker session IDs, spend updates at most every ten seconds, attempt
 results, PR URLs and a final summary. `--budget` is a cap for this run, not a
-replacement for the monthly budget: plan and summary show both, including the
-monthly source. When cfo.ai supplies the monthly budget, init asks only for a
-local fallback after connecting it. Worker trace IDs require correlated trace
-read-back; unverified delivery is shown as missing rather than success.
+replacement for the monthly budget: Tally applies the lower of the run cap and
+the remaining monthly budget, including for the direct sequential runner. Plan
+and summary show both, including the amount available now and monthly source.
+When cfo.ai supplies the monthly budget, init asks only for a local fallback
+after connecting it. Worker trace IDs require correlated trace read-back;
+unverified delivery is shown as missing rather than success. See
+[Human approval points](docs/HUMAN_APPROVALS.md) for operations that still
+require explicit user consent or review.
 
 ### Pilot Discovery
 

@@ -57,6 +57,8 @@ describe('Entire onboarding', () => {
     expect((await f.module.configure(f.context)).enabled).toBe(true);
     expect(mutations(f.calls)).toEqual([]);
     expect(f.context.ui.print).toHaveBeenCalledWith(expect.stringContaining('/hooks'));
+    expect(vi.mocked(f.context.ui.print).mock.calls.join('\n')).not.toContain(';');
+    expect(vi.mocked(f.context.ui.confirm).mock.calls.join('\n')).not.toContain(';');
     expect(f.calls.every(call => call.cwd === f.context.repoRoot)).toBe(true);
   });
   it('keeps Entire off when hook trust is skipped', async () => {

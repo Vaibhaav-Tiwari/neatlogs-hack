@@ -513,6 +513,48 @@ describe('runRealTally', () => {
     }
   });
 
+  it('applies the live cfo.ai remainder to direct sequential routing even with a larger CLI cap', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    const config = loadConfig(configPath);
+    config.runner = 'direct';
+    writeFileSync(configPath, stringifyYaml(config));
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), false, usdToNanos(39.9));
+
+    const result = await runRealTally({ configPath, budgetUsd: 5, dryRun: false, baseline: false,
+      outputDir: join(dir, 'direct-cfoai-cap'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, cfoai,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]) },
+    });
+
+    expect(worker.starts).toHaveLength(0);
+    expect(result.runState.tasks[0]).toMatchObject({ status: 'skipped', statusReason: 'not started: no budget' });
+    expect(result.runState.budget).toMatchObject({ limitNanos: usdToNanos(5), monthly: { limitNanos: usdToNanos(40), spentBeforeRunNanos: usdToNanos(39.9) } });
+    expect(result.ledger).toHaveLength(0);
+    expect(cfoai.writes).toEqual([]);
+  });
+
+  it('stops a sequential baseline when reported usage reaches the live monthly remainder', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    const config = loadConfig(configPath);
+    config.runner = 'direct';
+    writeFileSync(configPath, stringifyYaml(config));
+    const worker = new FakeWorker();
+    worker.usageFor = async () => ({ tokens: { uncachedInput: 0, cachedInput: 0, output: 10_000, total: 10_000 }, estimatedCostNanos: usdToNanos(0.2) });
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40), false, usdToNanos(39.9));
+
+    const result = await runRealTally({ configPath, baseline: true, budgetUsd: 5, dryRun: false,
+      outputDir: join(dir, 'direct-baseline-cfoai-cap'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, cfoai,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]) },
+    });
+
+    expect(worker.starts).toHaveLength(1);
+    expect(result.ledger[0]).toMatchObject({ result: 'stopped', resultReason: expect.stringContaining('monthly budget reached') });
+    expect(worker.published).toEqual([]);
+    expect(cfoai.writes).toEqual([usdToNanos(0.2)]);
+  });
+
   it('fails closed before spawning parallel workers if the live monthly budget cannot be read', async () => {
     const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
     const worker = new FakeWorker();

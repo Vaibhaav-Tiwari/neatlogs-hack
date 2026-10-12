@@ -31,6 +31,7 @@
     "demo/sample-backlog.yaml",
     "demo/tally.yaml",
     "demo/tally.live.yaml",
+    "docs/",
     "schema/*.schema.json",
     "schema/fixtures/finished-run/run.json",
     "schema/fixtures/finished-run/ledger.json",

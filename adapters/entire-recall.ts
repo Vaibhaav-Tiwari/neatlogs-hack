@@ -109,7 +109,7 @@ export class EntireCheckpointRecallAdapter implements CheckpointRecallPort {
     } catch (error) {
       const failure = error as { message?: string; stderr?: string };
       const reason = failure.stderr?.trim() || failure.message || 'checkpoint search failed';
-      this.availability = { status: 'missing', detail: `checkpoint recall unavailable: ${reason}${/no matching repositories|mirrored/i.test(reason) ? '; repository is not mirrored to Entire or not accessible in the current account' : ''}` };
+      this.availability = { status: 'missing', detail: `checkpoint recall unavailable: ${reason}${/no matching repositories|mirrored/i.test(reason) ? '. Repository is not mirrored to Entire or is not accessible in the current account.' : ''}` };
       return null;
     }
   }

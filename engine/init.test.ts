@@ -88,6 +88,9 @@ describe('runInit', () => {
     expect(config.budget.usd).toBe(5);
     expect(config.backlog.issueLabel).toBe('ready');
     expect(output.join('\n')).toContain('Test: node --check js/app.js');
+    expect(output.join('\n')).toContain('Integrations:\n  Integration  Status\n  Neatlogs     off\n  Entire       off\n  cfo.ai       off');
+    expect(output.join('\n')).toContain('Optional integrations\n  Integration  What it adds\n  Neatlogs     Tally traces and optional history from past tasks\n  Entire       Code graph sizing and local session checkpoints\n  cfo.ai       Live monthly budget and spend records');
+    expect(output.join('\n')).not.toContain(';');
     expect(output.join('\n')).not.toContain('priceNote:');
     expect(output.join('\n')).toContain('test script contents:\n#!/bin/sh\nset -e\nnode --check js/app.js\n');
     expect(config.claudeCode.allow.join(' ')).toContain('Bash({{tally.testScript:');
@@ -148,15 +151,16 @@ describe('runInit', () => {
     });
     const questions: string[] = [];
     const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: () => {}, doctor: async () => [], onboarding,
-      readBudget: async () => ({ source: 'cfoai', monthlyLimitNanos: 40_000_000_000, limitNanos: 40_000_000_000, limitSource: 'cfoai' }),
+      readBudget: async () => ({ source: 'cfoai', monthlyLimitNanos: 40_000_000_000, monthlySpentNanos: 0,
+        monthlyRemainingNanos: 40_000_000_000, limitNanos: 40_000_000_000, limitSource: 'cfoai' }),
       cfoaiCheck: async () => ({ status: 'ok', detail: 'fake connected' }),
       allowClaude: true,
-      readLine: async (question, fallback) => { questions.push(question); return question.includes('fallback if') ? '5' : question === 'Enable cfo.ai budget integration? y/N' || question === 'Connect y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? ''; } });
+      readLine: async (question, fallback) => { questions.push(question); return question.includes('Local fallback budget if') ? '5' : question === 'Use cfo.ai for the monthly budget and spend? y/N' || question === 'Connect y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? ''; } });
     expect(onboarding).toHaveBeenCalledOnce();
     expect(parseYaml(readFileSync(result.configPath, 'utf8')).budget.cfoai.orgId).toBe('42');
     expect(parseYaml(readFileSync(result.configPath, 'utf8')).budget.usd).toBe(5);
-    const budgetQuestion = questions.findIndex(question => question.includes('fallback if'));
-    expect(questions[budgetQuestion]).toContain('$40.00 for this month');
+    const budgetQuestion = questions.findIndex(question => question.includes('Local fallback budget if'));
+    expect(budgetQuestion).toBeGreaterThanOrEqual(0);
     expect(budgetQuestion).toBeGreaterThan(questions.indexOf('Connect y/N'));
   });
 
@@ -189,7 +193,7 @@ describe('runInit', () => {
     const repo = mkdtempSync(join(tmpdir(), 'tally-init-explicit-'));
     const output: string[] = [];
     const result = await runInit({ cwd: repo, command: detectedAgents(repo), print: (line) => output.push(line), doctor: async () => [], allowClaude: true,
-      readLine: async (question, fallback) => question === 'Test command (shell command)' ? 'test -f index.html && sh checks.sh' : question === 'Setup command (shell command; optional)' ? 'sh prepare.sh' : question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
+      readLine: async (question, fallback) => question === 'Test command (shell command)' ? 'test -f index.html && sh checks.sh' : question === 'Setup command (optional shell command)' ? 'sh prepare.sh' : question === 'Apply these changes? y/N' ? 'y' : fallback ?? '' });
     const config = parseYaml(readFileSync(result.configPath, 'utf8'));
     expect(config.test.command).toBe('test -f index.html && sh checks.sh');
     expect(config.test.setupCommand).toBe('sh prepare.sh');

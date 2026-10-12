@@ -192,7 +192,11 @@ function printSummary(config: TallyConfig, print: (line: string) => void): void 
   print(`Issue label: ${config.backlog.issueLabel ?? 'none'}`);
   print(config.budget.source === 'cfoai' ? `Budget: cfo.ai live account budget (local fallback: $${config.budget.usd})` : `Budget: $${config.budget.usd} from config`);
   for (const tier of config.tiers) print(`Tier ${tier.name}: ${tier.harness}/${tier.model} (${tier.sessionMode})`);
-  print(`Products: ${(['neatlogs', 'entire', 'cfoai'] as const).map(name => `${name} ${config.integrations[name] ? 'on' : 'off'}`).join(', ')}`);
+  print('Integrations:');
+  print('  Integration  Status');
+  for (const [name, label] of [['neatlogs', 'Neatlogs'], ['entire', 'Entire'], ['cfoai', 'cfo.ai']] as const) {
+    print(`  ${label.padEnd(12)} ${config.integrations[name] ? 'on' : 'off'}`);
+  }
   print(`Model-access fallback: ${config.modelAccessFallbackTier ?? 'off (fail fast)'}`);
   print(`Workers: ${config.runner === 'direct' ? 1 : config.parallelWorkers ?? 1} (${config.runner ?? 'ao'})`);
 }
@@ -222,13 +226,13 @@ async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd
   let runner = options.runner;
   let aoStatus: AoDaemonStatus = { state: 'unknown', detail: 'AO daemon status could not be checked' };
   if (!aoFound) {
-    if (runner === 'ao') throw new InitError('AO runner was requested but AO is unavailable; install AO or select direct.');
+    if (runner === 'ao') throw new InitError('AO runner was requested, but AO is unavailable. Install AO or select direct.');
     runner = 'direct';
-    print('AO was not found. Using direct, one task at a time; parallel workers need Agent Orchestrator.');
+    print('AO was not found. Using direct, one task at a time. Parallel workers need Agent Orchestrator.');
   } else {
     try { aoStatus = await readAoDaemonStatus(command, cwd); }
     catch (error) { aoStatus = { state: 'unknown', detail: error instanceof Error ? error.message : 'AO status could not be checked' }; }
-    if (aoStatus.state !== 'running') print(`${aoStatus.detail}. AO is unavailable; direct is the default. ${aoStatus.state === 'stopped' ? 'Run ao start to use AO.' : 'Check ao status --json before choosing AO.'}`);
+    if (aoStatus.state !== 'running') print(`${aoStatus.detail}. AO is unavailable. Direct is the default. ${aoStatus.state === 'stopped' ? 'Run ao start to use AO.' : 'Check ao status --json before choosing AO.'}`);
     if (!runner) {
       const defaultRunner = aoStatus.state === 'running' ? 'ao' : 'direct';
       const value = options.yes || options.dryRun ? defaultRunner : (await readLine('Runner: parallel through Agent Orchestrator (ao), or one at a time directly (direct)?', defaultRunner)).trim();
@@ -237,7 +241,7 @@ async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd
     }
     if (runner === 'ao' && aoStatus.state !== 'running') {
       const guidance = aoStatus.state === 'stopped' ? 'run ao start and retry' : 'check ao status --json, then retry';
-      throw new InitError(`${aoStatus.detail}; ${guidance}, or select direct. Nothing was changed.`);
+      throw new InitError(`${aoStatus.detail}. ${guidance}, or select direct. Nothing was changed.`);
     }
   }
   let concurrency = 1;
@@ -249,7 +253,8 @@ async function chooseSetup(options: InitOptions, command: InitCommandRunner, cwd
   for (const harness of ['claude-code', 'codex'] as const) {
     const status = await checkHarness(harness, command, cwd);
     statuses.push(status);
-    print(`${harness}: ${status.detail}${status.signedIn ? '' : `; fix: ${status.fix}`}`);
+    print(`${harness}: ${status.detail}`);
+    if (!status.signedIn) print(`  Next: ${status.fix}`);
   }
   const ready = new Set(statuses.filter(s => s.installed && s.signedIn).map(s => s.harness));
   if (!ready.size) throw new InitError('No installed and signed-in Codex or Claude Code agent detected; run claude auth login or codex login, then retry.');
@@ -267,7 +272,8 @@ async function consentClaude(config: TallyConfig, options: InitOptions, readLine
   const allow = claudeAllowList(config.test);
   print('Claude Code worker allow-list (relative to its worker folder):');
   for (const rule of allow) print(`- ${rule}`);
-  print('Script tokens are portable content-bound consent, replaced with exact paths outside the worker worktree at startup. Workers cannot edit these scripts; no broad Bash permission is granted.');
+  print('Script tokens are portable content-bound consent. Tally replaces them with exact paths outside the worker worktree at startup.');
+  print('Workers cannot edit these scripts. No broad Bash permission is granted.');
   for (const script of claudeScripts(config.test)) print(`${script.name} script contents:\n${script.contents}`);
   print('Test and setup commands execute repository code and may install dependencies. Tally installs these consented script rules locally before Claude starts. Never bypass-permissions.');
   if (config.claudeCode && configHash(config.claudeCode.allow) === configHash(allow)) return;
@@ -356,7 +362,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
   if (!validation.ok) throw new InitError(`Proposed configuration is invalid: ${validation.errors.join('; ')}; nothing was changed.`);
   const result = { configPath, projectId: config.repo.aoProject ?? '', testCommand: config.test.command, setupCommand: config.test.setupCommand ?? null, baseBranch: config.repo.baseBranch, tiers: config.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
   if (!pending && configHash(config) === configHash(before)) {
-    print('No changes proposed; existing configuration and installation ownership are unchanged.');
+  print('No changes proposed. Existing configuration and installation ownership are unchanged.');
     return { ...result, applied: false, doctor: [] };
   }
   const command: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: config.repo.aoBin ? resolve(dirname(configPath), config.repo.aoBin) : undefined }));
@@ -371,7 +377,7 @@ async function reconfigureInit(options: InitOptions, configPath: string, print: 
       print(options.verbose || key === 'integrations' ? `+ ${key}: ${JSON.stringify(config[key])}` : `+ ${key}: proposed setting shown above`);
     }
   }
-  print(`Preserve all other settings; ${plan.beforeRecord === null ? 'no installation ownership record will be created' : 'preserve installation ownership and update its config hash and consented harness modes'}. AO project, setup hooks and worker permissions will not change.`);
+  print(`Preserve all other settings. ${plan.beforeRecord === null ? 'No installation ownership record will be created' : 'Installation ownership and consented harness modes will be updated'}. AO project, setup hooks and worker permissions will not change.`);
   if (pending) print(`Resume interrupted re-init from ${reinitPath(configPath)}.`);
   if (options.dryRun || (!options.yes && !parseYes(await readLine('Apply these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
   applyReinit(plan);
@@ -400,10 +406,10 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     const resumeCommand: InitCommandRunner = options.command ?? ((file, args, commandOptions) => defaultCommand(file, args, { ...commandOptions, aoBin: saved.repo.aoBin ? resolve(dirname(configPath), saved.repo.aoBin) : undefined }));
     try { await initPrerequisites(saved, resumeCommand, repoRoot, options); }
     catch (error) { throw new InitError(`Incomplete init remains at ${pendingInitPath(configPath)}; ${configPath} ${existsSync(configPath) ? 'exists' : 'was not written'}, ${recordPath} ${existsSync(recordPath) ? 'exists' : 'was not written'}; no additional changes made: ${error instanceof Error ? error.message : 'prerequisites failed'}; fix the prerequisite and rerun tally init --config ${JSON.stringify(configPath)}.`); }
-    print(`Resume incomplete init from ${pendingInitPath(configPath)}; preserve matching files and existing AO settings.`);
+    print(`Resume incomplete init from ${pendingInitPath(configPath)}. Preserve matching files and existing AO settings.`);
     printSummary(saved, print);
     if (options.verbose) print(pending.configText);
-    print(saved.runner === 'direct' ? 'Direct installation; no AO settings owned or changed.' : `AO project ${pending.record.projectId}; setup entry: ${pending.record.addedSetupCommand ?? 'none'}; worker allow-list: ${pending.record.workerPermissionMode === 'default' ? 'Claude local settings installed before launch' : 'not installed'}; no global harness settings changed.`);
+    print(saved.runner === 'direct' ? 'Direct installation. No AO settings are owned or changed.' : `AO project: ${pending.record.projectId}\nSetup entry: ${pending.record.addedSetupCommand ?? 'none'}\nWorker allow-list: ${pending.record.workerPermissionMode === 'default' ? 'Claude local settings installed before launch' : 'not installed'}\nGlobal harness settings are unchanged.`);
     const result = { configPath, projectId: pending.record.projectId, testCommand: saved.test.command, setupCommand: saved.test.setupCommand ?? null, baseBranch: saved.repo.baseBranch, tiers: saved.tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`) };
     if (options.dryRun || (!options.yes && !parseYes(await readLine('Resume these changes? y/N', 'N')))) return { ...result, applied: false, doctor: [] };
     return { ...result, applied: true, doctor: await finishInit(options, pending, resumeCommand, recordPath) };
@@ -414,7 +420,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   const remote = await commandOrNull(command, 'git', ['remote', 'get-url', 'origin'], repoRoot);
   let testCommand = options.testCommand?.trim() || detectTestCommand(repoRoot);
   if (!testCommand) {
-    const explanation = 'No test command found. Tally cannot verify work without a test command; provide a shell command that checks the work. No configuration or AO settings have been changed.';
+    const explanation = 'No test command found. Tally cannot verify work without a test command. Provide a shell command that checks the work. No configuration or AO settings have been changed.';
     print(explanation);
     if (options.yes || options.dryRun) throw new InitError(explanation);
     testCommand = (await readLine('Test command (shell command)', '')).trim();
@@ -422,16 +428,22 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   }
   let setupCommand = options.setupCommand === undefined ? detectSetupCommand(repoRoot) : options.setupCommand.trim() || null;
   if (!setupCommand && options.setupCommand === undefined) {
-    print('No setup command found. Leave it blank if no environment setup is needed; Tally will not invent an install command.');
-    if (!options.yes && !options.dryRun) setupCommand = (await readLine('Setup command (shell command; optional)', '')).trim() || null;
+    print('No setup command found. Leave it blank if no environment setup is needed. Tally will not invent an install command.');
+    if (!options.yes && !options.dryRun) setupCommand = (await readLine('Setup command (optional shell command)', '')).trim() || null;
   }
   const issueLabel = options.issueLabel ?? await readLine('GitHub issue label for Tally tasks', 'tally');
-  const neatlogs = options.integrations?.neatlogs ?? parseYes(await readLine('Enable neatlogs traces? y/N', 'N'));
-  const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph/checkpoints? y/N', 'N'));
-  const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Enable cfo.ai budget integration? y/N', 'N'));
+  print('Optional integrations');
+  print('  Integration  What it adds');
+  print('  Neatlogs     Tally traces and optional history from past tasks');
+  print('  Entire       Code graph sizing and local session checkpoints');
+  print('  cfo.ai       Live monthly budget and spend records');
+  print('Each integration is optional. You can enable one later by rerunning tally init.');
+  const neatlogs = options.integrations?.neatlogs ?? parseYes(await readLine('Enable Neatlogs traces? y/N', 'N'));
+  const entire = options.integrations?.entire ?? parseYes(await readLine('Enable Entire graph and checkpoints? y/N', 'N'));
+  const cfoai = options.integrations?.cfoai ?? parseYes(await readLine('Use cfo.ai for the monthly budget and spend? y/N', 'N'));
   const { runner, concurrency, tiers } = await chooseSetup(options, command, repoRoot, readLine, print);
   const fallbackTierInput = options.modelAccessFallbackTier ?? (!options.yes && !options.dryRun
-    ? (await readLine(`Optional fallback tier after explicit model-access rejection (${tiers.map(tier => tier.name).join(', ')}; blank disables)`, '')).trim() || undefined
+    ? (await readLine(`Optional fallback tier after explicit model-access rejection (${tiers.map(tier => tier.name).join(', ')}). Press Enter to disable.`, '')).trim() || undefined
     : undefined);
   if (fallbackTierInput && !tiers.some(tier => tier.name === fallbackTierInput)) {
     throw new InitError(`Model-access fallback tier must be one of ${tiers.map(tier => tier.name).join(', ')}; nothing was changed.`);
@@ -476,18 +488,21 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     select: async (question, choices) => {
       if (options.yes) return null;
       choices.forEach((choice, index) => print(`${index + 1}. ${choice}`));
-      const value = (await readLine(`${question}; enter a number, or blank to skip`, '')).trim();
+      const value = (await readLine(`${question} (number, or Enter to skip)`, '')).trim();
       const index = Number(value) - 1;
       return /^\d+$/.test(value) && index >= 0 && index < choices.length ? index : null;
     },
   } });
   const liveBudget = config.budget.source === 'cfoai' && !options.dryRun
     ? await (options.readBudget ?? readPlanBudget)(config, {}) : null;
-  const budgetQuestion = config.budget.source === 'cfoai'
-    ? liveBudget?.source === 'cfoai'
-      ? `cfo.ai will supply the budget, currently ${formatUsd(liveBudget.monthlyLimitNanos)} for this month; fallback if cfo.ai is unreachable (USD)`
-      : 'cfo.ai will supply the monthly budget; currently unreachable or unchecked. Fallback budget in USD'
-    : 'Monthly budget in USD (also the default run cap)';
+  let budgetQuestion: string;
+  if (config.budget.source === 'cfoai') {
+    if (liveBudget?.source === 'cfoai') print(`cfo.ai monthly budget: ${formatUsd(liveBudget.monthlyLimitNanos)}.`);
+    else print('cfo.ai monthly budget is unavailable or has not been checked.');
+    budgetQuestion = liveBudget?.source === 'cfoai'
+      ? 'Local fallback budget if cfo.ai is unreachable (USD)'
+      : 'Local fallback budget in USD';
+  } else budgetQuestion = 'Monthly budget in USD (also the default run cap)';
   config.budget.usd = parseBudget(options.budgetUsd === undefined ? await readLine(budgetQuestion, String(config.budget.usd)) : String(options.budgetUsd));
   const validation = validateConfig(config);
   if (!validation.ok) throw new InitError(`Proposed configuration is invalid: ${validation.errors.join('; ')}; nothing was changed.`);
@@ -505,19 +520,19 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
   print(`Create ${configPath}: repository configuration${options.verbose ? `\n${stringifyYaml(config)}` : ' (use --verbose for full YAML)'}.`);
   print(`Create ${recordPath}: installation ownership record for uninstall.`);
   if (runner === 'ao') {
-    print(`${existingProject ? 'Update' : 'Register'} AO project ${projectId} at ${repoRoot}; preserve all existing config fields.`);
+    print(`${existingProject ? 'Update' : 'Register'} AO project ${projectId} at ${repoRoot}. Preserve all existing config fields.`);
     print(`AO post-create entries: ${JSON.stringify(nextProjectConfig.postCreate ?? [])}`);
-    print(`AO worker permission mode: ${workerMode}, only for this project's workers; no bypass-permissions or global settings changes. Uninstall restores the owned setting.`);
+    print(`AO worker permission mode: ${workerMode} for this project only. No bypass-permissions or global settings changes. Uninstall restores the owned setting.`);
     print('Before each AO spawn Tally selects the consented tier harness mode under one in-process project lock: Codex auto, Claude Code default with local dontAsk.');
-    if (hasClaude) print('Worker allow-list: consented Claude rules installed before launch in .claude/settings.local.json; scripts outside the worktree; local settings and instructions excluded from Git.');
-    else print('Worker allow-list: not installed; scoped enforcement is not available through the current AO worker launch API.');
+    if (hasClaude) print('Worker allow-list: consented Claude rules are installed before launch in .claude/settings.local.json. Script files stay outside the worktree. Local settings and instructions are excluded from Git.');
+    else print('Worker allow-list: not installed. The current AO worker launch API cannot enforce scoped rules.');
     print(hasClaude ? 'Consented worker rules (installed locally before launch):' : 'Requested worker rules (not yet enforced):');
     print('- Edit files in the worker\'s own worktree.');
     print(`- Run the configured test command: ${testCommand}`);
     print('- Run git add and git commit.');
-    print('- Tally publishes; workers must not git push or create PRs. Approved setup may install dependencies.');
+    print('- Tally publishes changes. Workers must not git push or create PRs. Approved setup may install dependencies.');
   } else print('Direct setup: no AO registration, post-create hooks, or AO worker permission changes.');
-  print('Integration connection changes require their own explicit approval; the config proposal contains no credentials.');
+  print('Integration connection changes require separate approval. The config proposal contains no credentials.');
   const result = { configPath, projectId, testCommand, setupCommand, baseBranch, tiers: tiers.map((tier) => `${tier.name}:${tier.harness}/${tier.model}`), doctor: [] as DoctorLine[] };
   if (options.dryRun || (!options.yes && !parseYes(await readLine('Apply these changes? y/N', 'N')))) {
     return { ...result, applied: false };

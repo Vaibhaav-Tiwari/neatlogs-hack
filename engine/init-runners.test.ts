@@ -42,7 +42,7 @@ describe('runner and coding CLI setup', () => {
     expect(config.tiers.every((t: { harness: string; priceNote: string }) => t.harness === 'claude-code' && t.priceNote.includes('checked 2026-10-11'))).toBe(true);
     expect(config.claudeCode.allow).toEqual(claudeAllowList(config.test));
     expect(f.calls.filter(call => call.startsWith('ao '))).toEqual(['ao --version']);
-    expect(f.print.mock.calls.join(' ')).toContain('parallel workers need');
+    expect(f.print.mock.calls.join(' ').toLowerCase()).toContain('parallel workers need');
     await runUninstall({ configPath: result.configPath, command: f.command, readLine: async () => 'y' });
     expect(f.calls.filter(call => call.startsWith('ao '))).toEqual(['ao --version']);
     expect(existsSync(result.configPath)).toBe(false);
@@ -60,13 +60,13 @@ describe('runner and coding CLI setup', () => {
     const result = await runInit({ ...f, yes: true, harnessChoice: 'codex', testCommand: 'true', setupCommand: '',
       integrations: { neatlogs: false, entire: false, cfoai: false }, doctor: async () => [] });
     expect(parse(readFileSync(result.configPath, 'utf8')).runner).toBe('direct');
-    expect(f.print.mock.calls.join(' ')).toContain('AO daemon is stopped. AO is unavailable; direct is the default. Run ao start to use AO.');
+    expect(f.print.mock.calls.join(' ')).toContain('AO daemon is stopped. AO is unavailable. Direct is the default. Run ao start to use AO.');
     expect(f.calls.some(call => call.startsWith('ao project'))).toBe(false);
   });
   it('refuses AO selection when the installed daemon is stopped', async () => {
     const f = fixture(true, ['codex'], ['codex'], 'stopped');
     await expect(runInit({ ...f, yes: true, runner: 'ao', harnessChoice: 'codex', testCommand: 'true', setupCommand: '',
-      integrations: { neatlogs: false, entire: false, cfoai: false }, doctor: async () => [] })).rejects.toThrow('AO daemon is stopped; run ao start and retry, or select direct');
+      integrations: { neatlogs: false, entire: false, cfoai: false }, doctor: async () => [] })).rejects.toThrow('AO daemon is stopped. run ao start and retry, or select direct. Nothing was changed.');
     expect(existsSync(join(f.cwd, 'tally.yaml'))).toBe(false);
   });
   it.each(['claude-code', 'codex', 'mixed'] as const)('persists the requested harnesses with both CLIs installed: %s', async choice => {

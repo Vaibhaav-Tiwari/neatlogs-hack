@@ -22,7 +22,7 @@ describe('model access diagnostics', () => {
   });
 
   it('explains why configured model access remains unverified without spending', () => {
-    expect(configuredModelAccessNotice([tier])).toContain('does not send a model request as a preflight probe');
+    expect(configuredModelAccessNotice([tier])).toContain('does not send a model request before a run');
     expect(configuredModelAccessNotice([tier])).toContain('top (codex: gpt-5.6-sol)');
   });
 });

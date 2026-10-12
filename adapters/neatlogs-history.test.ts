@@ -76,7 +76,9 @@ describe('NeatlogsPriceHistory', () => {
         calls.push(`${input}`);
         expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer token');
         expect((init?.headers as Record<string, string>)['x-project-id']).toBe('project');
-        if (`${input}`.includes('/traces?')) return response({ data: { page: { hasMore: false, limit: 2, nextCursor: null }, traces: [{ id: 'trace-1' }, { traceId: 'trace-2' }] } });
+        if (`${input}`.includes('/traces?')) return response({ data: { page: { hasMore: false, limit: 2, nextCursor: null }, traces: [
+          { id: 'trace-1', traceName: 'tally.history.record' }, { traceId: 'trace-2', traceName: 'tally.history.record' },
+        ] } });
         if (`${input}`.endsWith('/trace-1/spans')) {
           return response({
             data: {
@@ -180,6 +182,22 @@ describe('NeatlogsPriceHistory', () => {
     expect(calls.some((call) => call.includes('/old-history-trace/spans'))).toBe(true);
   });
 
+  it('does not fetch spans for unrelated traces with no trace name', async () => {
+    let spanReads = 0;
+    const history = new NeatlogsPriceHistory({
+      fallback: new FakeHistory(null),
+      env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
+      fetch: async (input) => {
+        if (`${input}`.includes('/traces?')) return response({ traces: [{ id: 'unnamed-trace' }, { id: 'route-trace', traceName: 'tally.route' }] });
+        spanReads += 1;
+        return response({ spans: [] });
+      },
+    });
+
+    await expect(history.lookup('small', 'cheap')).resolves.toBeNull();
+    expect(spanReads).toBe(0);
+  });
+
   it('falls back to local history when neatlogs read fails or has no matching observations', async () => {
     const fallback = new FakeHistory({ attempts: 1, passRate: 1, avgCostNanos: 55 });
     const failing = new NeatlogsPriceHistory({
@@ -197,6 +215,45 @@ describe('NeatlogsPriceHistory', () => {
     });
     await expect(empty.lookup('large', 'top')).resolves.toEqual({ attempts: 1, passRate: 1, avgCostNanos: 55, source: 'local' });
     expect(empty.status()).toMatchObject({ status: 'ok', detail: expect.stringContaining('No usable Neatlogs price-history observations') });
+  });
+
+  it('aborts a stalled remote history read and reuses local history for every lookup', async () => {
+    const fallback = new FakeHistory({ attempts: 2, passRate: 0.5, avgCostNanos: 55 });
+    let calls = 0;
+    const history = new NeatlogsPriceHistory({
+      fallback,
+      env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
+      timeoutMs: 5,
+      fetch: async (_input, init) => {
+        calls += 1;
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted) reject(signal.reason);
+          else signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+
+    await expect(history.lookup('small', 'cheap')).resolves.toMatchObject({ attempts: 2, passRate: 0.5, avgCostNanos: 55, source: 'local' });
+    await expect(history.lookup('medium', 'middle')).resolves.toMatchObject({ attempts: 2, passRate: 0.5, avgCostNanos: 55, source: 'local' });
+    expect(calls).toBe(1);
+    expect(history.status()).toMatchObject({ status: 'error', detail: expect.stringMatching(/timeout|abort/i) });
+  });
+
+  it('loads remote observations once and shares the snapshot across tier lookups', async () => {
+    let calls = 0;
+    const history = new NeatlogsPriceHistory({
+      fallback: new FakeHistory(null),
+      env: { NEATLOGS_TOKEN: 'token', NEATLOGS_PROJECT_ID: 'project' },
+      fetch: async () => {
+        calls += 1;
+        return response({ traces: [{ traceName: historyTraceName({ size: 'small', tier: 'cheap', result: 'passed', costNanos: 100 }) }] });
+      },
+    });
+
+    await expect(history.lookup('small', 'cheap')).resolves.toMatchObject({ attempts: 1, passRate: 1, avgCostNanos: 100, source: 'neatlogs', successfulCostsNanos: [100] });
+    await expect(history.lookup('small', 'middle')).resolves.toBeNull();
+    expect(calls).toBe(1);
   });
 
   it('continues recording to the local fallback', async () => {
