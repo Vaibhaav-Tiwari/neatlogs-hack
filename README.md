@@ -7,7 +7,14 @@ ends with a ledger tying spend to each attempt, its test result and any opened P
 
 **Start here: [Getting Started](docs/GETTING_STARTED.md)** covers the no-account demo, every init question, your first real run, troubleshooting and uninstall.
 
-Status: early build, published on npm as `tally-agents` version `0.1.0`.
+Status: early build. The next release is `tally-agents` version `0.2.0`; npm
+`latest` remains `0.1.0` until the maintainer publishes it.
+
+0.2.0 adds direct runners, opt-in parallel AO workers, model-isolated
+trace-history routing and caps, failure diagnosis, and reviewed CrustData
+pilot-company reports. Configurations produced by 0.1.0 init continue to run
+sequentially unchanged; its legacy `concurrency` field does not opt into
+`parallelWorkers`. New 0.2.0 configuration fields are not accepted by 0.1.0.
 The GitHub release alternative is also available below. The seven-task demo uses simulated workers; real
 runs use Agent Orchestrator by default, or the direct runner (Claude Code or Codex),
 and record their attempts and evidence separately.
@@ -18,6 +25,12 @@ Prerequisites before you install:
 
 - Node 20 or later and npm.
 - Git, for installing from GitHub or from a source checkout.
+
+The built CLI runtime is checked on Node 20 (20.20.2), including the seven-task
+dry demo. Vitest 5 is development-only and requires Node 22.12+ on the supported
+22.x line (or supported 24/26+ versions); source contributors should use that
+runtime for tests. The built npm release includes neither Vitest nor other dev
+dependencies and keeps its runtime requirement at Node 20+.
 
 That is all the simulated demo and the dashboard need. They use no Agent
 Orchestrator account, coding-agent login or GitHub credentials.
@@ -177,12 +190,12 @@ missing credentials are reported, and no real worker is launched.
 
 ### A Provided Tarball
 
-With only a packed `tally-agents-0.1.0.tgz` in your current directory, these
+With only a packed `tally-agents-0.2.0.tgz` in your current directory, these
 commands install into a temporary prefix without changing your normal global
 installation, then follow the same quickstart:
 
 ```bash
-npm install -g --prefix "$PWD/tally-install" ./tally-agents-0.1.0.tgz
+npm install -g --prefix "$PWD/tally-install" ./tally-agents-0.2.0.tgz
 export PATH="$PWD/tally-install/bin:$PATH"
 tally demo
 tally dashboard --port 0

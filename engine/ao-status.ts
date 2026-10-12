@@ -7,7 +7,10 @@ export interface AoDaemonStatus {
 
 export function parseAoDaemonStatus(stdout: string): AoDaemonStatus {
   try {
-    const payload = JSON.parse(stdout) as { state?: unknown };
+    const payload = JSON.parse(stdout) as { state?: unknown; health?: unknown; ready?: unknown };
+    if (payload.state === 'ready' && payload.health === 'ok' && payload.ready === 'ready') {
+      return { state: 'running', detail: 'AO daemon is healthy and ready' };
+    }
     if (payload.state === 'running') return { state: 'running', detail: 'AO daemon is running' };
     if (payload.state === 'stopped') return { state: 'stopped', detail: 'AO daemon is stopped' };
   } catch {
