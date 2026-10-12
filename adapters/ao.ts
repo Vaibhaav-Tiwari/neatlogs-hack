@@ -1,6 +1,7 @@
 import { resolveAoBinary, runCommand } from './command.js';
 import { aoProjectCommand } from './ao-project.js';
 import { AO_HARNESS_PERMISSIONS } from '../engine/harness.js';
+import { commitWorkerEdits } from './direct.js';
 import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -25,7 +26,7 @@ export interface CommandResult {
   stderr: string;
 }
 
-export type CommandRunner = (file: string, args: string[], options?: { cwd?: string }) => Promise<CommandResult>;
+export type CommandRunner = (file: string, args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }) => Promise<CommandResult>;
 
 export interface AoAdapterOptions {
   aoBin?: string;
@@ -142,6 +143,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
   private readonly usageSettlePolls: number;
   private readonly usageSettleMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly exitedAgents = new Set<string>();
 
   constructor(private readonly options: AoAdapterOptions = {}) {
     this.command = options.command ?? ((file, args, commandOptions) => {
@@ -317,7 +319,7 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
         if (needsInputPolls >= this.needsInputGracePolls) {
           const reason = needsInputReason(needsInputState);
           try {
-            await this.stop(sessionId, reason);
+            await this.exitAgent(sessionId);
           } catch {
             // The ledger still records the needs-input state; a later cleanup can see the session id.
           }
@@ -370,6 +372,31 @@ export class AoCliAdapter implements WorkerPort, LiveUsagePort, SessionControlPo
     if (this.stoppedSessions.has(sessionId)) return;
     await this.command('ao', ['session', 'kill', sessionId], { cwd: this.options.cwd });
     this.stoppedSessions.add(sessionId);
+  }
+
+  private async exitAgent(sessionId: string): Promise<void> {
+    if (this.exitedAgents.has(sessionId)) return;
+    await this.command('ao', ['session', 'exit-agent', sessionId], { cwd: this.options.cwd });
+    this.exitedAgents.add(sessionId);
+  }
+
+  async commitChanges(sessionId: string): Promise<string | null> {
+    // Stop the agent without deleting its clean worktree before verification.
+    await this.exitAgent(sessionId);
+    const session = (await this.session(sessionId)).session;
+    const branch = session?.branch;
+    if (!branch) throw new Error('could not locate worker branch before committing');
+    let checkoutPath = session?.checkoutPath ?? session?.worktreePath ?? session?.path;
+    if (!checkoutPath) {
+      const list = await this.command('git', ['worktree', 'list', '--porcelain'], { cwd: this.options.cwd });
+      for (const block of list.stdout.split(/\n\n/)) {
+        if (block.split('\n').includes(`branch refs/heads/${branch}`)) checkoutPath = block.split('\n').find(line => line.startsWith('worktree '))?.slice('worktree '.length);
+      }
+    }
+    if (!checkoutPath) throw new Error('could not locate worker checkout before committing');
+    return commitWorkerEdits((file, args, options) => this.command(file, args,
+      { ...options, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }),
+      { checkoutPath, branch }, { repoPath: this.options.cwd ?? checkoutPath });
   }
 
   private async session(sessionId: string): Promise<AoSessionJson> {

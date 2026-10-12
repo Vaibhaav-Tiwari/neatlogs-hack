@@ -100,7 +100,7 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
   commitsAheadCount = 1;
   files = ['calc.ts'];
   async changedFiles() { return this.files; }
-  async commitChanges() { return null; }
+  async commitChanges(): Promise<string | null> { return null; }
 
   async start(input: WorkerStartInput): ReturnType<WorkerPort['start']> {
     this.starts.push(input);
@@ -1449,9 +1449,13 @@ describe('runRealTally', () => {
     expect(result.ledger[0]!.estimatedCostNanos).toBeGreaterThan(0);
   });
 
-  it('records a worker needs-input state as an error without running verification or escalating', async () => {
+  it.each(['idle', 'needs_input'] as const)('records an AO worker with no work as stuck without verification or escalation (%s)', async status => {
     const { dir, configPath } = fixture();
     const worker = new NeedsInputWorker();
+    worker.commitsAheadCount = 0;
+    worker.files = [];
+    worker.wait = async () => ({ status, branch: 'task', checkoutPath: '/tmp/worker', prUrl: null });
+    const reason = status === 'needs_input' ? 'worker stuck: asked for input with no work on its branch' : 'worker stuck: no work on its branch';
     const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
 
     const result = await runRealTally({
@@ -1476,14 +1480,45 @@ describe('runRealTally', () => {
     expect(result.ledger).toHaveLength(1);
     expect(result.ledger[0]).toMatchObject({
       result: 'error',
-      resultReason: 'worker asked for input: AO session entered needs_input/waiting_input',
+      resultReason: reason,
     });
     expect(result.runState.tasks[0]).toMatchObject({
       status: 'failed',
-      statusReason: 'worker asked for input: AO session entered needs_input/waiting_input',
+      statusReason: reason,
       attempts: 1,
       escalated: false,
     });
+  });
+
+  it.each(['idle', 'needs_input'] as const)('commits AO leftovers and independently verifies and publishes after %s', async status => {
+    const { dir, configPath } = fixture();
+    const worker = new FakeWorker();
+    worker.wait = async () => ({ status, branch: 'task', checkoutPath: '/tmp/task', prUrl: null });
+    worker.commitsAheadCount = 0;
+    const hostCommit = 'c'.repeat(40);
+    worker.commitChanges = async () => { worker.commitsAheadCount = 1; return hostCommit; };
+    const verifier = new SequenceVerifier([{ passed: true, reason: null }]);
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false,
+      outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier, usage: worker, sessions: worker, publisher: worker } });
+    expect(verifier.calls).toBe(1);
+    expect(worker.published).toHaveLength(1);
+    expect(result.ledger[0]).toMatchObject({ result: 'passed', tallyCommit: hostCommit, prUrl: expect.stringContaining('/pull/') });
+    expect(worker.starts[0]?.prompt).toContain('Do not run ao commands.');
+    expect(worker.stopped).toEqual(['session-1']);
+  });
+
+  it('uses failed verification, not an AO input request, to decide an escalation', async () => {
+    const { dir, configPath } = fixture();
+    const worker = new NeedsInputWorker();
+    const verifier = new SequenceVerifier([{ passed: false, reason: 'regression test failed' }, { passed: true, reason: null }]);
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false,
+      outputDir: join(dir, 'out'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, verifier, usage: worker, sessions: worker, publisher: worker } });
+    expect(verifier.calls).toBe(2);
+    expect(result.ledger[0]).toMatchObject({ result: 'failed', resultReason: 'regression test failed', prUrl: null });
+    expect(result.ledger[1]).toMatchObject({ result: 'passed', escalatedFrom: result.ledger[0]?.attemptId });
+    expect(worker.published).toHaveLength(1);
   });
 
   it('resumes from an existing successful ledger row without spawning again', async () => {
