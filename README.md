@@ -417,7 +417,11 @@ its own process, outside the worker sandbox. It uses the official package's
 spool API (there is no flush CLI), matching native session IDs or the worktree
 path. Only successfully delivered batches are acknowledged; failed,
 unrelated and malformed batches remain queued. A locked or incomplete drain
-is reported as missing worker trace delivery. Dry runs do not drain workers.
+is reported as missing worker trace delivery. After all workers exit, Tally
+retries once when a worker drain reported lock contention and verifies the
+result with Neatlogs before updating the final run status. If delivery remains
+unverified, the run keeps the batches and shows `tally traces drain --run <id>`
+for recovery. Dry runs do not drain workers.
 
 With `integrations.entire: true`, enable Entire in the target repository and
 trust its Codex hooks through `/hooks` before starting workers. Tally records

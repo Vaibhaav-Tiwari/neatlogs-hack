@@ -970,6 +970,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     const saved = savedRun?.tasks.find((state) => state.taskId === task.taskId);
     return { ...initialTaskState(task), ...(saved?.impact ? { impact: saved.impact } : {}), ...(saved?.changedFiles ? { changedFiles: saved.changedFiles } : {}) };
   });
+  const recoveredWorkerTraceAttempts = new Set<string>();
   const liveCosts = new Map<string, number>();
   const progressFor = (index: number, attempt: number, tier: Tier) => (cost: number) => {
     const state = taskStates[index]!;
@@ -1030,6 +1031,16 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     if (!options.dryRun && config.integrations.neatlogs && workerRows.length > 0 && workerRows.every(row => row.workerTraceId)
       && ports.workerTraceDrain?.status?.().detail?.startsWith('No queued worker trace found')) {
       runState.integrations.neatlogs = neatlogsStatus(ports, traceStatus(ports.trace));
+    }
+    const recoveredRows = workerRows.filter(row => recoveredWorkerTraceAttempts.has(`${row.taskId}/${row.attempt}`));
+    if (!options.dryRun && config.integrations.neatlogs && recoveredRows.length > 0) {
+      const neatlogs = neatlogsStatus(ports, traceStatus(ports.trace));
+      const recoveredAttempts = recoveredRows.map(row => `${row.taskId} attempt ${row.attempt}`).join(', ');
+      runState.integrations.neatlogs = {
+        ...neatlogs,
+        detail: [neatlogs.detail, `Worker trace delivery recovered after the post-worker retry for ${recoveredAttempts}; the initial drain encountered lock contention.`]
+          .filter((detail): detail is string => Boolean(detail)).join('; '),
+      };
     }
     if (!options.dryRun && config.integrations.neatlogs && workerRows.some(row => !row.workerTraceId)) {
       const workerDetails = workerRows.filter(row => !row.workerTraceId).map(row => row.workerTraceDetail).filter((detail): detail is string => Boolean(detail));
@@ -1325,6 +1336,40 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
     }
   };
   await runPool(tasks, concurrency, processTask);
+
+  // A Codex hook can still own the shared spool lock when an individual worker
+  // closes. Once every worker has exited, retry only those drains that reported
+  // lock contention, then require the usual remote read-back before recording
+  // delivery as successful.
+  if (!options.dryRun && config.integrations.neatlogs && ports.workerTraceDrain && ports.workerTraceReader) {
+    const pendingRows = ledger.filter(row => row.harness === 'codex' && row.sessionId && !row.workerTraceId
+      && row.workerTraceDetail?.includes('another drain holds the lock'));
+    for (const row of pendingRows) {
+      const nativeSessionId = config.runner === 'direct' ? row.sessionId : row.entireSessionId ?? null;
+      await ports.workerTraceDrain.drainWorker({ checkoutPath: null, entireSessionId: row.entireSessionId ?? nativeSessionId }).catch(() => {});
+      const drainStatus = ports.workerTraceDrain.status?.();
+      const workerTraceId = await ports.workerTraceReader.verifyFor({
+        runId: row.runId,
+        taskId: row.taskId,
+        attempt: row.attempt,
+        nativeSessionId,
+      }).catch(() => null);
+      if (workerTraceId) {
+        row.workerTraceId = workerTraceId;
+        delete row.workerTraceDetail;
+        recoveredWorkerTraceAttempts.add(`${row.taskId}/${row.attempt}`);
+        continue;
+      }
+      const readDetail = ports.workerTraceReader.status?.().detail;
+      const retryDetail = [drainStatus?.detail, readDetail].filter((detail): detail is string => Boolean(detail)).join('; ')
+        || 'worker trace read-back is still unverified';
+      row.workerTraceDetail = [
+        row.workerTraceDetail ? `Initial delivery attempt: ${row.workerTraceDetail}` : null,
+        `Post-worker retry: ${retryDetail}`,
+        `Recover with \`tally traces drain --run ${row.runId}\`.`,
+      ].filter((detail): detail is string => Boolean(detail)).join('; ');
+    }
+  }
 
   const endedAt = now().toISOString();
   const runState = writeCurrent(stopRequested() ? 'interrupted' : 'finished', endedAt);

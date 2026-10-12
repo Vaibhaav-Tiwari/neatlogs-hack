@@ -876,6 +876,51 @@ describe('runRealTally', () => {
     }
   });
 
+  it.each([true, false])('retries a lock-contended worker drain after the pool exits (recovered=%s)', async recovered => {
+    const { dir, configPath } = fixture('neatlogs: true, entire: false, cfoai: false, slack: false');
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('harness: claude-code', 'harness: codex'));
+    const worker = new FakeWorker();
+    let drains = 0;
+    let reads = 0;
+    const lockDetail = 'Worker traces pending: 1 batch retained; another drain holds the lock; the 20 second wait expired; retry with `tally traces drain` outside the worker sandbox.';
+    const readDetail = 'No correlated worker trace found in up to 250 recent traces.';
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false,
+      outputDir: join(dir, 'post-worker-drain'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker,
+        trace: new FakeTrace(), verifier: new SequenceVerifier([{ passed: true, reason: null }]),
+        history: { lookup: async () => null, record: async () => {} },
+        checkpoints: { checkpointFor: async () => ({ checkpointId: 'checkpoint-1', checkpointUrl: null, entireSessionId: 'native-session-1' }) },
+        workerTraceDrain: {
+          drainWorker: async () => { expect(worker.stopped).toContain('session-1'); drains++; },
+          status: () => drains === 1 ? { status: 'missing' as const, detail: lockDetail }
+            : recovered ? { status: 'ok' as const, detail: null } : { status: 'missing' as const, detail: lockDetail },
+        },
+        workerTraceReader: {
+          verifyFor: async context => {
+            expect(context).toMatchObject({ runId: 'run-20261011-030000Z', taskId: 'T1', attempt: 1, nativeSessionId: 'native-session-1' });
+            reads++;
+            return recovered && reads === 2 ? 'a'.repeat(32) : null;
+          },
+          status: () => reads === 1 || !recovered
+            ? { status: 'missing' as const, detail: readDetail }
+            : { status: 'ok' as const, detail: null },
+        },
+      } });
+
+    expect(drains).toBe(2);
+    expect(reads).toBe(2);
+    if (recovered) {
+      expect(result.ledger[0]?.workerTraceId).toBe('a'.repeat(32));
+      expect(result.ledger[0]?.workerTraceDetail).toBeUndefined();
+      expect(result.runState.integrations.neatlogs.status).toBe('ok');
+      expect(result.runState.integrations.neatlogs.detail).toContain('initial drain encountered lock contention');
+    } else {
+      expect(result.ledger[0]?.workerTraceId).toBeNull();
+      expect(result.ledger[0]?.workerTraceDetail).toContain('tally traces drain --run run-20261011-030000Z');
+      expect(result.runState.integrations.neatlogs.status).toBe('missing');
+    }
+  });
+
   it('continues the watcher-stopped branch on escalation and publishes only the verified attempt', async () => {
     const { dir, configPath } = fixture();
     const worker = new FakeWorker();
