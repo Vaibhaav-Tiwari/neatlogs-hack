@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4QTYA6NPHER375JFQ2E7TW9",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-12T10:36:17.078878Z",
+  "branch": "ao/neatlogs-hack-5/comparison-evidence-input",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "agent/comparison-evidence.ts",
+    "agent/evidence.ts",
+    "scripts/routing-evidence.mjs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "109cd7ab9a48",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5983510,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 229897728,
+    "output_tokens": 790744,
+    "api_call_count": 1706
+  },
+  "session_metrics": {
+    "turn_count": 27
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-12T10:36:16.404533Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 2,
+    "human_modified": 2,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 4,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
