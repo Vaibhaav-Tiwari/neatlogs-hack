@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4QPCZT757BRJ07YEVZM2E00",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/trace-history-ceilings",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "adapters/history-file.test.ts",
+    "adapters/history-file.ts",
+    "adapters/neatlogs-history.test.ts",
+    "adapters/neatlogs-history.ts",
+    "agent/escalation.test.ts",
+    "agent/escalation.ts",
+    "agent/history-plan.test.ts",
+    "agent/history-plan.ts",
+    "agent/history.test.ts",
+    "agent/history.ts",
+    "agent/ports.ts",
+    "agent/router.test.ts",
+    "agent/router.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5684484,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 211771520,
+    "output_tokens": 708351,
+    "api_call_count": 1590
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4QPCZT757BRJ07YEVZM2E00",
+  "session_id": "01a125af-5d46-7871-9bed-a128df2c2957",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-12T09:17:00.180269Z",
+  "branch": "ao/neatlogs-hack-5/trace-history-ceilings",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "adapters/history-file.test.ts",
+    "adapters/history-file.ts",
+    "adapters/neatlogs-history.test.ts",
+    "adapters/neatlogs-history.ts",
+    "agent/escalation.test.ts",
+    "agent/escalation.ts",
+    "agent/history-plan.test.ts",
+    "agent/history-plan.ts",
+    "agent/history.test.ts",
+    "agent/history.ts",
+    "agent/ports.ts",
+    "agent/router.test.ts",
+    "agent/router.ts"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "99f71b2df0c6",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5684484,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 211771520,
+    "output_tokens": 708351,
+    "api_call_count": 1590
+  },
+  "session_metrics": {
+    "turn_count": 21
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-12T09:16:59.023913Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 199,
+    "human_modified": 86,
+    "human_removed": 0,
+    "total_committed": 199,
+    "total_lines_changed": 285,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
