@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4S418R4Y7R1PSK603B3Y4S3",
+  "strategy": "manual-commit",
+  "branch": "ao/neatlogs-hack-5/site-public-posts",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "site/index.html"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6833217,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 268097152,
+    "output_tokens": 895484,
+    "api_call_count": 1977
+  }
+}
