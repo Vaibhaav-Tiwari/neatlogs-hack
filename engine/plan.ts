@@ -60,8 +60,8 @@ class PlanBudget implements BudgetPort {
 
 function trackHistorySources(history: PriceHistoryPort, sources: Set<PriceHistorySource>): PriceHistoryPort {
   return {
-    async lookup(size, tier) {
-      const stats = await history.lookup(size, tier);
+    async lookup(size, tier, model) {
+      const stats = await history.lookup(size, tier, model);
       if (stats && stats.attempts > 0) {
         const source = history.sourceOfLastLookup?.() ?? 'local';
         if (source !== 'none') sources.add(source);

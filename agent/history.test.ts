@@ -5,6 +5,18 @@ import { FakeHistory, sampleConfig } from './testing/fakes.js';
 
 const config = sampleConfig();
 
+it('isolates actual models under a reused tier and never guesses a legacy model', async () => {
+  const history = new PriceHistory();
+  await history.record({ size: 'small', tier: 'cheap', result: 'passed', costNanos: 1 });
+  await history.record({ size: 'small', tier: 'cheap', model: 'codex-terra', result: 'passed', costNanos: 100 });
+  await history.record({ size: 'small', tier: 'cheap', model: 'claude-haiku', result: 'failed', costNanos: 900 });
+  const restored = new PriceHistory(JSON.parse(JSON.stringify(history.snapshot())));
+  expect(await restored.lookup('small', 'cheap', 'codex-terra')).toMatchObject({ attempts: 1, passRate: 1, avgCostNanos: 100 });
+  expect(await restored.lookup('small', 'cheap', 'claude-haiku')).toMatchObject({ attempts: 1, passRate: 0, avgCostNanos: 900 });
+  expect(await restored.lookup('small', 'cheap', 'new-model')).toBeNull();
+  expect(await restored.lookup('small', 'cheap')).toMatchObject({ attempts: 1, avgCostNanos: 1 });
+});
+
 describe('priorFor', () => {
   it('expects stronger tiers to pass more often', () => {
     for (const size of ['small', 'medium', 'large'] as const) {
@@ -109,7 +121,7 @@ describe('PriceHistory', () => {
   it('feeds the estimate', async () => {
     const history = new PriceHistory();
     for (let i = 0; i < 8; i += 1) {
-      await history.record({ size: 'small', tier: 'bronze', result: 'failed', costNanos: usdToNanos(0.3) });
+      await history.record({ size: 'small', tier: 'bronze', model: 'model-small', result: 'failed', costNanos: usdToNanos(0.3) });
     }
     const estimate = await estimateFor(config, history, 'small', 'bronze');
     expect(estimate.passRate).toBeCloseTo((0.7 * 2) / 10);

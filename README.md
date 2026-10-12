@@ -417,6 +417,13 @@ tasks; missing baseline or v2 cohorts are reported as **not measured**.
 
 ## Layout
 
+Routing history is isolated by task size, tier name and actual model id. Changing
+a tier's model does not reuse the old model's pass rate or learned cap. Legacy
+history without an explicit model remains available for audit but is excluded
+from model-specific decisions; these fall back to the prior/configured cap
+until enough new matching observations exist. History trace names include the
+model id so the public neatlogs read API can identify it without hidden attributes.
+
 Experiment summaries are atomically updated after each completed run at
 `.tally/runs/experiments/<experimentId>/summary.json`. The dashboard server lists
 them in `/runs/index.json` under `experiments`. Each underlying run retains its

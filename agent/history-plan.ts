@@ -5,6 +5,7 @@ import { priorFor } from './history.js';
 
 export interface HistoryPlan {
   tier: string;
+  model: string;
   size: TaskSize;
   attempts: number;
   source: PriceHistorySource | 'unknown';
@@ -32,7 +33,7 @@ export async function planFromHistory(
   if (!tier) throw new Error(`Unknown tier ${tierName}`);
   const prior = priorFor(config, size, tierName);
   let observed = null;
-  try { observed = await history?.lookup(size, tierName) ?? null; } catch { /* Unavailable history uses config and prior. */ }
+  try { observed = await history?.lookup(size, tierName, tier.model) ?? null; } catch { /* Unavailable history uses config and prior. */ }
   if (observed && (!Number.isSafeInteger(observed.attempts) || observed.attempts < 1
     || !Number.isFinite(observed.passRate) || observed.passRate < 0 || observed.passRate > 1
     || !Number.isSafeInteger(observed.avgCostNanos) || observed.avgCostNanos < 0)) observed = null;
@@ -43,7 +44,7 @@ export async function planFromHistory(
   const p90 = !usedPrior && costs.length >= 5 ? costs[Math.ceil(costs.length * 0.9) - 1]! : null;
   const configuredCeilingNanos = ceilingNanos(config, size, tier);
   return {
-    tier: tierName, size, attempts: observed?.attempts ?? 0, source, usedPrior,
+    tier: tierName, model: tier.model, size, attempts: observed?.attempts ?? 0, source, usedPrior,
     passRate: usedPrior ? prior.passRate : observed!.passRate,
     avgCostNanos: usedPrior ? prior.avgCostNanos : observed!.avgCostNanos,
     observedPassRate: observed?.passRate ?? null,

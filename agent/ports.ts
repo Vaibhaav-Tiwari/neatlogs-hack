@@ -54,7 +54,7 @@ export interface CheckpointRecallPort {
   status?(): IntegrationState;
 }
 
-/** What has actually been observed for one (task size, tier) pair. No prior mixed in. */
+/** What has actually been observed for one (task size, tier, model) identity. No prior mixed in. */
 export interface PriceStats {
   /** Attempts that ended passed, failed or stopped. */
   attempts: number;
@@ -70,7 +70,8 @@ export type PriceHistorySource = 'neatlogs' | 'local' | 'none';
 
 export interface PriceHistoryPort {
   /** Null, or attempts = 0, when there is no history for the pair. */
-  lookup(size: TaskSize, tier: string): Promise<PriceStats | null>;
+  /** A model-specific lookup must never include observations with an unknown/different model. */
+  lookup(size: TaskSize, tier: string, model?: string): Promise<PriceStats | null>;
   /** Optional status for remote history adapters; local adapters can omit it. */
   status?(): IntegrationState | null;
   /** Source that supplied the most recent result; `none` means no observations matched. */
@@ -82,6 +83,8 @@ export interface AttemptOutcome {
   size: TaskSize;
   /** Tier name from tally.yaml. */
   tier: string;
+  /** Actual configured model from the ended ledger row; absent only on legacy observations. */
+  model?: string;
   result: AttemptResult;
   costNanos: number;
 }

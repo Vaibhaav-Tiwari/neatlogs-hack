@@ -406,7 +406,7 @@ function appendCfoaiFallback(outputDir: string, row: LedgerRow, cumulativeRunSpe
 }
 
 async function recordHistory(input: { ports: RealRunPorts; row: LedgerRow; dryRun: boolean }): Promise<void> {
-  const outcome = { size: input.row.size, tier: input.row.tier, result: input.row.result, costNanos: input.row.estimatedCostNanos };
+  const outcome = { size: input.row.size, tier: input.row.tier, model: input.row.model, result: input.row.result, costNanos: input.row.estimatedCostNanos };
   await input.ports.history.record(outcome);
   if (input.dryRun || !input.ports.trace) return;
   await input.ports.trace.span(

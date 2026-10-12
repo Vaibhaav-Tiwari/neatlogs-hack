@@ -249,7 +249,7 @@ export async function decideEscalation(input: EscalationInput): Promise<Escalati
         const stats = h.observedPassRate === null
           ? `0 observations, prior ${Math.round(h.passRate * 100)}% pass rate and ${usd(h.avgCostNanos)} average cost`
           : `${h.attempts} observations, ${Math.round(h.observedPassRate * 100)}% pass rate, ${usd(h.observedAvgCostNanos!)} average cost`;
-        decision.reason = `${decision.reason.replace(/\.$/, '')}; ${h.source} history: ${stats}, ${h.usedPrior ? 'uses the prior' : 'observed statistics'}, ${cap}.`;
+        decision.reason = `${decision.reason.replace(/\.$/, '')}; ${h.source} history: ${stats}, ${h.usedPrior ? 'uses the prior' : 'observed statistics'}, ${cap}, model ${h.model} only (unknown-model observations excluded).`;
       }
       if (failure) decision.reason = `${decision.reason.replace(/\.$/, '')}; ${failure.detail.replace(/\.$/, '')}.`;
       span.set({
