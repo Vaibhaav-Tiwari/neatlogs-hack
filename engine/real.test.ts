@@ -112,12 +112,12 @@ class FakeWorker implements WorkerPort, LiveUsagePort, SessionControlPort {
     return { status: 'idle' as const, branch: `tally/t1-${index}`, checkoutPath: `/tmp/tally-${index}`, prUrl: `https://github.com/acme/payments-service/pull/${index}` };
   }
 
-  async usageFor(): Promise<{ tokens: TokenUsage; estimatedCostNanos: number } | null> {
+  async usageFor(_id?: string): Promise<{ tokens: TokenUsage; estimatedCostNanos: number } | null> {
     return { tokens, estimatedCostNanos: 123 };
   }
 
-  async settledUsageFor() {
-    return this.usageFor();
+  async settledUsageFor(id?: string) {
+    return this.usageFor(id);
   }
 
   async stop(sessionId: string) {
@@ -704,6 +704,86 @@ describe('runRealTally', () => {
     expect(worker.starts).toHaveLength(1);
     expect(verifier.calls).toBe(0);
   });
+  it.each(['start', 'wait'] as const)('retries once on the configured model-access fallback when rejection happens during worker %s', async failurePoint => {
+    const { dir, configPath } = fixture();
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace(
+      'budget: { source: config, usd: 40 }',
+      'modelAccessFallbackTier: middle\nbudget: { source: config, usd: 40 }',
+    ));
+    const worker = new FakeWorker();
+    const originalWait = worker.wait.bind(worker);
+    worker.start = async input => {
+      worker.starts.push(input);
+      if (failurePoint === 'start' && worker.starts.length === 1) throw new Error(`model ${input.model} not available for this account`);
+      return { sessionId: `session-${worker.starts.length}`, branch: `tally/t1-${worker.starts.length}`, checkoutPath: `/tmp/tally-${worker.starts.length}` };
+    };
+    if (failurePoint === 'wait') {
+      worker.wait = async id => id === 'session-1'
+        ? { status: 'never_started', branch: null, checkoutPath: null, prUrl: null, resultReason: 'model gpt-5.6-luna not available for this account' }
+        : originalWait(id);
+      worker.usageFor = async (id?: string) => id === 'session-1' ? null : { tokens, estimatedCostNanos: 123 };
+      worker.settledUsageFor = async (id?: string) => id === 'session-1' ? null : { tokens, estimatedCostNanos: 123 };
+    }
+
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'fallback'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+
+    expect(worker.starts.map(start => start.tier.name)).toEqual(['cheap', 'middle']);
+    expect(result.ledger).toHaveLength(2);
+    expect(result.ledger[0]).toMatchObject({ result: 'error', estimatedCostNanos: 0, tier: 'cheap' });
+    expect(result.ledger[0]?.resultReason).toContain('active harness account rejected the configured model');
+    expect(result.ledger[1]).toMatchObject({ attempt: 2, result: 'passed', tier: 'middle', escalatedFrom: result.ledger[0]?.attemptId });
+    expect(result.runState.tasks[0]?.status).toBe('passed');
+    expect(result.runState.tasks[0]?.escalated).toBe(true);
+    expect(validateLedger(result.ledger).ok).toBe(true);
+  });
+
+  it('preserves unique ledger ids when model access is rejected during the startup retry', async () => {
+    const { dir, configPath } = fixture();
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace(
+      'budget: { source: config, usd: 40 }',
+      'modelAccessFallbackTier: middle\nbudget: { source: config, usd: 40 }',
+    ));
+    const worker = new FakeWorker();
+    worker.start = async input => {
+      worker.starts.push(input);
+      if (worker.starts.length === 2) throw new Error(`model ${input.model} not available for this account`);
+      return { sessionId: `session-${worker.starts.length}`, branch: `tally/t1-${worker.starts.length}`, checkoutPath: `/tmp/tally-${worker.starts.length}` };
+    };
+    const originalWait = worker.wait.bind(worker);
+    worker.wait = async id => id === 'session-1'
+      ? { status: 'never_started', branch: null, checkoutPath: null, prUrl: null, resultReason: 'worker never started' }
+      : originalWait(id);
+    worker.usageFor = async (id?: string) => id === 'session-1' ? null : { tokens, estimatedCostNanos: 123 };
+    worker.settledUsageFor = async (id?: string) => id === 'session-1' ? null : { tokens, estimatedCostNanos: 123 };
+
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'startup-fallback'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+
+    expect(result.ledger.map(row => row.attemptId)).toEqual(['run-20261011-030000Z:T1:1', 'run-20261011-030000Z:T1:1:startup-retry', 'run-20261011-030000Z:T1:2']);
+    expect(result.ledger.map(row => row.tier)).toEqual(['cheap', 'cheap', 'middle']);
+    expect(new Set(result.ledger.map(row => row.attemptId)).size).toBe(result.ledger.length);
+    expect(result.ledger[1]?.resultReason).toContain('active harness account rejected the configured model');
+    expect(result.ledger[2]?.result).toBe('passed');
+    expect(validateLedger(result.ledger).ok).toBe(true);
+  });
+
+  it('does not use a configured model-access fallback for a network failure', async () => {
+    const { dir, configPath } = fixture();
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace(
+      'budget: { source: config, usd: 40 }',
+      'modelAccessFallbackTier: middle\nbudget: { source: config, usd: 40 }',
+    ));
+    const worker = new FakeWorker();
+    worker.wait = async () => ({ status: 'error', branch: null, checkoutPath: null, prUrl: null, resultReason: 'network timeout while starting model' });
+
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'no-fallback'), latestRunDir: join(dir, 'latest'), now: fixedNow,
+      ports: { intake, signals, worker, usage: worker, sessions: worker, publisher: worker, verifier: new SequenceVerifier([{ passed: true, reason: null }]) } });
+
+    expect(worker.starts).toHaveLength(1);
+    expect(result.ledger).toHaveLength(1);
+    expect(result.ledger[0]).toMatchObject({ result: 'error', resultReason: 'network timeout while starting model' });
+  });
   it.each([
     { dryRun: true, source: 'cfoai', enabled: false },
     { dryRun: false, source: 'cfoai', enabled: false },
@@ -778,13 +858,19 @@ describe('runRealTally', () => {
               nativeSessionId: runner === 'direct' ? 'session-1' : null });
             reads++;
             return delivered ? 'c'.repeat(32) : null;
-          } },
+          }, status: () => delivered
+            ? { status: 'ok' as const, detail: null }
+            : { status: 'missing' as const, detail: 'Neatlogs worker span read-back was unauthorized (HTTP 401).' } },
         },
       });
       expect(reads).toBe(1);
       expect(drains).toBe(harness === 'codex' ? 1 : 0);
       expect(result.ledger[0]?.workerTraceId).toBe(delivered ? 'c'.repeat(32) : null);
       expect(result.runState.integrations.neatlogs.status).toBe(delivered ? 'ok' : 'missing');
+      if (!delivered) {
+        expect(result.ledger[0]?.workerTraceDetail).toContain('HTTP 401');
+        expect(result.runState.integrations.neatlogs.detail).toContain('HTTP 401');
+      }
       const saved = JSON.parse(readFileSync(join(result.outputDir, 'ledger.json'), 'utf8'));
       expect(saved[0].workerTraceId).toBe(result.ledger[0]?.workerTraceId);
     }

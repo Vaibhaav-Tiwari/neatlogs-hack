@@ -66,7 +66,14 @@ export function validateTaskImpact(value: unknown): ValidationResult {
 }
 
 export function validateConfig(value: unknown): ValidationResult {
-  return run(config, value);
+  const result = run(config, value);
+  if (!result.ok || typeof value !== 'object' || value === null) return result;
+  const candidate = value as { modelAccessFallbackTier?: unknown; tiers?: Array<{ name?: unknown }> };
+  if (candidate.modelAccessFallbackTier === undefined) return result;
+  if (typeof candidate.modelAccessFallbackTier !== 'string' || !candidate.tiers?.some(tier => tier.name === candidate.modelAccessFallbackTier)) {
+    return { ok: false, errors: ['/modelAccessFallbackTier must name a configured tier'] };
+  }
+  return result;
 }
 
 export function validateChangedFiles(value: unknown): ValidationResult {

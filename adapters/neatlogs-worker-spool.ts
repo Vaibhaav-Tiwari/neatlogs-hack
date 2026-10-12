@@ -51,7 +51,9 @@ export class NeatlogsWorkerSpoolAdapter implements WorkerTraceDrainPort {
     this.root = options.root ?? getRuntimeRoot(process.env);
     this.exporter = options.exporter ?? (env.NEATLOGS_API_KEY ? new TraceExporter({ apiKey: env.NEATLOGS_API_KEY, endpoint: env.NEATLOGS_ENDPOINT ?? 'https://ingest.neatlogs.com', timeoutMs: 15000 }) : null);
     this.maxBatches = options.maxBatches ?? 128;
-    this.lockWaitMs = options.lockWaitMs ?? 5000;
+    // The SDK exporter can hold the shared drain lock through its 15 second
+    // network timeout. Wait past that bound before reporting contention.
+    this.lockWaitMs = options.lockWaitMs ?? 20000;
     this.lockIsOpen = options.lockIsOpen ?? lockIsOpen;
   }
 
@@ -84,8 +86,9 @@ export class NeatlogsWorkerSpoolAdapter implements WorkerTraceDrainPort {
   async drainWorker(context: WorkerTraceContext): Promise<void> {
     try {
       await this.drain(context);
-    } catch {
-      this.state = { status: 'missing', detail: 'Worker trace drain failed; queued data was retained. Retry outside the worker sandbox.' };
+    } catch (error) {
+      const name = error instanceof Error ? error.name : 'unknown error';
+      this.state = { status: 'missing', detail: `Worker trace drain failed (${name}); queued data was retained. Retry with \`tally traces drain\` outside the worker sandbox.` };
     }
   }
 
@@ -122,6 +125,7 @@ export class NeatlogsWorkerSpoolAdapter implements WorkerTraceDrainPort {
     const lockPath = join(this.root, 'spool', 'drain.lock');
     const deadline = Date.now() + this.lockWaitMs;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let exportFailure: string | null = null;
     let result = { sent: 0, dropped: 0, retained: selected.size, skipped: true };
     try {
       do {
@@ -137,14 +141,32 @@ export class NeatlogsWorkerSpoolAdapter implements WorkerTraceDrainPort {
             }, 5000);
           }
           // Even terminal failures must retain the batch; only delivery success acknowledges it.
-          return await exporter.exportSpans(spans, workflow).catch(() => 'retryable' as const) === 'success' ? 'success' : 'retryable';
+          try {
+            const exported = await exporter.exportSpans(spans, workflow);
+            if (exported !== 'success') {
+              exportFailure = exported === 'terminal'
+                ? 'Neatlogs rejected a worker batch; the spool kept it for inspection and retry.'
+                : 'Neatlogs did not acknowledge a worker batch; the spool kept it for retry.';
+              return 'retryable';
+            }
+            return 'success';
+          } catch (error) {
+            const name = error instanceof Error ? error.name : 'unknown error';
+            exportFailure = `Neatlogs export failed (${name}); the spool kept the worker batch for retry.`;
+            return 'retryable';
+          }
         } }, this.maxBatches);
       } while (result.skipped && Date.now() < deadline);
     } finally {
       if (heartbeat) clearInterval(heartbeat);
     }
     this.state = result.retained > 0
-      ? { status: 'missing', detail: `Worker traces pending: ${result.retained} batch(es) retained${result.skipped ? ' (another drain holds the lock)' : ''}; retry from Tally outside the worker sandbox.` }
+      ? { status: 'missing', detail: [
+          `Worker traces pending: ${result.retained} batch(es) retained`,
+          result.skipped ? 'another drain holds the lock; the 20 second wait expired' : null,
+          exportFailure,
+          'retry with `tally traces drain` outside the worker sandbox',
+        ].filter((detail): detail is string => Boolean(detail)).join('; ') }
       : { status: 'ok', detail: null };
   }
 }

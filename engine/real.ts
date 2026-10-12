@@ -417,6 +417,15 @@ function isTaskDone(rows: LedgerRow[]): boolean {
   return latest?.result === 'passed' || (latest !== undefined && latest.attempt >= 2);
 }
 
+function shouldFallbackModelAccess(row: Pick<LedgerRow, 'result' | 'resultReason' | 'tier' | 'attempt'>, config: TallyConfig): boolean {
+  return Boolean(
+    config.modelAccessFallbackTier
+      && row.result === 'error'
+      && row.attempt < 2
+      && row.resultReason?.startsWith(`Model configuration error for tier "${row.tier}"`),
+  );
+}
+
 function stateFromRows(taskState: TaskState, rows: LedgerRow[]): TaskState {
   const latest = rows[rows.length - 1]!;
   return {
@@ -439,7 +448,10 @@ async function runAttemptWithRetry(input: Parameters<typeof runSingleAttempt>[0]
     row = await runSingleAttempt(input);
   } catch (error) {
     const modelError = modelAccessConfigurationError(error, input.tier);
-    if (modelError) throw new ConfigError(input.configPath, [modelError]);
+    if (modelError) {
+      if (input.config.modelAccessFallbackTier) return modelAccessFailureRow(input, modelError);
+      throw new ConfigError(input.configPath, [modelError]);
+    }
     throw error;
   }
   if (row.result === 'error' && row.resultReason === 'worker never started' && !(row.tokens?.total) && !input.dryRun) {
@@ -448,11 +460,56 @@ async function runAttemptWithRetry(input: Parameters<typeof runSingleAttempt>[0]
       return await runSingleAttempt({ ...input, retrySuffix: ':startup-retry', continueBranch: row.branch, continueSessionId: row.sessionId });
     } catch (error) {
       const modelError = modelAccessConfigurationError(error, input.tier);
-      if (modelError) throw new ConfigError(input.configPath, [modelError]);
+      if (modelError) {
+        if (input.config.modelAccessFallbackTier) return modelAccessFailureRow({ ...input, retrySuffix: ':startup-retry' }, modelError);
+        throw new ConfigError(input.configPath, [modelError]);
+      }
       throw error;
     }
   }
   return row;
+}
+
+function modelAccessFailureRow(input: Parameters<typeof runSingleAttempt>[0], reason: string): LedgerRow {
+  const timestamp = input.now().toISOString();
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    attemptId: attemptId(input.runId, input.task.taskId, input.attempt) + (input.retrySuffix ?? ''),
+    runId: input.runId,
+    taskId: input.task.taskId,
+    taskTitle: input.task.title,
+    attempt: input.attempt,
+    size: input.task.size,
+    tier: input.tier.name,
+    model: input.tier.model,
+    harness: input.tier.harness,
+    sessionId: null,
+    entireSessionId: null,
+    branch: null,
+    baseCommit: input.requiredBaseCommit ?? input.baseCommit ?? null,
+    tokens: zeroTokens(),
+    estimatedCostNanos: 0,
+    costSource: input.dryRun ? 'simulated' : 'list-price',
+    price: { ...input.tier.price },
+    priceNote: tierPriceNote(input.tier),
+    ceilingNanos: input.ceilingNanos ?? 0,
+    result: 'error',
+    resultReason: reason,
+    scopeWarnings: [],
+    escalatedFrom: input.escalatedFrom,
+    handoff: input.handoff,
+    handoffText: input.handoffSummary,
+    prUrl: null,
+    traceId: input.traceId,
+    traceUrl: null,
+    workerTraceId: null,
+    workerTraceUrl: null,
+    checkpointId: null,
+    checkpointUrl: null,
+    decision: input.decision,
+    startedAt: timestamp,
+    endedAt: timestamp,
+  };
 }
 
 async function runSingleAttempt(input: {
@@ -543,6 +600,7 @@ async function runSingleAttempt(input: {
   let tallyCommit: string | null = null;
   let entireSessionId: string | null = null;
   let workerTraceId: string | null = null;
+  let workerTraceDetail: string | null = null;
   let resolvedCheckoutPath: string | null = null;
 
   try {
@@ -694,11 +752,19 @@ async function runSingleAttempt(input: {
       const checkoutPath = resolvedCheckoutPath ?? workerResult?.checkoutPath ?? started.checkoutPath ?? (branch
         ? await input.ports.worktrees.checkoutPathFor(resolve(dirname(input.configPath), input.config.repo.path), branch).catch(() => null) : null);
       await input.ports.workerTraceDrain?.drainWorker({ checkoutPath, entireSessionId }).catch(() => {});
+      const drainStatus = input.ports.workerTraceDrain?.status?.();
+      if (drainStatus?.status !== 'ok' && drainStatus?.detail && !drainStatus.detail.startsWith('No queued worker trace found')) {
+        workerTraceDetail = drainStatus.detail;
+      }
     }
     workerTraceId = await input.ports.workerTraceReader?.verifyFor({
       runId: input.runId, taskId: input.task.taskId, attempt: input.attempt,
       nativeSessionId: input.config.runner === 'direct' ? started.sessionId : entireSessionId,
     }).catch(() => null) ?? null;
+    if (!workerTraceId) {
+      const readStatus = input.ports.workerTraceReader?.status?.();
+      workerTraceDetail = [workerTraceDetail, readStatus?.detail].filter((detail): detail is string => Boolean(detail)).join('; ') || null;
+    }
   }
 
   if (!input.dryRun && input.onChangedFiles) {
@@ -757,6 +823,7 @@ async function runSingleAttempt(input: {
     traceUrl: null,
     workerTraceId,
     workerTraceUrl: null,
+    ...(workerTraceDetail ? { workerTraceDetail } : {}),
     checkpointId,
     checkpointUrl,
     decision: input.decision,
@@ -959,17 +1026,22 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       integrations: integrationStates(config, ports, { dryRun: options.dryRun, budgetSource, cfoaiReadFailure }),
     };
     if (cfoaiWriteFailure) runState.integrations.cfoai = { status: 'error', detail: cfoaiWriteFailure };
-    const workerRows = ledger.filter(row => row.harness === 'codex' || row.harness === 'claude-code');
+    const workerRows = ledger.filter(row => row.sessionId && (row.harness === 'codex' || row.harness === 'claude-code'));
     if (!options.dryRun && config.integrations.neatlogs && workerRows.length > 0 && workerRows.every(row => row.workerTraceId)
       && ports.workerTraceDrain?.status?.().detail?.startsWith('No queued worker trace found')) {
       runState.integrations.neatlogs = neatlogsStatus(ports, traceStatus(ports.trace));
     }
-    if (!options.dryRun && config.integrations.neatlogs && workerRows.some(row => !row.workerTraceId) && runState.integrations.neatlogs.status === 'ok') {
+    if (!options.dryRun && config.integrations.neatlogs && workerRows.some(row => !row.workerTraceId)) {
+      const workerDetails = workerRows.filter(row => !row.workerTraceId).map(row => row.workerTraceDetail).filter((detail): detail is string => Boolean(detail));
       const details = [
         runState.integrations.neatlogs.detail,
-        'Decision traces sent; worker trace delivery is unverified or pending. Run tally traces drain --run ' + runId + ' to retry.',
+        ...workerDetails,
+        ...(workerDetails.length ? [] : ['Decision traces sent; worker trace delivery is unverified or pending. Run `tally traces drain --run ' + runId + '` to retry.']),
       ].filter((value): value is string => Boolean(value));
-      runState.integrations.neatlogs = { status: 'missing', detail: [...new Set(details)].join('; ') };
+      runState.integrations.neatlogs = {
+        status: runState.integrations.neatlogs.status === 'error' ? 'error' : 'missing',
+        detail: [...new Set(details)].join('; '),
+      };
     }
     assertValid(runState, ledger);
     writeRunFiles(outputDir, runState, ledger, options.latestRunDir);
@@ -1006,7 +1078,13 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
           const admission = await decisions.run(async () => {
             const cost = input.ceilingNanos ?? Infinity;
             const next = input.attempt === 1 ? config.tiers[config.tiers.findIndex(t => t.name === input.tier.name) + 1] : undefined;
-            const amount = cost + (next ? ceilingNanos(config, input.task.size, next) : 0);
+            const fallback = input.attempt === 1 && config.modelAccessFallbackTier
+              ? config.tiers.find(tier => tier.name === config.modelAccessFallbackTier)
+              : undefined;
+            const retryCeiling = [next, fallback]
+              .filter((tier): tier is Tier => Boolean(tier))
+              .reduce((maximum, tier) => Math.max(maximum, ceilingNanos(config, input.task.size, tier)), 0);
+            const amount = cost + retryCeiling;
             const fits = reservations.reserve(task.taskId, amount);
             return { fits, wait: fits ? null : reservations.waiting(task.taskId) };
           });
@@ -1036,7 +1114,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       if (interrupted && interrupted.result !== 'passed' && interrupted.attempt === 1) {
         task.size = interrupted.size;
         let latest = interrupted;
-        if (interrupted.result !== 'error') {
+        if (interrupted.result !== 'error' || shouldFallbackModelAccess(interrupted, config)) {
           const escalation = await decisions.run(() => decideEscalation({
             previous: {
               attemptId: interrupted.attemptId,
@@ -1174,7 +1252,7 @@ export async function runRealTally(options: RealRunOptions): Promise<RunResult> 
       await recordHistory({ ports, row: first, dryRun: options.dryRun });
       await recordSpend(first);
       let latest = first;
-      if (first.result !== 'passed' && first.result !== 'error' && !stopRequested()) {
+      if (first.result !== 'passed' && (first.result !== 'error' || shouldFallbackModelAccess(first, config)) && !stopRequested()) {
         const escalation = await decisions.run(() => decideEscalation({
           previous: {
             attemptId: first.attemptId,

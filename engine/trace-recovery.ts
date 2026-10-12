@@ -37,10 +37,15 @@ export async function recoverRunTraces(options: {
     if (row.entireSessionId) {
       await drain.drainWorker({ checkoutPath: null, entireSessionId: row.entireSessionId });
       const status = drain.status?.();
-      if (status && status.status !== 'ok' && !status.detail?.startsWith('No queued worker trace found')) throw new Error('Worker batches remain pending; saved status was not changed');
+      if (status && status.status !== 'ok' && !status.detail?.startsWith('No queued worker trace found')) {
+        throw new Error(`${status.detail ?? 'Worker batches remain pending'}; saved status was not changed`);
+      }
     }
     const id = await reader.verifyFor({ runId: row.runId, taskId: row.taskId, attempt: row.attempt, nativeSessionId: row.entireSessionId, traceId: row.workerTraceId });
-    if (!id) throw new Error(`Worker trace read-back failed for ${row.taskId} attempt ${row.attempt}; saved status was not changed`);
+    if (!id) {
+      const detail = reader.status?.().detail;
+      throw new Error(`${detail ?? `Worker trace read-back failed for ${row.taskId} attempt ${row.attempt}`}; saved status was not changed`);
+    }
     row.workerTraceId = id;
     traceIds.push(id);
   }

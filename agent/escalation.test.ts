@@ -129,6 +129,42 @@ describe('decideEscalation', () => {
     });
   });
 
+  it('uses only the named, budget-checked fallback for an explicit model-access rejection', async () => {
+    const fallback = { ...config, modelAccessFallbackTier: 'bronze' };
+    const handoff = entire();
+    const result = await decide(previous({
+      tier: 'gold',
+      result: 'error',
+      resultReason: 'Model configuration error for tier "gold" (codex, model "model-big"): the active harness account rejected the configured model.',
+    }), 40, handoff, fallback);
+
+    const decision = escalated(result);
+    expect(decision).toMatchObject({ tier: fallback.tiers[0], handoff: 'restart', handoffSummary: null });
+    expect(decision.reason).toContain('configured fallback tier bronze');
+    expect(handoff.calls).toEqual([]);
+  });
+
+  it('does not use the configured model-access fallback for unrelated errors', async () => {
+    const fallback = { ...config, modelAccessFallbackTier: 'bronze' };
+    expect(await decide(previous({ tier: 'gold', result: 'error', resultReason: 'network timeout' }), 40, entire(), fallback)).toMatchObject({
+      action: 'give-up',
+      statusReason: 'failed: attempt errored',
+    });
+  });
+
+  it('refuses a model-access fallback when its ceiling exceeds the remaining budget', async () => {
+    const result = await decide(previous({
+      tier: 'gold',
+      result: 'error',
+      resultReason: 'Model configuration error for tier "gold" (codex, model "model-big"): the active harness account rejected the configured model.',
+    }), 0.79, entire(), { ...config, modelAccessFallbackTier: 'bronze' });
+
+    expect(result).toMatchObject({
+      action: 'give-up',
+      statusReason: 'failed: no budget for model-access fallback (fallback ceiling $0.80, budget left $0.79)',
+    });
+  });
+
   describe('handoff type', () => {
     const restartCases: Array<[string, FakeHandoff | typeof NO_HANDOFF]> = [
       ['no summary exists', new FakeHandoff(null)],

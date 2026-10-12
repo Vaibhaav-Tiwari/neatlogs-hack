@@ -167,7 +167,16 @@ export class EntireGraphVerifier implements VerifierPort {
         ['graph', 'verify', '--repo', checkoutPath, '--test', input.config.test.command, ...setup, '--pre-edit-baseline', baseline, ...maxBytes],
         { cwd: checkoutPath },
       );
-      return parseEntireVerifyVerdict(`${verified.stdout}\n${verified.stderr}`, verified.code);
+      const verdict = parseEntireVerifyVerdict(`${verified.stdout}\n${verified.stderr}`, verified.code);
+      return recorded.code === 0
+        ? verdict
+        : {
+            ...verdict,
+            reason: [
+              `Entire baseline recording command exited with code ${recorded.code}; inspect the test command on the base checkout.`,
+              verdict.reason,
+            ].filter((reason): reason is string => Boolean(reason)).join(' '),
+          };
     }
     const verified = await this.runEntire(['graph', 'verify', '--repo', checkoutPath, '--test', input.config.test.command, ...setup, ...maxBytes], {
       cwd: checkoutPath,

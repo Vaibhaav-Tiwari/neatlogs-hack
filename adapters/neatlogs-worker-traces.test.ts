@@ -80,5 +80,18 @@ describe('NeatlogsWorkerTraceReader', () => {
   it('does not read without Tally read credentials', async () => {
     const reader = new NeatlogsWorkerTraceReader({ env: {}, fetch: async () => { throw new Error('must not request'); } });
     expect(await reader.verifyFor(context)).toBeNull();
+    expect(reader.status()).toMatchObject({ status: 'missing', detail: expect.stringContaining('NEATLOGS_TOKEN and NEATLOGS_PROJECT_ID') });
+  });
+
+  it.each([
+    [401, 'NEATLOGS_TOKEN'],
+    [403, 'observability:read scope and project role'],
+    [404, 'selected project'],
+    [429, 'rate limited'],
+    [503, 'temporarily unavailable'],
+  ] as const)('reports an actionable public API failure for HTTP %i', async (status, expectedDetail) => {
+    const reader = new NeatlogsWorkerTraceReader({ env, retries: 1, fetch: async () => json({}, status) });
+    expect(await reader.verifyFor(context)).toBeNull();
+    expect(reader.status()).toMatchObject({ status: 'missing', detail: expect.stringContaining(expectedDetail) });
   });
 });

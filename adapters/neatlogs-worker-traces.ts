@@ -1,5 +1,6 @@
 import { loadEnv } from '../engine/env.js';
 import { workerCorrelationPrefix } from '../engine/worker-correlation.js';
+import type { IntegrationState } from '../schema/types.js';
 
 export interface WorkerTraceReadContext {
   runId: string;
@@ -11,6 +12,7 @@ export interface WorkerTraceReadContext {
 
 export interface WorkerTraceReaderPort {
   verifyFor(context: WorkerTraceReadContext): Promise<string | null>;
+  status?(): IntegrationState;
 }
 
 interface TraceRecord {
@@ -36,6 +38,7 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
   private readonly endpoint: string;
   private readonly retries: number;
   private readonly retryDelayMs: number;
+  private state: IntegrationState = { status: 'ok', detail: null };
 
   constructor(options: { env?: Record<string, string>; fetch?: typeof fetch; endpoint?: string; retries?: number; retryDelayMs?: number } = {}) {
     this.env = options.env ?? loadEnv();
@@ -45,11 +48,24 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
     this.retryDelayMs = options.retryDelayMs ?? 500;
   }
 
+  status(): IntegrationState { return this.state; }
+
+  private fail(detail: string): void {
+    this.state = { status: 'missing', detail };
+  }
+
   async verifyFor(context: WorkerTraceReadContext): Promise<string | null> {
-    if (!this.env.NEATLOGS_TOKEN || !this.env.NEATLOGS_PROJECT_ID) return null;
+    this.state = { status: 'ok', detail: null };
+    if (!this.env.NEATLOGS_TOKEN || !this.env.NEATLOGS_PROJECT_ID) {
+      this.fail('Neatlogs worker trace read-back needs NEATLOGS_TOKEN and NEATLOGS_PROJECT_ID in ~/.tally/.env.');
+      return null;
+    }
     for (let retry = 0; retry < this.retries; retry++) {
       try {
         const candidates = context.traceId ? [context.traceId] : await this.discover(context);
+        if (!candidates.length && this.state.status === 'ok') {
+          this.fail('No correlated worker trace found in up to 250 recent traces (5 pages at 50/page); check Neatlogs hook trust/setup and NEATLOGS_PROJECT_ID.');
+        }
         for (const id of candidates) {
           if (!/^[0-9a-f]{32}$/i.test(id)) continue;
           const detail = await this.read(`/traces/${id}`) as { data?: TraceRecord } | null;
@@ -57,9 +73,18 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
           const spans = await this.read(`/traces/${id}/spans`) as { data?: { spans?: unknown[] } } | null;
           // A trace-list stub/app shell is not delivery proof. Killed turns may have
           // zero aggregate tokens yet still have readable tool spans.
-          if (Array.isArray(spans?.data?.spans) && spans.data.spans.length > 0) return id;
+          if (Array.isArray(spans?.data?.spans) && spans.data.spans.length > 0) {
+            this.state = { status: 'ok', detail: null };
+            return id;
+          }
+          if (this.state.status === 'ok') this.fail(`Neatlogs trace ${id} matched the worker but has no readable spans yet; retry after ingestion finishes.`);
         }
-      } catch { /* Network/auth/processing failure cannot establish delivery. */ }
+      } catch (error) {
+        const name = error instanceof Error ? error.name : 'unknown error';
+        this.fail(name === 'AbortError' || name === 'TimeoutError'
+          ? 'Neatlogs worker trace read-back timed out; check connectivity and retry.'
+          : `Neatlogs worker trace read-back request failed (${name}); check connectivity and retry.`);
+      }
       if (retry + 1 < this.retries) await new Promise(resolve => setTimeout(resolve, this.retryDelayMs));
     }
     return null;
@@ -84,6 +109,22 @@ export class NeatlogsWorkerTraceReader implements WorkerTraceReaderPort {
       headers: { Authorization: `Bearer ${this.env.NEATLOGS_TOKEN}`, 'x-project-id': this.env.NEATLOGS_PROJECT_ID! },
       signal: AbortSignal.timeout(10000),
     });
-    return response.ok ? response.json() : null;
+    if (!response.ok) {
+      const operation = path.includes('/spans') ? 'worker span read-back' : 'worker trace read-back';
+      const detail = response.status === 401
+        ? `Neatlogs ${operation} was unauthorized (HTTP 401); check NEATLOGS_TOKEN and its project binding.`
+        : response.status === 403
+          ? `Neatlogs ${operation} was forbidden (HTTP 403); check the token's observability:read scope and project role.`
+          : response.status === 404
+            ? `Neatlogs ${operation} returned HTTP 404; confirm the selected project and retry after ingestion.`
+            : response.status === 429
+              ? `Neatlogs ${operation} was rate limited (HTTP 429); retry after a short delay.`
+              : response.status >= 500
+                ? `Neatlogs ${operation} is temporarily unavailable (HTTP ${response.status}); retry later.`
+                : `Neatlogs ${operation} failed (HTTP ${response.status}).`;
+      this.fail(detail);
+      return null;
+    }
+    return response.json();
   }
 }

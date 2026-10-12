@@ -92,6 +92,33 @@ describe('EntireGraphVerifier', () => {
     expect(calls[1]?.args).toContain('--pre-edit-baseline');
   });
 
+  it('reports a failed baseline recording command separately from a passing candidate', async () => {
+    const verifier = new EntireGraphVerifier(
+      new CommandVerifier(async () => { throw new Error('fallback should not run'); }),
+      async args => args.includes('--record-baseline')
+        ? { stdout: 'baseline test failed once', stderr: '', code: 1 }
+        : { stdout: JSON.stringify({ newly_failing: [], newly_passing: [], pre_existing: [] }), stderr: '', code: 0 },
+    );
+
+    const result = await verifier.verify({ checkoutPath: '/tmp/task-1', repoPath: '/repo', config });
+    expect(result.passed).toBe(true);
+    expect(result.reason).toContain('Entire baseline recording command exited with code 1');
+  });
+
+  it('fails when Entire reports a candidate-only regression against a recorded baseline', async () => {
+    const verifier = new EntireGraphVerifier(
+      new CommandVerifier(async () => { throw new Error('fallback should not run'); }),
+      async args => args.includes('--record-baseline')
+        ? { stdout: 'baseline recorded', stderr: '', code: 0 }
+        : { stdout: JSON.stringify({ newly_failing: ['tests/refund.test.ts'], pre_existing: [] }), stderr: '', code: 1 },
+    );
+
+    await expect(verifier.verify({ checkoutPath: '/tmp/task-1', repoPath: '/repo', config })).resolves.toEqual({
+      passed: false,
+      reason: 'newly failing tests: tests/refund.test.ts',
+    });
+  });
+
   it('falls back to the command verifier when Entire is not installed', async () => {
     const fallback = new CommandVerifier(async () => ({ stdout: '', stderr: '' }));
     const verifier = new EntireGraphVerifier(fallback, async () => ({ stdout: '', stderr: 'entire: command not found', code: 127 }));

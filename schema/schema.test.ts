@@ -47,6 +47,14 @@ it('accepts generated Entire summaries only as an explicit boolean setting', () 
   expect(validateConfig({ ...config, entire: { generatedSummaries: 'true' } }).ok).toBe(false);
 });
 
+it('allows an explicit model-access fallback only when it names a configured tier', () => {
+  expect(validateConfig({ ...config, modelAccessFallbackTier: config.tiers[1]!.name }).ok).toBe(true);
+  expect(validateConfig({ ...config, modelAccessFallbackTier: 'unknown' })).toMatchObject({
+    ok: false,
+    errors: ['/modelAccessFallbackTier must name a configured tier'],
+  });
+});
+
 // A row written against the TypeScript type. `npm run typecheck` fails if the
 // type drifts from this shape; the test below fails if the JSON Schema does.
 const typedRow: LedgerRow = {
