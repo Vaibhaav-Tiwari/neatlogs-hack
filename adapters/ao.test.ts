@@ -257,8 +257,8 @@ describe('AO branch continuation', () => {
   });
 });
 
-describe('usageFromAoPayload', () => {
-  it.each([true, false])('checks the worktree base before accepting the spawned task; match=%s', async (matches) => {
+describe('AO pinned-base startup', () => {
+  it.each([true, false])('starts the first worker with its prompt and accepts it only after the pinned base check; match=%s', async (matches) => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
     const base = 'a'.repeat(40);
     const command: CommandRunner = async (file, args, options) => {
@@ -275,9 +275,20 @@ describe('usageFromAoPayload', () => {
       ceilingNanos: null, harness: 'codex', model: 'model', name: 'test', prompt: 'implement task' };
     if (matches) await expect(adapter.start(input)).resolves.toMatchObject({ checkoutPath: '/worker' });
     else await expect(adapter.start(input)).rejects.toThrow('experiment worker base mismatch');
-    expect(calls[0]?.args).toContain('--prompt');
+
+    const spawnIndex = calls.findIndex((call) => call.args[0] === 'spawn');
+    const sessionIndex = calls.findIndex((call) => call.args[0] === 'session' && call.args[1] === 'get');
+    const baseCheckIndex = calls.findIndex((call) => call.file === 'git' && call.args[0] === 'rev-parse');
+    expect(calls[spawnIndex]?.args).toContain('--prompt');
+    expect(calls[spawnIndex]?.args).toContain(input.prompt);
+    expect(spawnIndex).toBeLessThan(sessionIndex);
+    expect(sessionIndex).toBeLessThan(baseCheckIndex);
     expect(calls.some((call) => call.args[0] === 'send')).toBe(false);
     expect(calls.some((call) => call.args[0] === 'session' && call.args[1] === 'kill')).toBe(!matches);
+    if (!matches) {
+      const killIndex = calls.findIndex((call) => call.args[0] === 'session' && call.args[1] === 'kill');
+      expect(baseCheckIndex).toBeLessThan(killIndex);
+    }
     expect(calls.find((call) => call.file === 'git' && call.args[0] === 'rev-parse')?.cwd).toBe('/worker');
   });
 
