@@ -1,6 +1,7 @@
 import { runCommand } from './command.js';
 import { resolve } from 'node:path';
 import type { CheckpointInfo, CheckpointPort, HandoffContext, HandoffPort, HandoffSummary } from '../agent/ports.js';
+import { entireSessionUrl } from './evidence-links.js';
 
 const execFileAsync = runCommand;
 
@@ -13,6 +14,7 @@ export type CommandRunner = (file: string, args: string[], options?: { cwd?: str
 
 export interface EntireCheckpointOptions {
   repoPath: string;
+  repoSlug?: string;
   command?: CommandRunner;
   summaryTimeoutSec?: number;
   generatedSummaries?: boolean;
@@ -47,6 +49,11 @@ interface ExplainEnvelope {
   html_url?: unknown;
   files_touched?: unknown;
   sessions?: Array<{ session_id?: unknown }>;
+}
+
+interface MirrorRecord {
+  repo?: unknown;
+  placements?: Array<{ status?: unknown }>;
 }
 
 interface ResolvedCheckpoint extends CheckpointInfo {
@@ -102,12 +109,15 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
   private readonly repoPath: string;
   private readonly summaryTimeoutSec: number;
   private readonly generatedSummaries: boolean;
+  private readonly repoSlug?: string;
+  private mirrorReadyPromise?: Promise<boolean>;
 
   constructor(options: EntireCheckpointOptions) {
     this.command = options.command ?? defaultCommand;
     this.repoPath = options.repoPath;
     this.summaryTimeoutSec = options.summaryTimeoutSec ?? 45;
     this.generatedSummaries = options.generatedSummaries === true;
+    this.repoSlug = options.repoSlug;
   }
 
   async checkpointFor(context: HandoffContext & { sessionId: string }): Promise<CheckpointInfo | null> {
@@ -211,12 +221,29 @@ export class EntireCheckpointAdapter implements HandoffPort, CheckpointPort {
     );
     const parsed = result ? parseJson<ExplainEnvelope>(result.stdout) : null;
     const checkpoint = checkpointId(parsed ?? {}) ?? id;
+    const entireSessionId = text(parsed?.sessions?.[parsed.sessions.length - 1]?.session_id);
+    const explicitUrl = parsed ? checkpointUrl(parsed) : null;
+    const hostedUrl = explicitUrl ?? (entireSessionId && await this.hasReadyMirror()
+      ? entireSessionUrl(this.repoSlug, entireSessionId)
+      : null);
     return {
       checkpointId: checkpoint,
-      checkpointUrl: parsed ? checkpointUrl(parsed) : null,
+      checkpointUrl: hostedUrl,
       branch: text(parsed?.branch) ?? context.branch ?? null,
-      entireSessionId: text(parsed?.sessions?.[parsed.sessions.length - 1]?.session_id),
+      entireSessionId,
       filesTouched: Array.isArray(parsed?.files_touched) ? parsed.files_touched.filter((file): file is string => typeof file === 'string') : [],
     };
+  }
+
+  private async hasReadyMirror(): Promise<boolean> {
+    if (!this.repoSlug) return false;
+    this.mirrorReadyPromise ??= (async () => {
+      const result = await this.command('entire', ['repo', 'mirror', 'list', '--json', '--mirrored', '--name', this.repoSlug!], { cwd: this.repoPath }).catch(() => null);
+      const parsed = parseJson<MirrorRecord[] | { items?: MirrorRecord[] }>(result?.stdout ?? '');
+      const records = Array.isArray(parsed) ? parsed : parsed?.items ?? [];
+      return records.some(record => record.repo === `/gh/${this.repoSlug}`
+        && record.placements?.some(placement => placement.status === 'ready'));
+    })();
+    return this.mirrorReadyPromise;
   }
 }

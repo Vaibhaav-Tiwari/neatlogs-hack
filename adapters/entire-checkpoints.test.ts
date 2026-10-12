@@ -105,6 +105,42 @@ describe('EntireCheckpointAdapter', () => {
     });
   });
 
+  it('builds an Entire session link only when the GitHub repo has a ready mirror', async () => {
+    const calls: string[] = [];
+    const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', repoSlug: 'acme/widgets', command: async (_file, args) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'log') return { stdout: 'fix: thing\n\nEntire-Checkpoint: 01M4LINK\n', stderr: '' };
+      if (args[0] === 'checkpoint') return { stdout: JSON.stringify({ checkpoint_id: '01M4LINK', sessions: [{ session_id: 'native-session-1' }] }), stderr: '' };
+      if (args.join(' ') === 'repo mirror list --json --mirrored --name acme/widgets') return {
+        stdout: JSON.stringify([{ repo: '/gh/acme/widgets', placements: [{ status: 'ready' }] }]), stderr: '',
+      };
+      throw new Error(`unexpected Entire command: ${args.join(' ')}`);
+    } });
+    await expect(adapter.checkpointFor({ sessionId: 'worker', branch: 'task' })).resolves.toEqual({
+      checkpointId: '01M4LINK',
+      checkpointUrl: 'https://entire.io/gh/acme/widgets/session/native-session-1',
+      entireSessionId: 'native-session-1',
+    });
+    expect(calls).toEqual([
+      'log -1 --format=%B --end-of-options task --',
+      'checkpoint explain 01M4LINK --json --no-pager',
+      'repo mirror list --json --mirrored --name acme/widgets',
+    ]);
+  });
+
+  it('keeps the URL absent when Entire has no ready mirror for the repository', async () => {
+    const adapter = new EntireCheckpointAdapter({ repoPath: '/repo', repoSlug: 'acme/widgets', command: async (_file, args) => {
+      if (args[0] === 'log') return { stdout: 'fix: thing\n\nEntire-Checkpoint: 01M4LOCAL\n', stderr: '' };
+      if (args[0] === 'checkpoint') return { stdout: JSON.stringify({ checkpoint_id: '01M4LOCAL', sessions: [{ session_id: 'native-session-2' }] }), stderr: '' };
+      return { stdout: '[]', stderr: '' };
+    } });
+    await expect(adapter.checkpointFor({ sessionId: 'worker', branch: 'task' })).resolves.toMatchObject({
+      checkpointId: '01M4LOCAL',
+      checkpointUrl: null,
+      entireSessionId: 'native-session-2',
+    });
+  });
+
   it('uses the worker branch trailer before an unrelated AO session and retains the native session', async () => {
     const calls: string[] = [];
     const adapter = new EntireCheckpointAdapter({ repoPath: '/root', command: async (file, args, options) => {

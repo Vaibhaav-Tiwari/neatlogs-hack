@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GitHubPublisher, type PublishCommand } from './publisher.js';
+import { GitHubPublisher, replacePrEvidence, type PublishCommand } from './publisher.js';
 import type { TallyConfig } from '../schema/index.js';
 
 const config: TallyConfig = {
@@ -114,5 +114,37 @@ describe('GitHubPublisher', () => {
       'git push -u origin HEAD:ao/task/root',
       'gh pr create --repo acme/payments --head ao/task/root --base main --title T1: Fix math --body Tally run run-1, task T1, attempt 1.\n\nBody\n\n\nCloses #7',
     ]);
+  });
+
+  it('adds verified integration links to an existing PR body without replacing its content', async () => {
+    const calls: string[][] = [];
+    const publisher = new GitHubPublisher(async (_file, args) => {
+      calls.push(args);
+      return { stdout: args[1] === 'view' ? 'Task details\n\nCloses #7\n' : '', stderr: '' };
+    });
+    await publisher.updatePrEvidence!({
+      config,
+      prUrl: 'https://github.com/acme/payments/pull/42',
+      links: [
+        { label: 'Entire session and checkpoint', url: 'https://entire.io/gh/acme/payments/session/session-1', note: 'checkpoint 01M4PROOF' },
+        { label: 'Neatlogs worker trace', url: 'https://app.neatlogs.com/traces/0123456789abcdef0123456789abcdef' },
+        { label: 'cfo.ai budget table', url: 'https://app.cfo.ai/s/budget' },
+      ],
+    });
+    expect(calls[0]).toEqual(['pr', 'view', 'https://github.com/acme/payments/pull/42', '--repo', 'acme/payments', '--json', 'body', '-q', '.body']);
+    expect(calls[1]!.slice(0, 5)).toEqual(['pr', 'edit', 'https://github.com/acme/payments/pull/42', '--repo', 'acme/payments']);
+    const body = calls[1]![calls[1]!.indexOf('--body') + 1]!;
+    expect(body).toContain('Task details\n\nCloses #7');
+    expect(body).toContain('[Entire session and checkpoint](https://entire.io/gh/acme/payments/session/session-1) — checkpoint 01M4PROOF');
+    expect(body).toContain('[Neatlogs worker trace](https://app.neatlogs.com/traces/0123456789abcdef0123456789abcdef)');
+    expect(body).toContain('[cfo.ai budget table](https://app.cfo.ai/s/budget)');
+  });
+
+  it('replaces a previous evidence block instead of duplicating it', () => {
+    const first = replacePrEvidence('Task details', [{ label: 'First link', url: 'https://example.com/first' }]);
+    const second = replacePrEvidence(first, [{ label: 'Updated link', url: 'https://example.com/updated' }]);
+    expect(second.match(/tally-run-evidence:start/g)).toHaveLength(1);
+    expect(second).toContain('[Updated link](https://example.com/updated)');
+    expect(second).not.toContain('[First link]');
   });
 });
