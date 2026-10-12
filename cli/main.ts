@@ -19,6 +19,7 @@ import { openDashboardBrowser, waitForDashboard } from './dashboard-lifecycle.js
 import { publishSite } from './publish.js';
 import { logoFrame, logoSeen, processTerminal, SETTLED, showLogo, type LogoIntent } from './logo.js';
 import { createTerminalStyle, formatDoctorLine, formatInitLine } from '../ui/terminal.js';
+import { skippedTaskBudgetLines } from '../engine/output.js';
 
 export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces', 'logo'] as const;
 export type Command = (typeof COMMANDS)[number];
@@ -520,6 +521,7 @@ function printRunSummary(result: RunResult, io: CliIO, dashboardUrl?: string): v
   const skipped = result.runState.tasks.filter(task => task.status === 'skipped').length;
   io.stdout(style.heading('Run summary'));
   io.stdout(`  Tasks: ${passed} passed, ${failed} failed, ${skipped} skipped`);
+  for (const line of skippedTaskBudgetLines(result.runState)) io.stdout(`  ${line}`);
   io.stdout(`  Total spend: ${formatUsd(result.runState.budget.spentNanos)}`);
   io.stdout(`  Run cap: ${formatUsd(result.runState.budget.limitNanos)}`);
   printBudget(result.runState.budget, io);

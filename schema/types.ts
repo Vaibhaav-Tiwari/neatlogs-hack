@@ -159,6 +159,10 @@ export interface TaskState {
   status: TaskStatus;
   /** Why a task is failed or skipped, e.g. "not started: no budget". */
   statusReason: string | null;
+  /** Amount held for a parallel attempt before a worker can start. */
+  reservationNanos?: number;
+  /** Effective run/monthly cap against which the reservation was checked. */
+  reservationCapNanos?: number;
   attempts: number;
   /** Tier of the latest attempt. */
   tier: string | null;

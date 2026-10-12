@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { expect, it } from 'vitest';
 import type { Ledger, RunState } from '../schema/types.js';
-import { writeRunFiles } from './output.js';
+import { skippedTaskBudgetLines, writeRunFiles } from './output.js';
 
 it('external polling sees complete JSON throughout repeated run and ledger replacements', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tally-output-'));
@@ -39,3 +39,19 @@ it('external polling sees complete JSON throughout repeated run and ledger repla
     rmSync(dir, { recursive: true, force: true });
   }
 }, 5000);
+
+it('explains parallel budget reservations for skipped tasks', () => {
+  const run = JSON.parse(readFileSync(resolve('schema/fixtures/finished-run/run.json'), 'utf8')) as RunState;
+  run.tasks[0] = {
+    ...run.tasks[0]!,
+    taskId: '#154',
+    status: 'skipped',
+    statusReason: 'not started: reservation does not fit the run cap and monthly budget',
+    reservationNanos: 2_500_000_000,
+    reservationCapNanos: 1_000_000_000,
+  };
+
+  expect(skippedTaskBudgetLines(run)).toEqual([
+    '#154: skipped; reservation $2.50 does not fit the $1.00 cap. Raise --budget or lower ceilings.',
+  ]);
+});
