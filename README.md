@@ -6,6 +6,7 @@ that overruns its spend ceiling, hands failed work to a stronger model, and
 ends with a ledger tying spend to each attempt, its test result and any opened PR.
 
 **Start here: [Getting Started](docs/GETTING_STARTED.md)** covers the no-account demo, every init question, your first real run, troubleshooting and uninstall.
+**Changelog:** [CHANGELOG.md](CHANGELOG.md)
 
 Status: early build. The next release is `tally-agents` version `0.2.0`; npm
 `latest` remains `0.1.0` until the maintainer publishes it.
