@@ -1,0 +1,15 @@
+Tally run-20261012-211342Z #169 a1: Print the source commit with tally --version --verbose
+Neatlogs correlation: runId=run-20261012-211342Z taskId=#169 attempt=1.
+
+You are already inside your own AO git worktree for the target repo. Work only in the current working directory.
+Never read or write any other checkout or path outside this worktree; this worktree is the authoritative target repo.
+Commit your changes on your current branch, but do not push and do not open a pull request; Tally will publish the verified branch.
+Do not run ao commands. Tally handles session reporting and lifecycle; report your result in your final response only.
+Change only what this task needs. Do not add or edit CI, deployment, or tooling config unless the task explicitly asks for it. If a check outside your task fails, report it; do not fix it.
+
+`tally --version` prints only the package version. Released packages carry `release-source.json` at the package root with the `sourceCommit` they were built from. Add `tally --version --verbose` (and `-v --verbose`) that prints the version and, when `release-source.json` is present beside `package.json`, the full source commit and repository on a second line; when the file is absent (a source checkout), print `source: development checkout`. Plain `tally --version` must print exactly what it prints today. The change belongs in `cli/main.ts`; add a test next to `cli/version.test.ts` covering all three cases. Typecheck, build and the full suite must stay green.
+
+Target repo: Vaibhaav-Tiwari/neatlogs-hack
+The environment has already been set up before you started. Do not run setup (npm ci), install dependencies, or use the network.
+Run this verification command before claiming success: npm test
+You are running on tier cheap (codex/gpt-5.6-luna).
