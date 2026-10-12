@@ -148,8 +148,8 @@
   <div class="wrap">
     <p class="eyebrow">The ledger</p>
     <h2 id="ledger-title">Every attempt, <em>written down</em></h2>
-    <p class="body">The dashboard is a read-only page over two files Tally writes as it works. This is the same run: the budget, the decision in one sentence, and the attempt with its tokens, cost and trace ids.</p>
-    <figure class="frame shot reveal"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>tally dashboard</span></div><img src="shots/dashboard-budget.png" alt="Tally dashboard for the real run: cost per passed task one cent, one cent spent of a one dollar cap, neatlogs and cfo.ai on, Entire off" width="1360" height="640" loading="lazy"></figure>
+    <p class="body">The dashboard is a read-only page over two files Tally writes as it works. Here Tally is working on its own repository: run <code>run-20261012-211342Z</code> spent $1.05 against a $15.00 cap, with 3 of 5 tasks passing. Task #171 stopped on cheap, continued on middle and passed, producing <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/173">pull request #173</a>.</p>
+    <figure class="frame shot reveal"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>tally dashboard · self-host run</span></div><img src="shots/selfhost-budget.png" alt="Tally self-host dashboard: 3 of 5 tasks passed, $1.05 spent against a $15 cap, $0.35 per passed task" width="2932" height="1104" loading="lazy"></figure>
   </div>
 </section>
 
@@ -260,16 +260,15 @@
       <div class="evidence reveal" id="measured">
         <div class="ev">
           <h4>Measured: the same three tasks, with and without Tally</h4>
-          <p>On three real tasks, everything on the top model cost $1.22; through Tally the same tasks cost $0.31 and $0.43 on two passes, every task passing each time.</p>
+          <p>On three real tasks, everything on the top model cost $1.22; through Tally with neatlogs history enabled, the same tasks cost $0.43. All three passed in both runs: about 65% lower estimated cost on this sample.</p>
           <ul class="bars compare">
             <li class="base"><span class="b-name">Everything on the top model</span><span class="b-track"><i style="width:100%"></i></span><span class="b-cost" data-count2="1.22">$1.22</span><span class="b-detail">small $0.458, medium $0.416, large $0.343. 3 of 3 passed.</span></li>
-            <li class=""><span class="b-name">Through Tally, built-in defaults</span><span class="b-track"><i style="width:25.4%"></i></span><span class="b-cost" data-count2="0.31">$0.31</span><span class="b-detail">small $0.015 and medium $0.030 on the cheap tier, large $0.264 on the top tier. 3 of 3 passed.</span></li>
             <li class=""><span class="b-name">Through Tally, with trace history from neatlogs</span><span class="b-track"><i style="width:35.0%"></i></span><span class="b-cost" data-count2="0.43">$0.43</span><span class="b-detail">small $0.012 and medium $0.020 on the cheap tier, large $0.395 on the top tier. 3 of 3 passed.</span></li>
           </ul>
           <ul class="limits">
             <li>Three tasks on <code>fly-doom-jev</code>, one run each, from the same starting commit, each verified by the repository's tests. No pull requests were opened.</li>
             <li>Costs are estimates at list price.</li>
-            <li>The pass with trace history was not cheaper than the pass on defaults. The difference is run-to-run variation on the large task, which used the same model both times.</li>
+            <li>This compares top-tier execution with Tally, not an isolated measurement of the benefit of history. The <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/blob/main/docs/EVIDENCE.md#matched-comparison">full three-pass results and caveats</a> remain available.</li>
             <li>Trace history changed one cost estimate and no tier or ceiling.</li>
             <li>cfo.ai was off for these runs.</li>
             <li>In all three passes each task's first start failed before using any tokens and was retried; those attempts cost $0.00 and are in the ledgers.</li>
@@ -284,9 +283,10 @@
         </div>
       </div>
       <div class="thumbs">
-        <figure class="thumb"><a href="shots/dashboard-budget.png"><span class="tag">A1</span><img src="shots/dashboard-budget.png" alt="Tally dashboard for the real run: one cent spent of a one dollar cap, neatlogs and cfo.ai on" width="1360" height="640" loading="lazy"></a><figcaption>Dashboard of the PR #18 run: $0.01 of a $1.00 cap</figcaption></figure>
-        <figure class="thumb"><a href="shots/dashboard-decision.png"><span class="tag">A2</span><img src="shots/dashboard-decision.png" alt="The ledger entry for issue 17 with the routing decision in a sentence and the code graph" width="1360" height="740" loading="lazy"></a><figcaption>The decision in one sentence, and the code graph</figcaption></figure>
-        <figure class="thumb"><a href="shots/dashboard-attempt.png"><span class="tag">A3</span><img src="shots/dashboard-attempt.png" alt="The attempt row: model, tokens, cost, ceiling, result, pull request and trace ids" width="1360" height="330" loading="lazy"></a><figcaption>The attempt row: tokens, cost, ceiling, traces</figcaption></figure>
+        <figure class="thumb"><a href="shots/selfhost-budget.png"><span class="tag">A1</span><img src="shots/selfhost-budget.png" alt="Self-host run budget: $1.05 spent of $15, with 3 of 5 tasks passed" width="2932" height="1104" loading="lazy"></a><figcaption>Self-host run: $1.05 of $15.00; 3 of 5 tasks passed</figcaption></figure>
+        <figure class="thumb"><a href="shots/selfhost-integrations.png"><span class="tag">A2</span><img src="shots/selfhost-integrations.png" alt="Integration status and task #172 skipped because its reservation did not fit; neatlogs notes a worker trace still indexing" width="2912" height="1232" loading="lazy"></a><figcaption>Connected integrations, pending trace detail and a budget-protected skip</figcaption></figure>
+        <figure class="thumb"><a href="shots/selfhost-escalation.png"><span class="tag">A3</span><img src="shots/selfhost-escalation.png" alt="Task #171 stopped at its learned cheap ceiling and passed after escalation to middle, with both attempt rows shown" width="2922" height="1520" loading="lazy"></a><figcaption>#171: cheap stopped at $0.02725; middle passed. <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack/pull/173">PR #173</a></figcaption></figure>
+        <figure class="thumb"><a href="shots/selfhost-graph.png"><span class="tag">A4</span><img src="shots/selfhost-graph.png" alt="Entire graph for task #171: one target file, 70 dependents and tests; edited target and test marked against predicted files" width="2886" height="1570" loading="lazy"></a><figcaption>Entire graph: predicted impact against actual target and test edits</figcaption></figure>
       </div>
       <details><summary>Show details</summary>
         <ul class="plain">
@@ -316,7 +316,7 @@
       <header><p class="weight">15%</p><div><h3>Building in public</h3><p class="quote">“How you shared your project with other people while you built it.”</p></div></header>
       <div class="evidence two reveal">
         <div class="ev"><h4>The repository, in the open from the first commit</h4><p><b class="figure">377</b> commits and <b class="figure">143</b> merged pull requests on <a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Vaibhaav-Tiwari/neatlogs-hack</a>, the first on 10 October 2026 at 13:57 IST. <code>tally-agents</code> 0.2.0 is on <a href="https://www.npmjs.com/package/tally-agents">npm</a>, with direct runners, parallel runs through Agent Orchestrator, routing driven by trace history with learned ceilings, and evidence links on the pull requests it opens.</p></div>
-        <div class="ev"><p class="slot"><span>Not here yet</span>Links to the posts tagged #neatHack.</p></div>
+        <div class="ev"><h4>Shared while we built</h4><p>Tally is open source and published on npm: the code and an installable product are available for anyone to inspect and try. Alongside that public build, we shared progress on X.</p><ul class="plain"><li><a href="https://x.com/battarchicken/status/2108872869405168019?s=20">Build-in-public update 1</a></li><li><a href="https://x.com/battarchicken/status/2109387573110202536?s=20">Build-in-public update 2</a></li></ul><p><a href="https://github.com/Vaibhaav-Tiwari/neatlogs-hack">Explore the open-source project</a> · <a href="https://www.npmjs.com/package/tally-agents">Install tally-agents from npm</a></p></div>
       </div>
     </article>
 
