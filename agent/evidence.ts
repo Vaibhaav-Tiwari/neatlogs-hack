@@ -12,6 +12,7 @@ export interface TaskEvidence {
   errored: boolean;
   skipped: boolean;
   attempts: number;
+  startupRetries: number;
   size: string | null;
   graphNodes: number | null;
   filesTouched: number | null;
@@ -84,7 +85,11 @@ export function taskEvidence(run: RunState, ledger: LedgerRow[], source: string,
   const result: TaskEvidence[] = [];
   for (const task of run.tasks) {
     const rows = real.filter(row => row.taskId === task.taskId).sort((a, b) => a.attempt - b.attempt);
-    const attempts = rows.filter(row => !row.attemptId.endsWith(':handoff'));
+    const workerRows = rows.filter(row => !row.attemptId.endsWith(':handoff'));
+    // Exclude only a zero-token startup error with an explicitly linked retry.
+    const startupErrors = workerRows.filter(row => row.result === 'error' && row.tokens.total === 0
+      && workerRows.some(retry => retry.attemptId === `${row.attemptId}:startup-retry`));
+    const attempts = workerRows.filter(row => !startupErrors.includes(row));
     const skipped = !attempts.length && (task.status === 'skipped' || run.status === 'interrupted');
     if (!attempts.length && !skipped) continue;
     const first = attempts[0], last = attempts.at(-1);
@@ -95,6 +100,7 @@ export function taskEvidence(run: RunState, ledger: LedgerRow[], source: string,
       runId: run.runId, repo: run.repo, taskId: task.taskId, cohort: cohort(run, first), decision: first?.decision ?? null,
       costNanos: rows.reduce((sum, row) => sum + row.estimatedCostNanos, 0),
       passed: last?.result === 'passed', errored: last?.result === 'error', skipped, attempts: attempts.length,
+      startupRetries: startupErrors.length,
       size: task.size, graphNodes: task.impact?.source === 'entire-graph' ? task.impact.totals.nodes : null,
       filesTouched: task.impact?.totals.filesTouched ?? null,
       issueLength: query?.length ?? null, filesNamed: query === null ? null : new Set(files ?? []).size,

@@ -22,6 +22,7 @@ export interface ComparisonOutcome {
   errored: boolean;
   skipped: boolean;
   attempts: number;
+  startupRetries: number;
   source: string;
 }
 
@@ -77,7 +78,7 @@ export function comparisonEvidence(input: unknown, runs: ComparisonRun[]) {
       const outcome = evidence.find(task => task.taskId === row.taskId);
       if (!outcome) continue;
       row[pass!].push({ runId: run.runId, mode: run.mode, repeat: run.repeat ?? null,
-        costNanos: outcome.costNanos, passed: outcome.passed, errored: outcome.errored, skipped: outcome.skipped, attempts: outcome.attempts, source: path });
+        costNanos: outcome.costNanos, passed: outcome.passed, errored: outcome.errored, skipped: outcome.skipped, attempts: outcome.attempts, startupRetries: outcome.startupRetries, source: path });
       observations.push({ ...outcome, size: row.size, filesTouched: row.filesTouched, graphNodes: row.graphNodes,
         issueLength: row.issueLength, filesNamed: row.filesNamed, textSource: 'plan-query', signalSource: 'comparison-plan', comparisonPass: pass });
     }
@@ -86,6 +87,7 @@ export function comparisonEvidence(input: unknown, runs: ComparisonRun[]) {
     const outcomes = rows.flatMap(row => row[pass]);
     return { pass, outcomes: outcomes.length, coveredTasks: rows.filter(row => row[pass].length).length, plannedTasks: rows.length,
       attempts: outcomes.reduce((sum, row) => sum + row.attempts, 0), passed: outcomes.filter(row => row.passed).length,
+      startupRetries: outcomes.reduce((sum, row) => sum + row.startupRetries, 0),
       meanCostUsd: outcomes.length ? outcomes.reduce((sum, row) => sum + row.costNanos, 0) / outcomes.length / 1e9 : null,
       successRate: outcomes.length ? outcomes.filter(row => row.passed).length / outcomes.length : null };
   });

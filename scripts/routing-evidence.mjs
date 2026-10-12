@@ -135,7 +135,7 @@ const reportData = { generatedAt: new Date().toISOString(), sources, exclusions,
     historyWindowTruncated: readback.truncated, errors: readback.errors } };
 await writeFile(join(out, 'results.json'), JSON.stringify(reportData, null, 2) + '\n');
 const csv = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
-const keys = ['runId', 'repo', 'taskId', 'cohort', 'comparisonPass', 'decision', 'costNanos', 'passed', 'errored', 'skipped', 'attempts', 'size', 'graphNodes', 'filesTouched', 'issueLength', 'filesNamed', 'textSource', 'signalSource', 'models', 'source'];
+const keys = ['runId', 'repo', 'taskId', 'cohort', 'comparisonPass', 'decision', 'costNanos', 'passed', 'errored', 'skipped', 'attempts', 'startupRetries', 'size', 'graphNodes', 'filesTouched', 'issueLength', 'filesNamed', 'textSource', 'signalSource', 'models', 'source'];
 await writeFile(join(out, 'tasks.csv'), [keys.join(','), ...tasks.map(task => keys.map(key => csv(task[key])).join(','))].join('\n') + '\n');
 
 const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
@@ -182,11 +182,12 @@ const scatter = signals.map((signal, i) => {
 await writeFile(join(out, 'size-cost.svg'), svg('Sizing signals versus completed-task estimated cost', 650, scatter + `<text x="24" y="625">${comparison ? 'A blue: baseline; B red: v1; C green: v2. Matched plan signals; repeats are not independent samples.' : 'Successful task executions only; small, selected sample. Text may be reconstructed from current issue bodies.'}</text>`));
 
 const fmt = value => value === null ? 'not measured' : value.toFixed(3);
-const outcomeCell = outcomes => outcomes.length ? outcomes.map(row => `$${(row.costNanos / 1e9).toFixed(5)} / ${row.passed ? 'passed' : row.skipped ? 'skipped' : row.errored ? 'error' : 'failed'} / ${row.attempts} attempts (${row.runId})`).join('<br>') : 'pending';
+const outcomeCell = outcomes => outcomes.length ? outcomes.map(row => `$${(row.costNanos / 1e9).toFixed(5)} / ${row.passed ? 'passed' : row.skipped ? 'skipped' : row.errored ? 'error' : 'failed'} / ${row.attempts} model attempts + ${row.startupRetries} startup retries (${row.runId})`).join('<br>') : 'pending';
 const comparisonLines = comparison ? [
   '## Three-Pass Comparison', '', `Plan measured ${comparison.measuredAt ?? 'date unavailable'}, pinned base ${comparison.baseCommit}. Signals source: ${comparisonDir}/mentor-comparison-plan-signals.json.`, '',
-  '| Pass | Covered tasks | Task outcomes | Mean cost/task USD | Pass rate | Attempts |', '|---|---:|---:|---:|---:|---:|',
-  ...comparison.summaries.map(row => `| ${row.pass}: ${{ A: 'top-tier baseline', B: 'Tally v1 (priors)', C: 'Tally v2 (trace history)' }[row.pass]} | ${row.coveredTasks}/${row.plannedTasks} | ${row.outcomes} | ${row.meanCostUsd === null ? 'pending' : row.meanCostUsd.toFixed(5)} | ${row.successRate === null ? 'pending' : (row.successRate * 100).toFixed(1) + '%'} | ${row.outcomes ? row.attempts : 'pending'} |`), '',
+  '| Pass | Covered tasks | Task outcomes | Mean cost/task USD | Pass rate | Model attempts | Startup retries |', '|---|---:|---:|---:|---:|---:|---:|',
+  ...comparison.summaries.map(row => `| ${row.pass}: ${{ A: 'top-tier baseline', B: 'Tally v1 (priors)', C: 'Tally v2 (trace history)' }[row.pass]} | ${row.coveredTasks}/${row.plannedTasks} | ${row.outcomes} | ${row.meanCostUsd === null ? 'pending' : row.meanCostUsd.toFixed(5)} | ${row.successRate === null ? 'pending' : (row.successRate * 100).toFixed(1) + '%'} | ${row.outcomes ? row.attempts : 'pending'} | ${row.outcomes ? row.startupRetries : 'pending'} |`), '',
+  'Startup retries are zero-token error rows with an explicit linked :startup-retry row, not model failures or model attempts-to-success; all recorded costs remain included. Zero-token errors without that link remain operational errors.', '',
   '| Task | Size | Targets | Dependents | Graph nodes | Text chars | Named paths | A: cost/verdict/attempts | B: cost/verdict/attempts | C: cost/verdict/attempts |',
   '|---|---|---:|---:|---:|---:|---:|---|---|---|',
   ...comparison.rows.map(row => `| ${row.taskId} | ${row.size} | ${row.filesTouched} | ${row.dependents ?? 'unmeasured'} | ${row.graphNodes ?? 'unmeasured'} | ${row.issueLength} | ${row.filesNamed} | ${outcomeCell(row.A)} | ${outcomeCell(row.B)} | ${outcomeCell(row.C)} |`), '',
