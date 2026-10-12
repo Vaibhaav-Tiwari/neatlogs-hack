@@ -87,9 +87,11 @@ describe('runInit', () => {
     expect(config.test).not.toHaveProperty('setupCommand');
     expect(config.budget.usd).toBe(5);
     expect(config.backlog.issueLabel).toBe('ready');
-    expect(output.join('\n')).toContain('Test: node --check js/app.js');
-    expect(output.join('\n')).toContain('Integrations:\n  Integration  Status\n  Neatlogs     off\n  Entire       off\n  cfo.ai       off');
-    expect(output.join('\n')).toContain('Optional integrations\n  Integration  What it adds\n  Neatlogs     Tally traces and optional history from past tasks\n  Entire       Code graph sizing and local session checkpoints\n  cfo.ai       Live monthly budget and spend records');
+    expect(output.join('\n')).toContain('Verification       node --check js/app.js');
+    expect(output.join('\n')).toContain('Integrations:\n  Neatlogs           off\n  Entire             off\n  cfo.ai             off');
+    expect(output.join('\n')).toContain('Optional integrations\n  Integration  What it adds\n  Neatlogs     Routing traces and machine-wide worker hooks\n  Entire       Code graph sizing and session checkpoints\n  cfo.ai       Budget, spend and Ari context reports');
+    expect(output.join('\n')).not.toContain('Each integration is optional. You can enable one later');
+    expect(output.join('\n')).toContain('Model fallback     cheap');
     expect(output.join('\n')).not.toContain(';');
     expect(output.join('\n')).not.toContain('priceNote:');
     expect(output.join('\n')).toContain('test script contents:\n#!/bin/sh\nset -e\nnode --check js/app.js\n');
@@ -155,7 +157,7 @@ describe('runInit', () => {
         monthlyRemainingNanos: 40_000_000_000, limitNanos: 40_000_000_000, limitSource: 'cfoai' }),
       cfoaiCheck: async () => ({ status: 'ok', detail: 'fake connected' }),
       allowClaude: true,
-      readLine: async (question, fallback) => { questions.push(question); return question.includes('Local fallback budget if') ? '5' : question === 'Use cfo.ai for the monthly budget and spend? y/N' || question === 'Connect y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? ''; } });
+      readLine: async (question, fallback) => { questions.push(question); return question.includes('Local fallback budget if') ? '5' : question === 'Use cfo.ai for budget, spend and Ari context? y/N' || question === 'Connect y/N' || question === 'Apply these changes? y/N' ? 'y' : fallback ?? ''; } });
     expect(onboarding).toHaveBeenCalledOnce();
     expect(parseYaml(readFileSync(result.configPath, 'utf8')).budget.cfoai.orgId).toBe('42');
     expect(parseYaml(readFileSync(result.configPath, 'utf8')).budget.usd).toBe(5);
@@ -328,7 +330,7 @@ describe('runInit', () => {
       throw new Error(`unexpected command: ${joined}`);
     };
     let prompt = 0;
-    const answers = ['bug', 'y', 'y', 'n', 'n', 'middle', '12.5', 'y'];
+    const answers = ['bug', 'y', 'y', 'n', 'n', '12.5', 'y'];
 
     const result = await runInit({
       cwd: repo,
@@ -344,7 +346,7 @@ describe('runInit', () => {
     expect(config.repo).toMatchObject({ path: '.', slug: 'acme/widgets', baseBranch: 'main', aoProject: result.projectId });
     expect(config.test).toMatchObject({ setupCommand: 'make setup', command: 'make test', timeoutSec: 900 });
     expect(config.backlog).toMatchObject({ source: 'github-issues', issueLabel: 'bug' });
-    expect(config.modelAccessFallbackTier).toBe('middle');
+    expect(config.modelAccessFallbackTier).toBe('cheap');
     expect(config.budget).toMatchObject({ source: 'config', usd: 12.5 });
     expect(config.concurrency).toBe(1);
     expect(config.integrations).toMatchObject({ neatlogs: true, entire: true, cfoai: false, slack: false });

@@ -10,7 +10,7 @@ import { claudeAllowList } from './harness.js';
 import { aoClaudeSetupCommand } from './ao-claude-settings.js';
 
 describe('runDoctor', () => {
-  it('shows configured model access as unverified without failing the doctor command', async () => {
+  it('checks harness sign-in without adding a model-access warning or making a model request', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-models-'));
     const configPath = join(dir, 'tally.yaml');
     const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
@@ -21,9 +21,8 @@ describe('runDoctor', () => {
     const lines = await runDoctor({ configPath, env: {}, runner: async file => ({
       stdout: file === 'claude' ? '{"loggedIn":true}' : file === 'codex' ? 'Logged in using ChatGPT' : 'ok', stderr: '',
     }) });
-    const access = lines.find(line => line.product === 'Configured model access');
-    expect(access).toMatchObject({ status: 'unverified', detail: expect.stringContaining('does not send a model request before a run'), fix: expect.stringContaining('configured accounts') });
-    expect(access && doctorHasFailures([access])).toBe(false);
+    expect(lines.some(line => /model access/i.test(line.product) || /model access is unverified/i.test(line.detail))).toBe(false);
+    expect(lines.some(line => ['Codex', 'Claude Code'].includes(line.product) && line.status === 'connected')).toBe(true);
     expect(doctorHasFailures([{ product: 'Codex', status: 'broken', detail: 'signed out', fix: 'codex login' }])).toBe(true);
   });
   it('reports hosted checkpoint recall as optional when Graph and capture are connected', async () => {
@@ -170,6 +169,22 @@ describe('runDoctor', () => {
     expect(lines.find((line) => line.product === 'Entire graph plugin')).toMatchObject({ status: 'off' });
     expect(lines.find((line) => line.product === 'Neatlogs key')).toMatchObject({ status: 'connected' });
     expect(lines.find((line) => line.product === 'cfo.ai')).toMatchObject({ status: 'connected' });
+  });
+
+  it('shows Ari task-context sharing as a separately configured and checked integration', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tally-doctor-cfo-context-'));
+    const configPath = join(dir, 'tally.yaml');
+    const config = loadConfig(new URL('../demo/tally.yaml', import.meta.url).pathname);
+    config.runner = 'direct';
+    config.integrations = { neatlogs: false, entire: false, cfoai: true, slack: false };
+    config.budget.cfoai = { orgId: '42', scenario: 'Tally', publishRunContext: true };
+    writeFileSync(configPath, stringify(config));
+    const cfoaiCheck = vi.fn(async () => ({ status: 'ok' as const, detail: 'cfo.ai tools ready' }));
+    const lines = await runDoctor({ configPath, env: {}, cfoaiCheck, runner: async (_file, _args) => ({ stdout: 'ok', stderr: '' }) });
+    expect(lines.find(line => line.product === 'cfo.ai Ari task context')).toMatchObject({
+      status: 'connected', detail: expect.stringContaining('Tally checks each report before sending it.'),
+    });
+    expect(cfoaiCheck).toHaveBeenCalledWith({ config: config.budget.cfoai });
   });
 
   it('reports cfo.ai from Tally token state with the Tally login fix', async () => {

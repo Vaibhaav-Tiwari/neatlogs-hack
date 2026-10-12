@@ -42,9 +42,11 @@ async function projects(token: string): Promise<{ id: string; name: string }[]> 
 
 export async function installGlobalNeatlogsHooks(env: Env, options: {
   home?: string;
+  harnesses?: Array<'claude-code' | 'codex'>;
   run?: (file: string, args: string[], env: Env) => Promise<void>;
 } = {}): Promise<void> {
-  for (const relative of ['.claude/settings.json', '.codex/hooks.json']) {
+  const harnesses = [...new Set(options.harnesses ?? ['claude-code', 'codex'])];
+  for (const relative of harnesses.flatMap(harness => harness === 'claude-code' ? ['.claude/settings.json'] : ['.codex/hooks.json'])) {
     const file = join(options.home ?? homedir(), relative);
     const backup = `${file}.pre-tally-neatlogs`;
     if (existsSync(file) && !existsSync(backup)) {
@@ -56,9 +58,11 @@ export async function installGlobalNeatlogsHooks(env: Env, options: {
   const run = options.run ?? (async (file, args, values) => {
     await promisify(execFile)(file, args, { env: { ...process.env, ...values }, timeout: 180_000, maxBuffer: 1_000_000 });
   });
-  await run('npm', ['install', '--global', '@neatlogs/claude-code', '@neatlogs/codex'], env);
-  await run('neatlogs-claude-code', ['setup', '--global'], env);
-  await run('neatlogs-codex', ['setup', '--global'], env);
+  const packages = harnesses.map(harness => harness === 'claude-code' ? '@neatlogs/claude-code' : '@neatlogs/codex');
+  if (packages.length) await run('npm', ['install', '--global', ...packages], env);
+  for (const harness of harnesses) {
+    await run(harness === 'claude-code' ? 'neatlogs-claude-code' : 'neatlogs-codex', ['setup', '--global'], env);
+  }
 }
 
 export interface NeatlogsOnboardingOptions {
@@ -69,7 +73,7 @@ export interface NeatlogsOnboardingOptions {
   save?: (values: Env) => void;
   projects?: (token: string) => Promise<{ id: string; name: string }[]>;
   verifyProject?: (token: string, projectId: string) => Promise<boolean>;
-  installHooks?: (env: Env) => Promise<void>;
+  installHooks?: (env: Env, options?: { harnesses: Array<'claude-code' | 'codex'> }) => Promise<void>;
 }
 
 export class NeatlogsOnboarding implements IntegrationOnboarding {
@@ -88,16 +92,11 @@ export class NeatlogsOnboarding implements IntegrationOnboarding {
     ui.print('Neatlogs connection');
     ui.print('  Tally sends routing and task traces to your Neatlogs project.');
     if (key) {
-      ui.print('  A project API key is already configured.');
-      ui.print('  The connection check sends one synthetic span with no repository content.');
+      ui.print('  Checking the configured project key with a synthetic test span.');
     } else {
       ui.print('  You need a project API key to send traces.');
       ui.print(`  Create a key: ${NEATLOGS_KEYS_URL}`);
-      ui.print('  The connection check sends one synthetic span with no repository content.');
-    }
-    if (!await ui.confirm(key ? 'Verify the configured Neatlogs project key now?' : 'Connect Tally to Neatlogs now?')) {
-      if (key) { this.key = key; return { status: 'ok', detail: 'Neatlogs key found. Connection check skipped.' }; }
-      return { status: 'off', detail: 'Neatlogs skipped. Tally keeps routing and costs in the local ledger.' };
+      ui.print('  The connection check sends a synthetic test span with no repository content.');
     }
     try {
       if (!key) {
@@ -107,7 +106,6 @@ export class NeatlogsOnboarding implements IntegrationOnboarding {
       if (!key) return { status: 'off', detail: 'neatlogs skipped: no API key supplied.' };
       if (!await (this.options.probe ?? probe)(key)) {
         ui.print('Neatlogs could not verify this key. The key was not saved.');
-        if (!await ui.confirm('Open the API keys page and try another key?')) return { status: 'missing', detail: 'Neatlogs could not verify the project key. It was not saved.' };
         await (this.options.openBrowser ?? openBrowser)(NEATLOGS_KEYS_URL);
         key = await (this.options.readSecret ?? readHiddenSecret)('Neatlogs replacement project API key');
         if (!key || !await (this.options.probe ?? probe)(key)) return { status: 'missing', detail: 'Replacement key was not verified. No key was saved.' };
@@ -120,39 +118,48 @@ export class NeatlogsOnboarding implements IntegrationOnboarding {
   async configure(context: OnboardingContext): Promise<OnboardingResult> {
     const state = await this.connect(context);
     if (state.status !== 'ok' || !this.key) return { enabled: false, state };
-    context.ui.print('Past-run history (optional)');
-    context.ui.print('  Lets Tally use earlier costs and outcomes when routing future tasks.');
-    context.ui.print('  Requires a read-only service token with context:read and observability:read.');
-    context.ui.print('  The token and selected project are saved in ~/.tally/.env.');
-    if (await context.ui.confirm('Connect read-only history from Neatlogs?')) {
-      try {
-        const token = this.env().NEATLOGS_TOKEN ?? await (this.options.readSecret ?? readHiddenSecret)('Neatlogs read-only service token');
-        if (token) {
-          const available = await (this.options.projects ?? projects)(token);
-          if (!available.length) {
-            context.ui.print('No Neatlogs projects were available to this token. Tally will use local history.');
-          }
-          const index = available.length === 1 ? 0 : available.length ? await context.ui.select('Choose a Neatlogs project. Press Enter to skip.', available.map(p => p.name)) : null;
-          const selected = index === null ? undefined : available[index];
-          if (selected) {
-            const verified = this.options.verifyProject ? await this.options.verifyProject(token, selected.id) : await this.verifyProject(token, selected.id);
-            if (!verified) throw new Error('Project read failed');
-            (this.options.save ?? saveSecrets)({ NEATLOGS_TOKEN: token, NEATLOGS_PROJECT_ID: selected.id });
-            context.ui.print('Neatlogs history connected. Read token saved outside the repository.');
-          } else if (available.length) context.ui.print('Neatlogs history skipped. Tally will use local history.');
-        } else context.ui.print('Neatlogs history skipped. Tally will use local history.');
-      } catch { context.ui.print('Neatlogs history could not be verified. Tally will use local history.'); }
-    } else context.ui.print('Neatlogs history not connected. Tally will use local history.');
-    context.ui.print('Worker traces (optional)');
-    context.ui.print('  Machine-wide hooks capture Claude Code and Codex sessions on this computer.');
-    context.ui.print('  They update ~/.claude/settings.json and ~/.codex/hooks.json.');
-    if (await context.ui.confirm('Install Neatlogs hooks for all matching sessions on this computer?')) {
-      try {
-        await (this.options.installHooks ?? installGlobalNeatlogsHooks)({ NEATLOGS_API_KEY: this.key });
-        context.ui.print('Neatlogs hooks installed. In Codex, open /hooks, review them, then trust them.');
-      } catch { context.ui.print('Neatlogs hooks could not be installed. Tally decision tracing remains enabled.'); }
-    } else context.ui.print('Machine-wide hooks not installed. Tally decision tracing remains enabled.');
+    await this.connectHistory(context);
+    const harnesses = [...new Set(context.config.tiers.map(tier => tier.harness))];
+    context.ui.print(`Installing Neatlogs worker hooks for ${harnesses.map(h => h === 'codex' ? 'Codex' : 'Claude Code').join(' and ')} on this computer.`);
+    context.ui.print('These hooks update your global agent settings and trace sessions for the selected coding agent(s).');
+    try {
+      await (this.options.installHooks ?? installGlobalNeatlogsHooks)({ NEATLOGS_API_KEY: this.key }, { harnesses });
+      context.ui.print('Neatlogs worker hooks installed. Review and trust them in your coding agent if it asks.');
+    } catch { context.ui.print('Neatlogs worker hooks could not be installed. Tally decision tracing remains enabled.'); }
     return { enabled: true, state };
+  }
+  private async connectHistory(context: OnboardingContext): Promise<void> {
+    const env = this.env();
+    const token = env.NEATLOGS_TOKEN;
+    if (!token) {
+      context.ui.print('Past-run history is not configured. Add a read token and project ID to ~/.tally/.env to use it. Tally will use local history.');
+      return;
+    }
+    try {
+      const projectId = env.NEATLOGS_PROJECT_ID;
+      let selected: { id: string; name: string } | undefined;
+      if (projectId) {
+        selected = { id: projectId, name: projectId };
+      } else {
+        const available = await (this.options.projects ?? projects)(token);
+        if (!available.length) {
+          context.ui.print('No Neatlogs projects were available to the history token. Tally will use local history.');
+          return;
+        }
+        const index = available.length === 1 ? 0 : await context.ui.select('Choose the Neatlogs project for past-run history.', available.map(p => p.name));
+        selected = index === null ? undefined : available[index];
+      }
+      if (!selected) {
+        context.ui.print('Past-run history was skipped. Tally will use local history.');
+        return;
+      }
+      const verified = this.options.verifyProject ? await this.options.verifyProject(token, selected.id) : await this.verifyProject(token, selected.id);
+      if (!verified) throw new Error('Project read failed');
+      if (projectId !== selected.id) (this.options.save ?? saveSecrets)({ NEATLOGS_TOKEN: token, NEATLOGS_PROJECT_ID: selected.id });
+      context.ui.print('Past-run history connected.');
+    } catch {
+      context.ui.print('Past-run history could not be verified. Tally will use local history.');
+    }
   }
   private async verifyProject(token: string, projectId: string): Promise<boolean> {
     const response = await fetch(`${PUBLIC_API}/traces?limit=1`, { headers: { authorization: `Bearer ${token}`, 'x-project-id': projectId }, signal: AbortSignal.timeout(15_000), redirect: 'error' });

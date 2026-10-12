@@ -8,24 +8,25 @@ import { PassThrough } from 'node:stream';
 import { sampleConfig } from '../agent/testing/fakes.js';
 import type { OnboardingContext } from './types.js';
 
-function setup(answers = [true, false, false], env: Record<string, string> = { NEATLOGS_API_KEY: 'fake-key' }) {
-  const context: OnboardingContext = { config: sampleConfig(), ui: { print: vi.fn(), confirm: vi.fn(async () => answers.shift() ?? false), select: vi.fn(async () => 0) } };
+function setup(env: Record<string, string> = { NEATLOGS_API_KEY: 'fake-key' }) {
+  const context: OnboardingContext = { config: sampleConfig(), ui: { print: vi.fn(), confirm: vi.fn(async () => false), select: vi.fn(async () => 0) } };
   const save = vi.fn((values: Record<string, string>) => { Object.assign(env, values); });
-  const options = { env: () => env, save, probe: vi.fn(async () => true), readSecret: vi.fn(async () => 'fake-new-key'),
+  const options = { env: () => env, save, probe: vi.fn(async () => true), readSecret: vi.fn(async (): Promise<string | null> => 'fake-new-key'),
     openBrowser: vi.fn(async () => undefined), projects: vi.fn(async () => [{ id: 'project-discovered', name: 'Project' }]),
     verifyProject: vi.fn(async () => true), installHooks: vi.fn(async () => undefined) };
   return { context, options, module: new NeatlogsOnboarding(options) };
 }
 
 describe('neatlogs onboarding', () => {
-  it('keeps a configured tracing key enabled when all optional follow-ups are declined', async () => {
-    const { module, options, context } = setup([false, false, false]);
+  it('verifies the key and installs worker hooks after the Neatlogs integration is selected', async () => {
+    const { module, options, context } = setup();
     const result = await module.configure(context);
     expect(result.enabled).toBe(true);
-    expect(result.state.detail).toContain('Connection check skipped');
-    expect(options.probe).not.toHaveBeenCalled();
+    expect(options.probe).toHaveBeenCalledWith('fake-key');
     expect(options.save).not.toHaveBeenCalled();
-    expect(options.installHooks).not.toHaveBeenCalled();
+    expect(options.installHooks).toHaveBeenCalledWith({ NEATLOGS_API_KEY: 'fake-key' }, { harnesses: ['claude-code', 'codex'] });
+    expect(context.ui.confirm).not.toHaveBeenCalled();
+    expect(vi.mocked(context.ui.print).mock.calls.join(' ')).toContain('Past-run history is not configured');
   });
   it('passively checks presence without exporting traces or opening a browser', async () => {
     const { module, options } = setup();
@@ -33,34 +34,36 @@ describe('neatlogs onboarding', () => {
     expect(options.probe).not.toHaveBeenCalled();
     expect(options.openBrowser).not.toHaveBeenCalled();
   });
-  it('verifies an existing connection without saving or installing global hooks', async () => {
+  it('automatically verifies an existing key and installs the selected workers hooks', async () => {
     const { module, options, context } = setup();
     expect((await module.configure(context)).enabled).toBe(true);
     expect(options.probe).toHaveBeenCalledWith('fake-key');
     expect(options.save).not.toHaveBeenCalled();
-    expect(options.installHooks).not.toHaveBeenCalled();
+    expect(options.installHooks).toHaveBeenCalledOnce();
   });
-  it('explains decision traces, read-only history and machine-wide hooks as separate opt-ins', async () => {
-    const { module, context } = setup([true, false, false]);
+  it('keeps the Neatlogs output concise and discloses global worker-hook scope', async () => {
+    const { module, context } = setup();
     expect((await module.configure(context)).enabled).toBe(true);
     const messages = vi.mocked(context.ui.print).mock.calls.map(([message]) => message).join('\n');
     expect(messages).toContain('Neatlogs connection');
-    expect(messages).toContain('Past-run history (optional)');
-    expect(messages).toContain('context:read and observability:read');
-    expect(messages).toContain('Worker traces (optional)');
-    expect(messages).toContain('Machine-wide hooks not installed. Tally decision tracing remains enabled.');
+    expect(messages).not.toContain('Tally already includes the Neatlogs SDK');
+    expect(messages).toContain('Installing Neatlogs worker hooks');
+    expect(messages).toContain('global agent settings');
+    expect(messages).not.toContain('Past-run history (optional)');
+    expect(context.ui.confirm).not.toHaveBeenCalled();
     expect(messages).not.toContain(';');
     expect(vi.mocked(context.ui.confirm).mock.calls.join('\n')).not.toContain(';');
   });
-  it('offers signup and stays off for a missing key when connection is declined', async () => {
-    const { module, options, context } = setup([false], {});
+  it('opens the key page and stays off when the user leaves the new key blank', async () => {
+    const { module, options, context } = setup({});
+    options.readSecret.mockResolvedValueOnce(null);
     expect((await module.configure(context)).enabled).toBe(false);
-    expect(options.openBrowser).not.toHaveBeenCalled();
-    expect(options.readSecret).not.toHaveBeenCalled();
+    expect(options.openBrowser).toHaveBeenCalledWith(NEATLOGS_KEYS_URL);
+    expect(options.readSecret).toHaveBeenCalledOnce();
     expect(context.ui.print).toHaveBeenCalledWith(expect.stringContaining('https://app.neatlogs.com'));
   });
   it('opens the API keys page, prompts secretly, verifies before saving outside config', async () => {
-    const { module, options, context } = setup([true, false, false], {});
+    const { module, options, context } = setup({});
     expect((await module.configure(context)).enabled).toBe(true);
     expect(options.openBrowser).toHaveBeenCalledWith(NEATLOGS_KEYS_URL);
     expect(options.save).toHaveBeenCalledWith({ NEATLOGS_API_KEY: 'fake-new-key' });
@@ -69,63 +72,64 @@ describe('neatlogs onboarding', () => {
     expect(JSON.stringify(vi.mocked(context.ui.print).mock.calls)).not.toContain('fake-new-key');
   });
   it('leaves a blank secret unsaved and off', async () => {
-    const { context, options } = setup([true], {});
+    const { context, options } = setup({});
     const module = new NeatlogsOnboarding({ ...options, readSecret: async () => null });
     expect((await module.configure(context)).enabled).toBe(false);
     expect(options.save).not.toHaveBeenCalled();
   });
   it('never saves an unverified key and keeps raw failures out of output', async () => {
-    const { context, options } = setup([true], {});
+    const { context, options } = setup({});
     const module = new NeatlogsOnboarding({ ...options, probe: async () => { throw new Error('secret=fake-new-key'); } });
     expect((await module.configure(context)).enabled).toBe(false);
     expect(options.save).not.toHaveBeenCalled();
     expect(JSON.stringify(vi.mocked(context.ui.print).mock.calls)).not.toContain('fake-new-key');
   });
-  it('offers to replace an invalid existing key without hand editing the secrets file', async () => {
-    const { context, options } = setup([true, true, false, false]);
+  it('replaces an invalid existing key through hidden input without hand editing the secrets file', async () => {
+    const { context, options } = setup();
     options.probe.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     expect((await new NeatlogsOnboarding(options).configure(context)).enabled).toBe(true);
     expect(options.save).toHaveBeenCalledWith({ NEATLOGS_API_KEY: 'fake-new-key' });
     expect(options.probe).toHaveBeenCalledTimes(2);
   });
   it('discovers the project from a read token and verifies it before saving', async () => {
-    const { module, context, options } = setup([true, true, false]);
+    const { module, context, options } = setup({ NEATLOGS_API_KEY: 'fake-key', NEATLOGS_TOKEN: 'read-token' });
     expect((await module.configure(context)).enabled).toBe(true);
-    expect(options.projects).toHaveBeenCalledWith('fake-new-key');
-    expect(options.verifyProject).toHaveBeenCalledWith('fake-new-key', 'project-discovered');
-    expect(options.save).toHaveBeenCalledWith({ NEATLOGS_TOKEN: 'fake-new-key', NEATLOGS_PROJECT_ID: 'project-discovered' });
+    expect(options.projects).toHaveBeenCalledWith('read-token');
+    expect(options.verifyProject).toHaveBeenCalledWith('read-token', 'project-discovered');
+    expect(options.save).toHaveBeenCalledWith({ NEATLOGS_TOKEN: 'read-token', NEATLOGS_PROJECT_ID: 'project-discovered' });
   });
-  it('preserves tracing and local history when optional read access fails', async () => {
-    const { context, options } = setup([true, true, false]);
+  it('preserves tracing and local history when configured read access fails', async () => {
+    const { context, options } = setup({ NEATLOGS_API_KEY: 'fake-key', NEATLOGS_TOKEN: 'read-token', NEATLOGS_PROJECT_ID: 'project-id' });
     const module = new NeatlogsOnboarding({ ...options, verifyProject: async () => false });
     expect((await module.configure(context)).enabled).toBe(true);
     expect(options.save).not.toHaveBeenCalled();
     expect(context.ui.print).toHaveBeenCalledWith(expect.stringContaining('local history'));
   });
-  it('allows skipping project selection without saving a token', async () => {
-    const { context, options } = setup([true, true, false]);
+  it('allows skipping project selection without saving a project ID', async () => {
+    const { context, options } = setup({ NEATLOGS_API_KEY: 'fake-key', NEATLOGS_TOKEN: 'read-token' });
     context.ui.select = async () => null;
     const module = new NeatlogsOnboarding({ ...options, projects: async () => [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] });
     expect((await module.configure(context)).enabled).toBe(true);
     expect(options.save).not.toHaveBeenCalled();
   });
-  it('falls back to local history when the read token has no accessible projects', async () => {
-    const { context, options } = setup([true, true, false]);
+  it('falls back to local history when the configured read token has no accessible projects', async () => {
+    const { context, options } = setup({ NEATLOGS_API_KEY: 'fake-key', NEATLOGS_TOKEN: 'read-token' });
     const module = new NeatlogsOnboarding({ ...options, projects: async () => [] });
     expect((await module.configure(context)).enabled).toBe(true);
     const messages = vi.mocked(context.ui.print).mock.calls.map(([message]) => message).join('\n');
-    expect(messages).toContain('No Neatlogs projects were available to this token. Tally will use local history.');
+    expect(messages).toContain('No Neatlogs projects were available to the history token. Tally will use local history.');
     expect(context.ui.select).not.toHaveBeenCalled();
   });
-  it('requires explicit global consent and explains Codex trust afterwards', async () => {
-    const { module, context, options } = setup([true, false, true]);
+  it('installs only selected global hooks and explains agent trust afterwards', async () => {
+    const { module, context, options } = setup();
+    context.config.tiers = context.config.tiers.map(tier => ({ ...tier, harness: 'codex' }));
     expect((await module.configure(context)).enabled).toBe(true);
-    expect(options.installHooks).toHaveBeenCalledWith({ NEATLOGS_API_KEY: 'fake-key' });
-    expect(vi.mocked(context.ui.confirm).mock.calls.join(' ')).toContain('all matching sessions on this computer');
-    expect(context.ui.print).toHaveBeenCalledWith(expect.stringContaining('/hooks'));
+    expect(options.installHooks).toHaveBeenCalledWith({ NEATLOGS_API_KEY: 'fake-key' }, { harnesses: ['codex'] });
+    expect(context.ui.confirm).not.toHaveBeenCalled();
+    expect(context.ui.print).toHaveBeenCalledWith(expect.stringContaining('Review and trust them in your coding agent'));
   });
-  it('does not disable CFO tracing if optional global hooks fail', async () => {
-    const { context, options } = setup([true, false, true]);
+  it('does not disable decision tracing if global hook installation fails', async () => {
+    const { context, options } = setup();
     const module = new NeatlogsOnboarding({ ...options, installHooks: async () => { throw new Error('fake-key'); } });
     expect((await module.configure(context)).enabled).toBe(true);
     expect(JSON.stringify(vi.mocked(context.ui.print).mock.calls)).not.toContain('fake-key');

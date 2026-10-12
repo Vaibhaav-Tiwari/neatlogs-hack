@@ -1,6 +1,9 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolveEntireBinary } from '../adapters/command.js';
 import type { IntegrationState } from '../schema/types.js';
 import type { IntegrationOnboarding, OnboardingContext, OnboardingResult } from './types.js';
 
@@ -8,6 +11,34 @@ export type EntireOnboardingCommand = (file: string, args: string[], options: {
   cwd: string;
   interactive?: boolean;
 }) => Promise<{ stdout: string }>;
+
+export type EntireCliInstaller = () => Promise<string>;
+
+async function installEntireCli(): Promise<string> {
+  const run = promisify(execFile);
+  const options = { timeout: 180_000, maxBuffer: 1_000_000, encoding: 'utf8' as const };
+  if (process.platform === 'darwin') {
+    await run('brew', ['install', '--cask', 'entireio/tap/entire'], options);
+    const prefix = (await run('brew', ['--prefix'], options)).stdout.trim();
+    const binary = join(prefix, 'bin', 'entire');
+    return existsSync(binary) ? binary : 'entire';
+  }
+  if (process.platform === 'linux') {
+    await run('bash', ['-lc', 'curl -fsSL https://entire.io/install.sh | bash'], options);
+    const local = join(homedir(), '.local', 'bin', 'entire');
+    return existsSync(local) ? local : 'entire';
+  }
+  if (process.platform === 'win32') {
+    await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'irm https://entire.io/install.ps1 | iex'], options);
+    const binary = join(homedir(), '.local', 'bin', 'entire.exe');
+    return existsSync(binary) ? binary : 'entire';
+  }
+  throw new Error('Automatic Entire installation is not supported on this operating system.');
+}
+
+function missingExecutable(error: unknown): boolean {
+  return !!error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === 'ENOENT';
+}
 
 const command: EntireOnboardingCommand = async (file, args, options) => {
   if (!options.interactive) return promisify(execFile)(file, args, { cwd: options.cwd, timeout: 120_000, encoding: 'utf8' });
@@ -30,6 +61,7 @@ const json = (text: string): Record<string, unknown> => {
 export interface EntireOnboardingOptions {
   cwd?: string;
   command?: EntireOnboardingCommand;
+  install?: EntireCliInstaller;
 }
 
 interface EntireMirrorPlacement {
@@ -55,12 +87,39 @@ function mirrorRecords(output: string): EntireMirrorRecord[] {
 export class EntireOnboarding implements IntegrationOnboarding {
   private cwd: string;
   private readonly command: EntireOnboardingCommand;
+  private readonly install: EntireCliInstaller;
+  private binary: string;
   constructor(options: EntireOnboardingOptions = {}) {
     this.cwd = resolve(options.cwd ?? process.cwd());
     this.command = options.command ?? command;
+    this.install = options.install ?? installEntireCli;
+    this.binary = options.command ? 'entire' : resolveEntireBinary();
   }
   private async run(file: string, args: string[], interactive = false): Promise<string> {
-    return (await this.command(file, args, { cwd: this.cwd, interactive })).stdout.replace(/\r?\n$/, '');
+    return (await this.command(file === 'entire' ? this.binary : file, args, { cwd: this.cwd, interactive })).stdout.replace(/\r?\n$/, '');
+  }
+  private async ensureCli(context: OnboardingContext): Promise<boolean> {
+    try {
+      await this.run('entire', ['--version']);
+      return true;
+    } catch (error) {
+      if (!missingExecutable(error)) throw error;
+      context.ui.print('Entire CLI setup');
+      context.ui.print('  Tally can install the official Entire CLI for this computer.');
+      context.ui.print('  macOS: Homebrew cask. Linux: Entire stable installer. Windows: Entire PowerShell installer.');
+      context.ui.print('  This installs a local CLI. Login, Graph plugin, repository hooks, and repository mirror each have separate approval below.');
+      context.ui.print('  Install details: https://docs.entire.io/installation');
+      if (!await context.ui.confirm('Install Entire CLI using its official installer?')) return false;
+      try {
+        this.binary = await this.install();
+        await this.run('entire', ['--version']);
+        context.ui.print('Entire CLI is installed and verified.');
+        return true;
+      } catch {
+        context.ui.print('Entire CLI installation did not complete. No repository capture or hook changes were made.');
+        return false;
+      }
+    }
   }
   private async loggedIn(): Promise<boolean> {
     return json(await this.run('entire', ['auth', 'status', '--json'])).logged_in === true;
@@ -120,12 +179,12 @@ export class EntireOnboarding implements IntegrationOnboarding {
       if (!await this.graphInstalled()) return { status: 'missing', detail: 'Entire graph plugin is missing. Run entire plugin install graph.' };
       if ((await this.status()).enabled !== true) return { status: 'missing', detail: 'Entire capture is not enabled in this repository.' };
       return { status: 'ok', detail: 'Entire login, graph plugin and repository capture are available.' };
-    } catch { return { status: 'missing', detail: 'Entire is unavailable. Install instructions and sign-up: https://entire.io.' }; }
+    } catch { return { status: 'missing', detail: 'Entire is unavailable. Install from https://docs.entire.io/installation, then run tally init.' }; }
   }
   async connect(context: OnboardingContext): Promise<IntegrationState> {
     this.cwd = resolve(context.repoRoot ?? this.cwd);
     try {
-      await this.run('entire', ['--version']);
+      if (!await this.ensureCli(context)) return { status: 'off', detail: 'Entire CLI installation skipped or incomplete. Install from https://docs.entire.io/installation, then rerun tally init.' };
       if (!await this.loggedIn()) {
         context.ui.print('Entire account');
         context.ui.print('  Entire uses its own login.');
@@ -140,7 +199,7 @@ export class EntireOnboarding implements IntegrationOnboarding {
         if (!await this.graphInstalled()) throw new Error('Graph plugin not available');
       }
       return { status: 'ok', detail: 'Entire login and graph plugin verified.' };
-    } catch { return { status: 'missing', detail: 'Entire connection did not complete. Install instructions and sign-up: https://entire.io.' }; }
+    } catch { return { status: 'missing', detail: 'Entire connection did not complete. Run tally init to retry or install from https://docs.entire.io/installation.' }; }
   }
   async configure(context: OnboardingContext): Promise<OnboardingResult> {
     const off = (detail: string): OnboardingResult => {
@@ -199,7 +258,7 @@ export class EntireOnboarding implements IntegrationOnboarding {
           await this.run('git', ['push', 'origin', `${setupCommit}:refs/heads/${defaultBranch}`]);
         }
       }
-      if (required.includes('codex')) context.ui.print('In Codex started inside this repository, open /hooks and trust the Entire capture hooks once. Tally cannot approve them for you.');
+      context.ui.print('In your coding agent, open its hooks view, review the Entire capture hooks, and trust them for this repository. Tally cannot approve hooks for you.');
       // Local enablement alone is insufficient: future workers inherit the default-branch files.
       const pending = await this.run('git', ['status', '--porcelain', '--', ...SETTINGS_FILES]);
       if (pending) return off('Capture settings are still uncommitted. Entire remains off until they are published on the default branch.');
@@ -210,8 +269,8 @@ export class EntireOnboarding implements IntegrationOnboarding {
         const settings = await this.run('git', ['show', `refs/remotes/origin/HEAD:${file}`]);
         if (!/\bentire\s+hooks\b/.test(settings)) return off(`The default branch has no Entire ${agent} hooks yet.`);
       }
-      if (required.includes('codex') && !await context.ui.confirm('Have you trusted the Entire hooks via /hooks in Codex for this repository?')) {
-        return off('Codex hook trust is not confirmed. Entire remains off until you trust the hooks.');
+      if (!await context.ui.confirm('Have you reviewed and trusted the Entire hooks in your coding agent for this repository?')) {
+        return off('Hook trust is not confirmed. Entire remains off until you trust the hooks.');
       }
       const mirror = await this.ensureMirror(context);
       return { enabled: true, state: { status: 'ok', detail: ['Entire login, graph and repository capture are configured.', mirror, 'Generated summaries remain off by default.'].filter(Boolean).join(' ') } };

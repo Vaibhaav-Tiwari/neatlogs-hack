@@ -248,7 +248,7 @@ describe('main', () => {
     try {
       const { io, out } = capture();
       expect(await main(['run', '--plan', '--budget', '5', '--config', new URL('../demo/tally.live.yaml', import.meta.url).pathname], io)).toBe(0);
-      expect(out.join('\n')).toContain('Monthly remaining: $0.6563 of $1.00 (cfo.ai)');
+      expect(out.join('\n')).toContain('Monthly remaining  $0.6563 of $1.00  (cfo.ai)');
       expect(out.join('\n')).toContain('History source: remote Neatlogs');
       expect(out.join('\n')).toContain('  Decision:\n    - History has one cheap attempt so it uses the prior');
       expect(out.join('\n')).toContain('    - related files were found by a local repository search');
@@ -284,9 +284,9 @@ describe('main', () => {
         expect(c.out.join('\n')).toContain('worker');
         expect(c.out.join('\n')).toContain('spend');
         expect(c.out.join('\n')).toContain('Budget availability');
-        expect(c.out.join('\n')).toContain('Monthly remaining:');
-        expect(c.out.join('\n')).toContain('Run cap:');
-        expect(c.out.join('\n')).toContain('Available now:');
+        expect(c.out.join('\n')).toContain('Monthly remaining  ');
+        expect(c.out.join('\n')).toContain('Run cap            ');
+        expect(c.out.join('\n')).toContain('Available now      ');
         expect(c.out.join('\n')).toContain('PR https://github.com/example/repo/pull/1');
       } finally { run.mockRestore(); start.mockRestore(); open.mockRestore(); wait.mockRestore(); }
     });
@@ -296,7 +296,8 @@ describe('main', () => {
     try {
       const c = capture();
       expect(await main(['doctor'], c.io)).toBe(0);
-      expect(c.out).toEqual(['Neatlogs key: off', '  Disabled in tally.yaml. This integration is not required.']);
+      expect(c.out.join('\n')).toContain('  ○ OFF            Neatlogs key');
+      expect(c.out.join('\n')).toContain('Disabled in tally.yaml. This integration is not required.');
     } finally { spy.mockRestore(); }
   });
   it('never starts an experiment for an unsupported --plan request', async () => {
@@ -328,7 +329,7 @@ describe('main', () => {
       expect(await main(['demo'], c.io)).toBe(0);
       expect(c.out.join('\n')).toContain('ledger.json');
       expect(c.out.join('\n')).toContain('attempts');
-      expect(c.out.join('\n')).toContain('Integrations\n  Integration  Status');
+      expect(c.out.join('\n')).toContain('Sponsor integrations\n  Neatlogs     ○ OFF');
     });
   });
 

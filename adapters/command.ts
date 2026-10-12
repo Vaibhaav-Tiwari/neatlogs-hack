@@ -37,8 +37,20 @@ export function resolveAoBinary(options: AoBinaryOptions = {}): string {
   throw new CommandError(`Agent Orchestrator (AO) is required; looked in PATH (${env.PATH || 'empty'}), TALLY_AO_BIN (${env.TALLY_AO_BIN || 'unset'}), repo.aoBin (${options.aoBin || 'unset'}) and ${candidates.filter((path) => path.includes('.app/')).join(', ') || 'no app-bundle locations on this platform'}; install AO or set TALLY_AO_BIN to its executable path.`, 'ENOENT');
 }
 
+/** Resolve Entire's standard user-local install location even when the shell PATH omits it. */
+export function resolveEntireBinary(options: Pick<AoBinaryOptions, 'platform' | 'home'> = {}): string {
+  const platform = options.platform ?? process.platform;
+  const home = options.home ?? homedir();
+  const local = join(home, '.local', 'bin', platform === 'win32' ? 'entire.exe' : 'entire');
+  try {
+    accessSync(local, platform === 'win32' ? constants.F_OK : constants.X_OK);
+    if (statSync(local).isFile()) return local;
+  } catch { /* Fall back to the user's PATH. */ }
+  return 'entire';
+}
+
 export async function runCommand(file: string, args: string[], options: AoBinaryOptions & { timeout?: number; maxBuffer?: number } = {}): Promise<{ stdout: string; stderr: string }> {
-  const executable = file === 'ao' ? resolveAoBinary(options) : file;
+  const executable = file === 'ao' ? resolveAoBinary(options) : file === 'entire' ? resolveEntireBinary(options) : file;
   try {
     return await execFileAsync(executable, args, { cwd: options.cwd, env: options.env, timeout: options.timeout, maxBuffer: options.maxBuffer, encoding: 'utf8' });
   } catch (error) {

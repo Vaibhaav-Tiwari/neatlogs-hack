@@ -18,6 +18,7 @@ import { startDashboardServer, type DashboardServer } from './dashboard-server.j
 import { openDashboardBrowser, waitForDashboard } from './dashboard-lifecycle.js';
 import { publishSite } from './publish.js';
 import { logoFrame, logoSeen, processTerminal, SETTLED, showLogo, type LogoIntent } from './logo.js';
+import { createTerminalStyle, formatDoctorLine, formatInitLine } from '../ui/terminal.js';
 
 export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces', 'logo'] as const;
 export type Command = (typeof COMMANDS)[number];
@@ -85,10 +86,8 @@ export interface CliIO {
   stderr: (line: string) => void;
 }
 
-function printDoctorLine(line: DoctorLine, io: CliIO): void {
-  io.stdout(`${line.product}: ${line.status}`);
-  if (line.detail && line.detail !== 'ok') io.stdout(`  ${line.detail}`);
-  if (line.fix) io.stdout(`  Next: ${line.fix}`);
+function printDoctorLine(line: DoctorLine, io: CliIO, style = createTerminalStyle()): void {
+  for (const output of formatDoctorLine(line, style)) io.stdout(output);
 }
 
 function splitPlanClauses(value: string): string[] {
@@ -169,8 +168,8 @@ Options:
   --neatlogs <yes|no> --entire <yes|no> --cfoai <yes|no> Init product opt-ins
   --verbose         For init: include the full proposed YAML
   --runner <ao|direct> For init: AO workers or sequential direct workers
-  --harness <claude-code|codex|mixed> For init: explicit coding agent choice
-  --model-access-fallback-tier <name> For init: one budget-checked retry after explicit model denial
+  --harness <claude-code|codex|mixed> For init: coding agent choice (Codex is default)
+  --model-access-fallback-tier <name> For init: override the default cheap-tier fallback
   --allow-claude     For init: explicitly consent to the printed repository allow-list
   --output <dir>    Output directory for tally market (default: .tally/market/latest)
   --limit <number>  Result limit for tally market (default: 10)
@@ -426,9 +425,11 @@ async function runCommand(options: CliOptions, io: CliIO): Promise<number> {
 }
 
 async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
+  const style = createTerminalStyle();
+  io.stdout(style.heading('TALLY / FIRST RUN'));
   try {
     if (!process.stdin.isTTY && !options.yes && !options.dryRun) throw new InitError('Interactive init needs a terminal; use --yes with --test-command, --setup-command, --budget, --issue-label, product flags and optional --model-access-fallback-tier for scripted input.');
-    const result = await runInit({ configPath: options.config, yes: options.yes, dryRun: options.dryRun, print: io.stdout,
+    const result = await runInit({ configPath: options.config, yes: options.yes, dryRun: options.dryRun, print: line => io.stdout(formatInitLine(line, style)),
       testCommand: options.testCommand, setupCommand: options.setupCommand, budgetUsd: options.budgetUsd,
       issueLabel: options.issueLabel, integrations: options.integrations, verbose: options.verbose,
       runner: options.runner, harnessChoice: options.harnessChoice, allowClaude: options.allowClaude,
@@ -437,15 +438,16 @@ async function initCommand(options: CliOptions, io: CliIO): Promise<number> {
       io.stdout(options.dryRun ? 'Dry run: no changes made.' : 'Init cancelled: no changes made.');
       return 0;
     }
-    io.stdout(`wrote ${result.configPath}`);
-    io.stdout(`repo project ${result.projectId}`);
-    io.stdout(`test ${result.testCommand}`);
-    if (result.setupCommand) io.stdout(`setup ${result.setupCommand}`);
-    io.stdout(`tiers ${result.tiers.join(', ')}`);
-    for (const line of result.doctor) printDoctorLine(line, io);
+    io.stdout(`${style.paint('Saved', 'success')}  ${result.configPath}`);
+    io.stdout(`${style.paint('Project', 'brand')}  ${result.projectId || 'direct runner'}`);
+    io.stdout(`${style.paint('Verify', 'brand')}   ${result.testCommand}`);
+    if (result.setupCommand) io.stdout(`${style.paint('Setup', 'brand')}    ${result.setupCommand}`);
+    io.stdout(`${style.paint('Tiers', 'brand')}    ${result.tiers.join(', ')}`);
+    io.stdout(style.heading('POST-SETUP CHECK'));
+    for (const line of result.doctor) printDoctorLine(line, io, style);
     return doctorHasFailures(result.doctor) ? 1 : 0;
   } catch (e) {
-    io.stderr(`tally init: ${e instanceof Error ? e.message : 'initialization failed; no changes confirmed'}`);
+    io.stderr(`${style.paint('tally init', 'error')}: ${e instanceof Error ? e.message : 'initialization failed; no changes confirmed'}`);
     return 2;
   }
 }
@@ -484,10 +486,11 @@ function printBudget(budget: RunResult['runState']['budget'], io: CliIO): void {
   const runRemaining = Math.max(0, budget.limitNanos - budget.spentNanos);
   const monthlyRemaining = Math.max(0, monthly.limitNanos - monthly.spentBeforeRunNanos - budget.spentNanos);
   const effectiveRemaining = Math.min(monthlyRemaining, runRemaining);
-  io.stdout('Budget availability');
-  io.stdout(`  Monthly remaining: ${formatUsd(monthlyRemaining)} of ${formatUsd(monthly.limitNanos)} (${monthly.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`);
-  io.stdout(`  Run cap: ${formatUsd(budget.limitNanos)} (${budget.limitSource === 'cli' ? 'CLI --budget' : budget.limitSource === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`);
-  io.stdout(`  Available now: ${formatUsd(effectiveRemaining)}`);
+  const style = createTerminalStyle();
+  io.stdout(style.heading('Budget availability'));
+  io.stdout(`  Monthly remaining  ${formatUsd(monthlyRemaining)} of ${formatUsd(monthly.limitNanos)}  ${style.paint(`(${monthly.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`, 'muted')}`);
+  io.stdout(`  Run cap            ${formatUsd(budget.limitNanos)}  ${style.paint(`(${budget.limitSource === 'cli' ? 'CLI --budget' : budget.limitSource === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`, 'muted')}`);
+  io.stdout(`  Available now      ${style.paint(formatUsd(effectiveRemaining), 'success')}`);
 }
 
 function progressPrinter(io: CliIO): (event: RunProgress) => void {
@@ -510,10 +513,11 @@ function progressPrinter(io: CliIO): (event: RunProgress) => void {
 }
 
 function printRunSummary(result: RunResult, io: CliIO, dashboardUrl?: string): void {
+  const style = createTerminalStyle();
   const passed = result.runState.tasks.filter(task => task.status === 'passed').length;
   const failed = result.runState.tasks.filter(task => task.status === 'failed').length;
   const skipped = result.runState.tasks.filter(task => task.status === 'skipped').length;
-  io.stdout('Run summary');
+  io.stdout(style.heading('Run summary'));
   io.stdout(`  Tasks: ${passed} passed, ${failed} failed, ${skipped} skipped`);
   io.stdout(`  Total spend: ${formatUsd(result.runState.budget.spentNanos)}`);
   io.stdout(`  Run cap: ${formatUsd(result.runState.budget.limitNanos)}`);
@@ -524,12 +528,13 @@ function printRunSummary(result: RunResult, io: CliIO, dashboardUrl?: string): v
 }
 
 function printIntegrations(result: Awaited<ReturnType<typeof runTally>>, io: CliIO): void {
+  const style = createTerminalStyle();
   const labels: Record<string, string> = { neatlogs: 'Neatlogs', entire: 'Entire', cfoai: 'cfo.ai', github: 'GitHub', slack: 'Slack' };
-  io.stdout('Integrations');
-  io.stdout('  Integration  Status');
+  io.stdout(style.heading('Sponsor integrations'));
   for (const [name, state] of Object.entries(result.runState.integrations)) {
-    io.stdout(`  ${(labels[name] ?? name).padEnd(12)} ${state.status}`);
-    if (state.detail) io.stdout(`    ${state.detail}`);
+    const status = state.status === 'ok' ? 'connected' : state.status === 'off' ? 'off' : state.status === 'missing' ? 'missing' : 'error';
+    io.stdout(`  ${style.paint((labels[name] ?? name).padEnd(12), 'bold')} ${style.status(status)}`);
+    if (state.detail) io.stdout(`    ${style.paint(state.detail, state.status === 'error' ? 'error' : 'muted')}`);
   }
 }
 
@@ -563,8 +568,17 @@ async function launchDashboard(options: CliOptions, io: CliIO): Promise<Dashboar
 }
 
 async function doctorCommand(options: CliOptions, io: CliIO): Promise<number> {
+  const style = createTerminalStyle();
   const lines = await runDoctor({ configPath: options.config });
-  for (const line of lines) printDoctorLine(line, io);
+  io.stdout('');
+  io.stdout(style.heading('TALLY / SYSTEM CHECK'));
+  io.stdout(style.paint('Configured connections and local prerequisites', 'muted'));
+  for (const line of lines) for (const output of formatDoctorLine(line, style)) io.stdout(output);
+  const failed = lines.some(line => ['missing', 'broken', 'error'].includes(line.status));
+  io.stdout('');
+  io.stdout(failed
+    ? style.paint('Some configured items need attention. Follow the next steps above.', 'warning')
+    : style.paint('Checks complete. Optional items marked OFF can stay that way.', 'success'));
   return doctorHasFailures(lines) ? 1 : 0;
 }
 

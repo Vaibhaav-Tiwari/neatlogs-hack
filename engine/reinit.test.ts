@@ -84,6 +84,15 @@ describe('consented integration re-init', () => {
     expect(existsSync(reinitPath(f.path))).toBe(false);
   });
 
+  it('lets the explicit model-access fallback flag update an existing config', async () => {
+    const f = fixture();
+    const result = await runInit({ cwd: f.cwd, command: f.command, modelAccessFallbackTier: 'middle', yes: true,
+      env: { NEATLOGS_API_KEY: 'fake-key' }, print: () => {}, doctor: async () => [],
+      readLine: async (_question, fallback) => fallback ?? '' });
+    expect(result.applied).toBe(true);
+    expect(loadConfig(f.path).modelAccessFallbackTier).toBe('middle');
+  });
+
   it('recovers after doctor fails but refuses intervening user edits', async () => {
     const f = fixture();
     await expect(runInit({ cwd: f.cwd, command: f.command, env: { NEATLOGS_API_KEY: 'fake-key' }, print: () => {}, doctor: async () => { throw new Error('doctor stopped'); },

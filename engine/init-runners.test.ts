@@ -63,6 +63,31 @@ describe('runner and coding CLI setup', () => {
     expect(f.print.mock.calls.join(' ')).toContain('AO daemon is stopped. AO is unavailable. Direct is the default. Run ao start to use AO.');
     expect(f.calls.some(call => call.startsWith('ao project'))).toBe(false);
   });
+  it('does not ask for AO versus direct when the AO daemon is stopped', async () => {
+    const f = fixture(true, ['codex'], ['codex'], 'stopped');
+    const questions: string[] = [];
+    const readLine = vi.fn(async (question, fallback) => {
+      questions.push(question);
+      return question === 'Apply these changes? y/N' ? 'y' : fallback ?? '';
+    });
+    const result = await runInit({ ...f, readLine, testCommand: 'true', setupCommand: '', issueLabel: 'tally',
+      integrations: { neatlogs: false, entire: false, cfoai: false }, doctor: async () => [] });
+    expect(parse(readFileSync(result.configPath, 'utf8')).runner).toBe('direct');
+    expect(questions.some(question => question.startsWith('Runner:'))).toBe(false);
+  });
+  it('shows numbered coding-agent choices with Codex as the default', async () => {
+    const f = fixture(true, ['claude', 'codex']);
+    const output: string[] = [];
+    const readLine = vi.fn(async (question, fallback) => question.startsWith('Choose a coding agent') ? '2'
+      : question === 'Apply these changes? y/N' ? 'y' : fallback ?? '');
+    const result = await runInit({ ...f, readLine, print: line => output.push(line), testCommand: 'true', setupCommand: '', issueLabel: 'tally',
+      integrations: { neatlogs: false, entire: false, cfoai: false }, allowClaude: true, doctor: async () => [] });
+    const config = parse(readFileSync(result.configPath, 'utf8'));
+    expect(config.tiers.every((tier: { harness: string }) => tier.harness === 'claude-code')).toBe(true);
+    expect(output).toContain('  1. Codex (default)');
+    expect(output).toContain('  2. Claude Code');
+    expect(output).toContain('  3. Both (Codex + Claude Code)');
+  });
   it('refuses AO selection when the installed daemon is stopped', async () => {
     const f = fixture(true, ['codex'], ['codex'], 'stopped');
     await expect(runInit({ ...f, yes: true, runner: 'ao', harnessChoice: 'codex', testCommand: 'true', setupCommand: '',

@@ -9,6 +9,7 @@ import { loadConfig } from './config.js';
 import { createDryRunPorts } from './dry-run.js';
 import { RunError } from './run.js';
 import { CODEX_LIST_PRICES } from './pricing.js';
+import type { CfoaiTaskContextDocument } from '../adapters/cfoai-context.js';
 import { PriceHistory } from '../agent/history.js';
 import type { CheckpointPort, CheckpointRecallPort, HandoffPort, SizingSignalsPort, LiveUsagePort, SessionControlPort, TracePort, TraceAttributes, TraceSpan } from '../agent/ports.js';
 import { usdToNanos, validateLedger, validateRunState, type TaskImpact, type TokenUsage } from '../schema/index.js';
@@ -86,7 +87,7 @@ const missingEntireSignals: SizingSignalsPort & { status: () => { status: 'missi
     return { filesTouched: 1, dependents: 0, testsPresent: true, source: 'code-search' };
   },
   status() {
-    return { status: 'missing', detail: 'Entire graph is unavailable. Falling back to code search. Fix: run `entire enable` in this repository.' };
+    return { status: 'missing', detail: 'Entire graph is unavailable. Falling back to code search. Fix: rerun `tally init` and choose Entire.' };
   },
 };
 
@@ -208,6 +209,8 @@ class FakeWorktrees implements WorktreePort {
 class FakeCfoaiBudget implements CfoaiBudgetPort {
   writes: number[] = [];
   detailWrites: Array<{ attempts: Array<{ tier: string; costNanos: number }>; cumulativeRunSpendNanos: number }> = [];
+  contextWrites: CfoaiTaskContextDocument[] = [];
+  failContext = false;
   constructor(
     private readonly budgetNanos = usdToNanos(40),
     private readonly failRead = false,
@@ -237,6 +240,11 @@ class FakeCfoaiBudget implements CfoaiBudgetPort {
     if (this.failRead) throw new Error('not logged in');
     this.detailWrites.push(input);
     return { skippedTiers: [] };
+  }
+
+  async publishTaskContext(document: CfoaiTaskContextDocument) {
+    if (this.failContext) throw new Error('memory write refused');
+    this.contextWrites.push(document);
   }
 
   status() {
@@ -1940,7 +1948,7 @@ describe('runRealTally', () => {
     });
 
     expect(result.runState.integrations.entire).toMatchObject({ status: 'missing' });
-    expect(result.runState.integrations.entire.detail).toContain('entire enable');
+    expect(result.runState.integrations.entire.detail).toContain('tally init');
   });
 
   it('persists unavailable recall separately from successful Graph sizing and states it in decisions', async () => {
@@ -1954,7 +1962,7 @@ describe('runRealTally', () => {
         recall: { recallFor: async () => null, status: () => ({ status: 'missing', detail: 'checkpoint recall unavailable: repository not mirrored to Entire' }) },
       },
     });
-    expect(result.runState.integrations.entire).toMatchObject({ status: 'missing', detail: expect.stringContaining('Graph sizing: ok') });
+    expect(result.runState.integrations.entire).toMatchObject({ status: 'ok', detail: expect.stringContaining('Graph sizing: ok') });
     expect(result.runState.integrations.entire.detail).toContain('not mirrored');
     expect(result.ledger[0]?.decision).toContain('checkpoint recall unavailable');
     const onDisk = JSON.parse(readFileSync(join(dir, 'recall-unavailable', 'run.json'), 'utf8'));
@@ -1967,7 +1975,7 @@ describe('runRealTally', () => {
       configPath,
       readFileSync(configPath, 'utf8').replace(
         'budget: { source: config, usd: 40 }',
-        'budget: { source: cfoai, usd: 10, cfoai: { orgId: "103210", scenario: "Main Scenario", table: "Tally agent budget", budgetRow: "Agent budget", spendRow: "Agent spend", tableUrl: "https://app.cfo.ai/s/table" } }',
+        'budget: { source: cfoai, usd: 10, cfoai: { orgId: "103210", scenario: "Main Scenario", table: "Tally agent budget", budgetRow: "Agent budget", spendRow: "Agent spend", tableUrl: "https://app.cfo.ai/s/table", spendDetailTableUrl: "https://app.cfo.ai/s/detail", publishRunContext: true } }',
       ),
     );
     const worker = new FakeWorker();
@@ -2000,6 +2008,12 @@ describe('runRealTally', () => {
         attempts: [{ tier: result.ledger[0]!.tier, costNanos: result.ledger[0]!.estimatedCostNanos }],
       },
     ]);
+    expect(cfoai.contextWrites).toHaveLength(1);
+    expect(cfoai.contextWrites[0]?.content).toContain('Tally attempt cost and routing record');
+    expect(cfoai.contextWrites[0]?.content).toContain('acme/payments-service');
+    expect(cfoai.contextWrites[0]?.content).toContain('https://app.cfo.ai/s/detail');
+    expect(cfoai.contextWrites[0]?.content).not.toContain('Expected calc.ts to return a + b.');
+    expect(cfoai.contextWrites[0]?.idempotencyKey).toMatch(/^tally-attempt-[0-9a-f]{64}$/);
     const csv = readFileSync(join(result.outputDir, 'cfoai-spend-fallback.csv'), 'utf8');
     expect(csv).toContain('run_id,attempt_id,task_id');
     expect(csv).toContain(result.ledger[0]!.attemptId);
@@ -2071,7 +2085,7 @@ describe('runRealTally', () => {
 
   it('reads cfo.ai budget in dry-run, reports it as live and never writes simulated spend', async () => {
     const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
-    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }', 'budget: { source: cfoai, usd: 10 }'));
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }', 'budget: { source: cfoai, usd: 10, cfoai: { publishRunContext: true } }'));
     const worker = new FakeWorker();
     const cfoai = new FakeCfoaiBudget(usdToNanos(40));
 
@@ -2093,11 +2107,26 @@ describe('runRealTally', () => {
         cfoai,
       },
     });
+    expect(cfoai.contextWrites).toEqual([]);
 
     expect(cfoai.writes).toEqual([]);
     expect(existsSync(join(result.outputDir, 'cfoai-spend-fallback.csv'))).toBe(false);
     expect(result.runState.budget).toMatchObject({ source: 'cfoai', limitNanos: usdToNanos(40) });
     expect(result.runState.integrations.cfoai).toEqual({ status: 'ok', detail: 'budget read; spend not written in a dry run' });
+  });
+
+  it('keeps task work successful if Ari context publishing fails and reports the separate integration issue', async () => {
+    const { dir, configPath } = fixture('neatlogs: false, entire: false, cfoai: true, slack: false');
+    writeFileSync(configPath, readFileSync(configPath, 'utf8').replace('budget: { source: config, usd: 40 }', 'budget: { source: cfoai, usd: 10, cfoai: { publishRunContext: true } }'));
+    const worker = new FakeWorker();
+    const cfoai = new FakeCfoaiBudget(usdToNanos(40));
+    cfoai.failContext = true;
+    const result = await runRealTally({ configPath, dryRun: false, baseline: false, outputDir: join(dir, 'cfoai-context-failure'),
+      now: fixedNow, latestRunDir: join(dir, 'latest'), ports: { intake, signals, worker,
+        verifier: new SequenceVerifier([{ passed: true, reason: null }]), usage: worker, sessions: worker, publisher: worker, cfoai } });
+    expect(result.runState.tasks[0]?.status).toBe('passed');
+    expect(cfoai.writes).toHaveLength(1);
+    expect(result.runState.integrations.cfoai).toMatchObject({ status: 'error', detail: expect.stringContaining('Ari task-context write failed') });
   });
 
   it('reports scripted dry-run Entire sizing as neutral instead of missing', async () => {

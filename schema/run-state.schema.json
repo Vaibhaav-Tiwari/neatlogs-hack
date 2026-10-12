@@ -111,6 +111,7 @@
         "issueNumber": { "type": ["integer", "null"] },
         "issueUrl": { "type": ["string", "null"], "format": "uri" },
         "size": { "enum": ["small", "medium", "large", null] },
+        "sizingConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
         "status": { "enum": ["pending", "running", "passed", "failed", "skipped"] },
         "statusReason": { "type": ["string", "null"] },
         "attempts": { "type": "integer", "minimum": 0 },
