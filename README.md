@@ -2,6 +2,14 @@
 
 Tally is a CFO for coding agents: give it GitHub issues and a budget, and it routes, caps and verifies the work before opening pull requests.
 
+
+
+https://github.com/user-attachments/assets/df9dd8f3-9613-4d6b-b27e-b2ca700a43ae
+
+
+
+
+
 ## Install
 
 ```sh
