@@ -5,10 +5,10 @@ Tally is a CFO for coding agents: give it GitHub issues and a budget, and it rou
 
 
 ### Tally demo
-[![Watch the Tally demo](https://img.youtube.com/vi/UhWth0l9tBM/hqdefault.jpg)](https://youtu.be/UhWth0l9tBM)
+[![Watch the Tally demo](https://img.youtube.com/vi/UhWth0l9tBM/maxresdefault.jpg)](https://youtu.be/UhWth0l9tBM)
 
 ### Walkthrough of one of many PRs
-[![Watch the Tally demo](https://img.youtube.com/vi/3eK1HM9C9pI/hqdefault.jpg)](https://youtu.be/3eK1HM9C9pI)
+[![Watch the Tally demo](https://img.youtube.com/vi/3eK1HM9C9pI/maxresdefault.jpg)](https://youtu.be/3eK1HM9C9pI)
 
 
 
