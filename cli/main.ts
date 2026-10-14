@@ -1,6 +1,7 @@
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { join } from 'node:path';
 import { BacklogError } from '../engine/backlog.js';
 import { ConfigError, loadConfig } from '../engine/config.js';
 import { doctorHasFailures, runDoctor, type DoctorLine } from '../engine/doctor.js';
@@ -24,6 +25,24 @@ export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'docto
 export type Command = (typeof COMMANDS)[number];
 
 export const VERSION = '0.2.1';
+
+const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url));
+
+export function versionLines(verbose = false, packageRoot = PACKAGE_ROOT): string[] {
+  if (!verbose) return [VERSION];
+  try {
+    const release = JSON.parse(readFileSync(join(packageRoot, 'release-source.json'), 'utf8')) as {
+      sourceCommit?: unknown;
+      repository?: unknown;
+    };
+    if (typeof release.sourceCommit === 'string' && typeof release.repository === 'string') {
+      return [VERSION, `source: ${release.sourceCommit} (${release.repository})`];
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  return [VERSION, 'source: development checkout'];
+}
 
 export interface CliOptions {
   /** Path to tally.yaml. */
@@ -716,7 +735,7 @@ export async function main(argv: string[], io: CliIO = consoleIO): Promise<numbe
       io.stdout(USAGE);
       return 0;
     case 'version':
-      io.stdout(VERSION);
+      for (const line of versionLines(argv.includes('--verbose'))) io.stdout(line);
       return 0;
     case 'error':
       io.stderr(`tally: ${parsed.message}`);
