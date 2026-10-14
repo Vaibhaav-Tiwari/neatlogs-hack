@@ -1,0 +1,391 @@
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { resolve, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { lstat, readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { resolveEntireBinary } from '../adapters/command.js';
+async function installEntireCli() {
+    const run = promisify(execFile);
+    const options = { timeout: 180_000, maxBuffer: 1_000_000, encoding: 'utf8' };
+    if (process.platform === 'darwin') {
+        await run('brew', ['install', '--cask', 'entireio/tap/entire'], options);
+        const prefix = (await run('brew', ['--prefix'], options)).stdout.trim();
+        const binary = join(prefix, 'bin', 'entire');
+        return existsSync(binary) ? binary : 'entire';
+    }
+    if (process.platform === 'linux') {
+        await run('bash', ['-lc', 'curl -fsSL https://entire.io/install.sh | bash'], options);
+        const local = join(homedir(), '.local', 'bin', 'entire');
+        return existsSync(local) ? local : 'entire';
+    }
+    if (process.platform === 'win32') {
+        await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'irm https://entire.io/install.ps1 | iex'], options);
+        const binary = join(homedir(), '.local', 'bin', 'entire.exe');
+        return existsSync(binary) ? binary : 'entire';
+    }
+    throw new Error('Automatic Entire installation is not supported on this operating system.');
+}
+function missingExecutable(error) {
+    return !!error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT';
+}
+const command = async (file, args, options) => {
+    if (!options.interactive)
+        return promisify(execFile)(file, args, { cwd: options.cwd, timeout: 120_000, encoding: 'utf8' });
+    // Entire owns its login and keyring; Tally neither reads nor copies its tokens.
+    await new Promise((done, fail) => {
+        const child = spawn(file, args, { cwd: options.cwd, stdio: 'inherit' });
+        child.once('error', fail);
+        child.once('exit', code => code === 0 ? done() : fail(new Error('Entire login did not complete')));
+    });
+    return { stdout: '' };
+};
+const SETTINGS_FILES = ['.entire/settings.json', '.entire/.gitignore', '.claude/settings.json', '.codex/hooks.json', '.codex/config.toml', '.gitignore'];
+const json = (text) => {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        throw new Error('Unreadable Entire status');
+    return parsed;
+};
+async function readSettings(repoRoot, name) {
+    const directory = join(repoRoot, '.entire');
+    const path = join(directory, name);
+    try {
+        const dirInfo = await lstat(directory);
+        if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink())
+            throw new Error('Entire settings directory is not a regular directory');
+        const fileInfo = await lstat(path);
+        if (!fileInfo.isFile() || fileInfo.isSymbolicLink())
+            throw new Error(`Entire ${name} is not a regular file`);
+        return json(await readFile(path, 'utf8'));
+    }
+    catch (error) {
+        if (error.code === 'ENOENT')
+            return null;
+        throw error;
+    }
+}
+async function writeSettings(repoRoot, name, value) {
+    const directory = join(repoRoot, '.entire');
+    const path = join(directory, name);
+    const dirInfo = await lstat(directory);
+    if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink())
+        throw new Error('Entire settings directory is not a regular directory');
+    let mode = 0o644;
+    try {
+        const fileInfo = await lstat(path);
+        if (!fileInfo.isFile() || fileInfo.isSymbolicLink())
+            throw new Error(`Entire ${name} is not a regular file`);
+        mode = fileInfo.mode & 0o777;
+    }
+    catch (error) {
+        if (error.code !== 'ENOENT')
+            throw error;
+    }
+    await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode });
+}
+async function automaticCommitLinkingChanges(repoRoot) {
+    const project = await readSettings(repoRoot, 'settings.json');
+    const local = await readSettings(repoRoot, 'settings.local.json');
+    return {
+        project: project?.commit_linking !== 'always',
+        local: Boolean(local && Object.hasOwn(local, 'commit_linking') && local.commit_linking !== 'always'),
+    };
+}
+async function enableAutomaticCommitLinking(repoRoot) {
+    const project = await readSettings(repoRoot, 'settings.json') ?? {};
+    project.commit_linking = 'always';
+    await writeSettings(repoRoot, 'settings.json', project);
+    // A local override takes precedence over the shared project setting. Update it
+    // only when the user already has one; do not create ignored local state.
+    const local = await readSettings(repoRoot, 'settings.local.json');
+    if (local && Object.hasOwn(local, 'commit_linking') && local.commit_linking !== 'always') {
+        local.commit_linking = 'always';
+        await writeSettings(repoRoot, 'settings.local.json', local);
+    }
+}
+function mirrorRecords(output) {
+    const parsed = JSON.parse(output);
+    if (Array.isArray(parsed))
+        return parsed;
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.items)) {
+        return parsed.items;
+    }
+    throw new Error('Unreadable Entire mirror status');
+}
+export class EntireOnboarding {
+    cwd;
+    command;
+    install;
+    binary;
+    constructor(options = {}) {
+        this.cwd = resolve(options.cwd ?? process.cwd());
+        this.command = options.command ?? command;
+        this.install = options.install ?? installEntireCli;
+        this.binary = options.command ? 'entire' : resolveEntireBinary();
+    }
+    async run(file, args, interactive = false) {
+        return (await this.command(file === 'entire' ? this.binary : file, args, { cwd: this.cwd, interactive })).stdout.replace(/\r?\n$/, '');
+    }
+    async ensureCli(context) {
+        try {
+            await this.run('entire', ['--version']);
+            return true;
+        }
+        catch (error) {
+            if (!missingExecutable(error))
+                throw error;
+            context.ui.print('Entire CLI setup');
+            context.ui.print('  Tally can install the official Entire CLI for this computer.');
+            context.ui.print('  macOS: Homebrew cask. Linux: Entire stable installer. Windows: Entire PowerShell installer.');
+            context.ui.print('  This installs a local CLI. Login, Graph plugin, repository hooks, and repository mirror each have separate approval below.');
+            context.ui.print('  Install details: https://docs.entire.io/installation');
+            if (!await context.ui.confirm('Install Entire CLI using its official installer?'))
+                return false;
+            try {
+                this.binary = await this.install();
+                await this.run('entire', ['--version']);
+                context.ui.print('Entire CLI is installed and verified.');
+                return true;
+            }
+            catch {
+                context.ui.print('Entire CLI installation did not complete. No repository capture or hook changes were made.');
+                return false;
+            }
+        }
+    }
+    async loggedIn() {
+        return json(await this.run('entire', ['auth', 'status', '--json'])).logged_in === true;
+    }
+    async graphInstalled() {
+        return /^\s*graph\s+/m.test(await this.run('entire', ['plugin', 'list']));
+    }
+    async status() {
+        return json(await this.run('entire', ['status', '--json']));
+    }
+    async ensureMirror(context) {
+        const slug = context.config.repo.slug;
+        if (!slug)
+            return null;
+        const repoRef = `/gh/${slug}`;
+        let records;
+        try {
+            records = mirrorRecords(await this.run('entire', ['repo', 'mirror', 'list', '--json', '--mirrored', '--name', slug]));
+        }
+        catch {
+            const detail = `Could not check Entire mirror status. If you want a browser mirror, run \`entire repo mirror add ${repoRef}\` after onboarding.`;
+            context.ui.print(detail);
+            return detail;
+        }
+        const existing = records.find(record => record.repo === repoRef);
+        const placements = existing?.placements ?? [];
+        if (placements.some(placement => placement.status === 'ready')) {
+            const clusters = placements.filter(placement => placement.status === 'ready')
+                .map(placement => typeof placement.cluster === 'string' ? placement.cluster : null).filter(Boolean);
+            const detail = `Entire mirror ready${clusters.length ? ` on ${clusters.join(', ')}` : ''}.`;
+            context.ui.print(detail);
+            return detail;
+        }
+        context.ui.print('Optional Entire browser mirror');
+        context.ui.print(`  This creates a copy of ${slug} in Entire so checkpoint sessions can open in its web app.`);
+        context.ui.print('  The Entire CLI will ask which region or regions should store the copy. You can skip this.');
+        if (!await context.ui.confirm('Mirror this repository in Entire?')) {
+            context.ui.print('Entire mirror skipped. Graph sizing and local checkpoint capture remain enabled.');
+            return 'Entire mirror skipped.';
+        }
+        try {
+            await this.run('entire', ['repo', 'mirror', 'add', repoRef, '--timeout', '5m'], true);
+            const view = json(await this.run('entire', ['repo', 'view', repoRef, '--json']));
+            const ready = Array.isArray(view.placements) && view.placements.some(placement => !!placement && typeof placement === 'object' && placement.status === 'ready');
+            if (!ready)
+                throw new Error('Entire mirror is not ready yet');
+            context.ui.print(`Entire mirror ready for ${slug}.`);
+            return 'Entire mirror ready.';
+        }
+        catch {
+            const detail = `Entire capture remains enabled, but the mirror could not be verified. Retry with \`entire repo mirror add ${repoRef}\`.`;
+            context.ui.print(detail);
+            return detail;
+        }
+    }
+    async check() {
+        try {
+            await this.run('entire', ['--version']);
+            if (!await this.loggedIn())
+                return { status: 'missing', detail: 'Entire login is needed. Run entire login.' };
+            if (!await this.graphInstalled())
+                return { status: 'missing', detail: 'Entire graph plugin is missing. Run entire plugin install graph.' };
+            if ((await this.status()).enabled !== true)
+                return { status: 'missing', detail: 'Entire capture is not enabled in this repository.' };
+            return { status: 'ok', detail: 'Entire login, graph plugin and repository capture are available.' };
+        }
+        catch {
+            return { status: 'missing', detail: 'Entire is unavailable. Install from https://docs.entire.io/installation, then run tally init.' };
+        }
+    }
+    async connect(context) {
+        this.cwd = resolve(context.repoRoot ?? this.cwd);
+        try {
+            if (!await this.ensureCli(context))
+                return { status: 'off', detail: 'Entire CLI installation skipped or incomplete. Install from https://docs.entire.io/installation, then rerun tally init.' };
+            if (!await this.loggedIn()) {
+                context.ui.print('Entire account');
+                context.ui.print('  Entire uses its own login.');
+                context.ui.print('  No account? Sign up at https://entire.io. You can skip this integration.');
+                if (!await context.ui.confirm('Open a browser to sign in to Entire?'))
+                    return { status: 'off', detail: 'Entire login skipped.' };
+                await this.run('entire', ['login'], true);
+                if (!await this.loggedIn())
+                    throw new Error('Login not verified');
+            }
+            if (!await this.graphInstalled()) {
+                if (!await context.ui.confirm('Install the Entire graph plugin for code-impact sizing?'))
+                    return { status: 'off', detail: 'Entire graph installation skipped.' };
+                await this.run('entire', ['plugin', 'install', 'graph']);
+                if (!await this.graphInstalled())
+                    throw new Error('Graph plugin not available');
+            }
+            return { status: 'ok', detail: 'Entire login and graph plugin verified.' };
+        }
+        catch {
+            return { status: 'missing', detail: 'Entire connection did not complete. Run tally init to retry or install from https://docs.entire.io/installation.' };
+        }
+    }
+    async configure(context) {
+        const off = (detail) => {
+            context.ui.print(`${detail} Entire will be off. Sizing uses code search and will not use Entire checkpoint handoff.`);
+            return { enabled: false, state: { status: 'off', detail } };
+        };
+        const connection = await this.connect(context);
+        if (connection.status !== 'ok')
+            return off(connection.detail ?? 'Entire skipped.');
+        try {
+            const root = await this.run('git', ['rev-parse', '--show-toplevel']);
+            if (resolve(root) !== this.cwd)
+                return off('Entire setup needs the target repository root; no capture settings were changed.');
+            let status = await this.status();
+            const agents = new Set(Array.isArray(status.agents) ? status.agents.map(a => String(a).toLowerCase().replace(/ /g, '-')) : []);
+            const required = [...new Set(context.config.tiers.map(t => t.harness))].filter(a => a === 'codex' || a === 'claude-code');
+            const captureNeedsUpdate = status.enabled !== true || required.some(agent => !agents.has(agent));
+            const linkingChanges = await automaticCommitLinkingChanges(this.cwd);
+            const linkingNeedsUpdate = linkingChanges.project || linkingChanges.local;
+            if (linkingChanges.local && await this.run('git', ['ls-files', '--', '.entire/settings.local.json'])) {
+                return off('The Entire local settings override is tracked by Git. Remove its commit_linking override manually before Tally enables automatic session linking.');
+            }
+            let approvedPublishBranch = null;
+            if (!captureNeedsUpdate && linkingChanges.project) {
+                const branch = await this.run('git', ['branch', '--show-current']);
+                const remoteHead = await this.run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).catch(() => '');
+                const defaultBranch = remoteHead.startsWith('origin/') ? remoteHead.slice('origin/'.length) : null;
+                if (!defaultBranch || branch !== defaultBranch)
+                    return off('Entire session-linking update needs the repository default branch. No settings changed.');
+                const local = await this.run('git', ['rev-parse', 'HEAD']);
+                const remote = await this.run('git', ['rev-parse', `refs/remotes/origin/${defaultBranch}`]);
+                if (local !== remote)
+                    return off('Default branch has unpublished commits. Entire will not publish unrelated work or change session linking.');
+                approvedPublishBranch = defaultBranch;
+            }
+            if (captureNeedsUpdate || linkingNeedsUpdate) {
+                // A dirty checkout may contain unrelated or pre-existing settings changes. Never stage them.
+                if (captureNeedsUpdate && await this.run('git', ['status', '--porcelain']))
+                    return off('Entire capture setup needs a clean checkout so existing edits remain untouched.');
+                if (!captureNeedsUpdate && await this.run('git', ['status', '--porcelain', '--', '.entire/settings.json'])) {
+                    return off('Entire settings already contain unpublished edits. Review them before Tally changes commit linking.');
+                }
+                context.ui.print(captureNeedsUpdate ? 'Entire repository capture' : 'Entire automatic session linking');
+                context.ui.print(`  Repository: ${this.cwd}`);
+                if (captureNeedsUpdate) {
+                    context.ui.print('  Settings that may be added or updated:');
+                    for (const file of SETTINGS_FILES)
+                        context.ui.print(`    ${file}`);
+                    context.ui.print('  Entire also updates local Git hooks.');
+                    context.ui.print('  Settings must reach the default branch for worker worktrees to inherit them.');
+                    context.ui.print('  Review and trust the Entire hooks in your coding agent. Telemetry and generated summaries stay off.');
+                }
+                if (linkingNeedsUpdate)
+                    context.ui.print('  Commit linking: automatic for this repository; Tally worker commits will not stop for a session-context prompt.');
+                if (linkingChanges.local)
+                    context.ui.print('  Local override: .entire/settings.local.json will be updated in this checkout and will not be staged or pushed.');
+                const approval = captureNeedsUpdate
+                    ? linkingNeedsUpdate ? 'Enable these repository capture settings and automatic session linking?' : 'Enable these repository capture settings?'
+                    : linkingChanges.project
+                        ? `Enable automatic session linking and publish only this setting to origin/${approvedPublishBranch}?`
+                        : 'Enable automatic session linking for this checkout?';
+                if (!await context.ui.confirm(approval))
+                    return off('Entire repository setup declined.');
+                const primary = required[0] ?? 'claude-code';
+                if (status.enabled !== true) {
+                    await this.run('entire', ['enable', '--agent', primary, '--telemetry=false', '--project', '--no-init-repo', '--skip-initial-commit']);
+                    agents.add(primary);
+                }
+                for (const agent of required)
+                    if (!agents.has(agent))
+                        await this.run('entire', ['agent', 'add', agent]);
+                if (linkingNeedsUpdate)
+                    await enableAutomaticCommitLinking(this.cwd);
+                status = await this.status();
+                if (status.enabled !== true)
+                    throw new Error('Capture was not enabled');
+                const statusArgs = captureNeedsUpdate
+                    ? ['status', '--porcelain', '--untracked-files=all']
+                    : ['status', '--porcelain', '--', '.entire/settings.json'];
+                const lines = (await this.run('git', statusArgs)).split('\n').filter(Boolean);
+                const files = lines.map(line => line.slice(3));
+                if (captureNeedsUpdate && files.some(file => !SETTINGS_FILES.includes(file)))
+                    return off('Entire generated unexpected files. Review them before publishing. Nothing was committed or pushed.');
+                if (files.length) {
+                    context.ui.print('Generated settings to publish:');
+                    for (const file of files)
+                        context.ui.print(`  ${file}`);
+                    const branch = await this.run('git', ['branch', '--show-current']);
+                    const remoteHead = await this.run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).catch(() => '');
+                    const defaultBranch = remoteHead.startsWith('origin/') ? remoteHead.slice('origin/'.length) : null;
+                    if (!defaultBranch || branch !== defaultBranch)
+                        return off('Capture is enabled locally, but settings are not on the default branch. Publish them through your normal review process, then rerun init.');
+                    const local = await this.run('git', ['rev-parse', 'HEAD']);
+                    const remote = await this.run('git', ['rev-parse', `refs/remotes/origin/${defaultBranch}`]);
+                    if (local !== remote)
+                        return off('Default branch has unpublished commits. Entire setup will not publish unrelated work.');
+                    const publishAlreadyApproved = !captureNeedsUpdate && linkingChanges.project;
+                    if (!publishAlreadyApproved) {
+                        context.ui.print('Entire Git hooks may also publish checkpoint and session evidence.');
+                        if (!await context.ui.confirm(`Commit only these settings and push them to origin/${defaultBranch}?`))
+                            return off('Publishing settings declined. Local capture settings remain for review.');
+                    }
+                    if (await this.run('git', ['branch', '--show-current']) !== defaultBranch || await this.run('git', ['rev-parse', 'HEAD']) !== local) {
+                        return off('Checkout moved while awaiting approval; no settings were committed or pushed.');
+                    }
+                    await this.run('git', ['add', '--', ...files]);
+                    await this.run('git', ['commit', '-m', 'chore: enable Entire capture for Tally workers', '--', ...files]);
+                    const setupCommit = await this.run('git', ['rev-parse', 'HEAD']);
+                    if (await this.run('git', ['rev-parse', `${setupCommit}^`]) !== local)
+                        return off('Setup commit has an unexpected base; no push was attempted.');
+                    await this.run('git', ['push', 'origin', `${setupCommit}:refs/heads/${defaultBranch}`]);
+                }
+            }
+            context.ui.print('In your coding agent, open its hooks view, review the Entire capture hooks, and trust them for this repository. Tally cannot approve hooks for you.');
+            // Local enablement alone is insufficient: future workers inherit the default-branch files.
+            const pending = await this.run('git', ['status', '--porcelain', '--', ...SETTINGS_FILES]);
+            if (pending)
+                return off('Capture settings are still uncommitted. Entire remains off until they are published on the default branch.');
+            const published = json(await this.run('git', ['show', 'refs/remotes/origin/HEAD:.entire/settings.json']));
+            if (published.enabled !== true)
+                return off('Entire capture is not enabled on the remote default branch yet.');
+            for (const agent of required) {
+                const file = agent === 'codex' ? '.codex/hooks.json' : '.claude/settings.json';
+                const settings = await this.run('git', ['show', `refs/remotes/origin/HEAD:${file}`]);
+                if (!/\bentire\s+hooks\b/.test(settings))
+                    return off(`The default branch has no Entire ${agent} hooks yet.`);
+            }
+            if (!await context.ui.confirm('Have you reviewed and trusted the Entire hooks in your coding agent for this repository?')) {
+                return off('Hook trust is not confirmed. Entire remains off until you trust the hooks.');
+            }
+            const mirror = await this.ensureMirror(context);
+            return { enabled: true, state: { status: 'ok', detail: ['Entire login, graph and repository capture are configured.', mirror, 'Generated summaries remain off by default.'].filter(Boolean).join(' ') } };
+        }
+        catch {
+            return off('Entire setup could not be verified. Any generated files remain for review. No further changes were attempted.');
+        }
+    }
+}
+//# sourceMappingURL=entire.js.map

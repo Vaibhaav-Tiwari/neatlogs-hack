@@ -1,0 +1,69 @@
+# Config for the local dry-run demo:
+#   npm run tally -- run --dry-run --config demo/tally.yaml
+version: 1
+
+repo:
+  path: .
+  slug: demo/invoice-ledger
+  baseBranch: main
+
+test:
+  command: npm test
+
+backlog:
+  source: file
+  file: sample-backlog.yaml
+
+tiers:
+  - name: cheap
+    harness: claude-code
+    provider: litellm
+    model: nova-micro
+    price: { inputUsdPerMTok: 0.035, cachedInputUsdPerMTok: 0.00875, outputUsdPerMTok: 0.14 }
+    ceilingFraction: 0.2
+  - name: middle
+    harness: claude-code
+    provider: litellm
+    model: claude-sonnet-4.6
+    price: { inputUsdPerMTok: 3.3, cachedInputUsdPerMTok: 0.33, outputUsdPerMTok: 16.5 }
+    ceilingFraction: 0.5
+  - name: top
+    harness: claude-code
+    provider: litellm
+    model: claude-opus-4.6
+    price: { inputUsdPerMTok: 5.5, cachedInputUsdPerMTok: 0.55, outputUsdPerMTok: 27.5 }
+    ceilingFraction: 1
+
+ceilings:
+  bySizeUsd: { small: 1, medium: 4, large: 10 }
+
+budget:
+  source: config
+  usd: 40
+  # To read/write the live monthly budget in cfo.ai, set source: cfoai,
+  # integrations.cfoai: true, fill the placeholder fields below from your
+  # cfo.ai workspace, then run: tally login cfoai
+  cfoai:
+    orgId: "<cfoai-org-id>"
+    scenario: "<scenario-name>"
+    table: "<budget-table-name>"
+    budgetRow: "<budget-row-name>"
+    spendRow: "<spend-row-name>"
+    remainingRow: "<remaining-row-name>"
+    tableUrl: "https://app.cfo.ai/s/example-budget-table"
+    spendDetailTable: "<spend-detail-table-name>"
+    spendDetailTableUrl: "https://app.cfo.ai/s/example-spend-detail-table"
+    tierSpendRows:
+      cheap: "<cheap-tier-spend-row>"
+      middle: "<middle-tier-spend-row>"
+      top: "<top-tier-spend-row>"
+    runSpendRow: "<current-run-spend-row>"
+    cumulativeRunSpendRow: "<cumulative-run-spend-row>"
+
+concurrency: 3
+
+integrations:
+  neatlogs: false
+  entire: false
+  cfoai: false
+  slack: false

@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tally.dev/schema/run-state.schema.json",
+  "title": "RunState",
+  "description": "The state of one run: budget, spend and per-task status. Money is integer nanos of USD.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "mode",
+    "dryRun",
+    "status",
+    "repo",
+    "baseCommit",
+    "startedAt",
+    "updatedAt",
+    "endedAt",
+    "budget",
+    "tasks",
+    "integrations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["tally", "baseline"] },
+    "repeat": { "type": "integer", "minimum": 1 },
+    "dryRun": { "type": "boolean" },
+    "status": { "enum": ["running", "finished", "interrupted"] },
+    "repo": { "type": "string", "minLength": 1 },
+    "backlog": {
+      "type": "object", "additionalProperties": false, "required": ["source"],
+      "properties": {
+        "source": { "enum": ["github-issues", "file"] },
+        "issueLabel": { "type": "string" },
+        "file": { "type": "string" }
+      }
+    },
+    "baseCommit": { "type": ["string", "null"] },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": ["string", "null"], "format": "date-time" },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "limitNanos", "spentNanos"],
+      "properties": {
+        "source": { "enum": ["config", "cfoai"] },
+        "monthly": {
+          "type": "object", "additionalProperties": false,
+          "required": ["source", "limitNanos", "spentBeforeRunNanos"],
+          "properties": {
+            "source": { "enum": ["config", "cfoai"] },
+            "limitNanos": { "type": "integer", "minimum": 0 },
+            "spentBeforeRunNanos": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "limitSource": { "enum": ["config", "cfoai", "cli"] },
+        "systemOfRecord": { "enum": ["ledger", "cfoai"] },
+        "cfoai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pageUrl": { "type": "string", "format": "uri", "pattern": "^https://[^/?#\\s]+" },
+            "tableUrl": { "type": "string", "format": "uri", "pattern": "^https://[^/?#\\s]+" }
+          }
+        },
+        "limitNanos": { "type": "integer", "minimum": 0 },
+        "spentNanos": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/task" }
+    },
+    "integrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["neatlogs", "entire", "cfoai", "github", "slack"],
+      "properties": {
+        "neatlogs": { "$ref": "#/definitions/integration" },
+        "entire": { "$ref": "#/definitions/integration" },
+        "cfoai": { "$ref": "#/definitions/integration" },
+        "github": { "$ref": "#/definitions/integration" },
+        "slack": { "$ref": "#/definitions/integration" }
+      }
+    }
+  },
+  "definitions": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "title",
+        "issueNumber",
+        "issueUrl",
+        "size",
+        "status",
+        "statusReason",
+        "attempts",
+        "tier",
+        "model",
+        "spentNanos",
+        "escalated",
+        "prUrl"
+      ],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "issueNumber": { "type": ["integer", "null"] },
+        "issueUrl": { "type": ["string", "null"], "format": "uri" },
+        "size": { "enum": ["small", "medium", "large", null] },
+        "sizingConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "status": { "enum": ["pending", "running", "passed", "failed", "skipped"] },
+        "statusReason": { "type": ["string", "null"] },
+        "attempts": { "type": "integer", "minimum": 0 },
+        "tier": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "spentNanos": { "type": "integer", "minimum": 0 },
+        "escalated": { "type": "boolean" },
+        "prUrl": { "type": ["string", "null"], "format": "uri" },
+        "changedFiles": { "$ref": "#/definitions/changedFiles" },
+        "impact": { "$ref": "#/definitions/impact" }
+      }
+    },
+    "relativePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+" },
+    "changedFiles": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/relativePath" } },
+    "impact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "query", "nodes", "edges", "totals", "truncated"],
+      "properties": {
+        "source": { "enum": ["entire-graph", "code-search", "scripted", "none"] },
+        "query": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "nodes": { "type": "array", "maxItems": 40, "items": {
+          "type": "object", "additionalProperties": false, "required": ["id", "kind"],
+          "properties": {
+            "id": { "$ref": "#/definitions/relativePath" },
+            "kind": { "enum": ["target", "caller", "coChange", "test"] },
+            "symbol": { "type": "string" }, "weight": { "type": "number" }
+          }
+        } },
+        "edges": { "type": "array", "maxItems": 80, "items": {
+          "type": "object", "additionalProperties": false, "required": ["from", "to", "kind"],
+          "properties": {
+            "from": { "$ref": "#/definitions/relativePath" }, "to": { "$ref": "#/definitions/relativePath" },
+            "kind": { "enum": ["calls", "changesWith", "tests"] }
+          }
+        } },
+        "totals": { "type": "object", "additionalProperties": false, "required": ["filesTouched", "dependents", "testsPresent", "nodes", "edges"], "properties": {
+          "filesTouched": { "type": "integer", "minimum": 0 }, "dependents": { "type": "integer", "minimum": 0 }, "testsPresent": { "type": "boolean" },
+          "nodes": { "type": "integer", "minimum": 0 }, "edges": { "type": "integer", "minimum": 0 }
+        } }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "detail"],
+      "properties": {
+        "status": { "enum": ["ok", "off", "missing", "error"] },
+        "detail": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

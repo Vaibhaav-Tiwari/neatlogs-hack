@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tally</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23f2e8d0'/%3E%3Cg stroke='%2317130d' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M17 13v38M27 12v40M37 13v38M47 12v40'/%3E%3C/g%3E%3Cpath d='M8 46 56 18' stroke='%23cf2e17' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="sheet">
+
+  <header class="head">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 64 64" role="img" aria-label="Tally mark: four strokes crossed by a fifth">
+        <g class="mark-strokes"><path d="M17 13v38M27 12v40M37 13v38M47 12v40"/></g>
+        <path class="mark-slash" d="M8 46 56 18"/>
+      </svg>
+      <div>
+        <h1>Tally</h1>
+        <p class="strap">Every dollar a fleet of coding agents spends, entered against the pull request it bought.</p>
+      </div>
+    </div>
+    <dl class="run" id="run"></dl>
+  </header>
+
+  <p class="notice" id="notice" hidden></p>
+  <p class="data-source" id="data-source"></p>
+  <section class="run-picker" id="run-picker" aria-label="Recorded runs" hidden></section>
+
+  <section class="summary" aria-label="Summary">
+    <div class="headline" id="headline"></div>
+    <div class="budget" id="budget"></div>
+  </section>
+
+  <section class="comparison-section" id="comparison-section" aria-labelledby="comparison-title" hidden>
+    <h2 id="comparison-title">Comparison</h2>
+    <p class="section-note" id="comparison-note">Baseline against Tally for this backlog: cost per passed task, pass rate, total cost, and repeat spread.</p>
+    <div id="comparison"></div>
+  </section>
+
+  <section class="integrations" id="integrations" aria-label="Integrations"></section>
+
+  <section class="ledger-section" aria-labelledby="ledger-title">
+    <h2 id="ledger-title">Ledger <span class="h2-note">work, decisions and paid attempts</span></h2>
+    <div id="ledger"></div>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<script src="config.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

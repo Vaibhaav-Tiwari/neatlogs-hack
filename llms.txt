@@ -1,0 +1,10 @@
+# Tally
+
+> A CFO for coding agents: route, cap, escalate, verify and open PRs. Never merge.
+
+## Instructions
+
+- [Agent guide](https://raw.githubusercontent.com/Vaibhaav-Tiwari/neatlogs-hack/main/docs/AGENT_GUIDE.md): Self-contained commands, human choices, safety and failure responses; read first.
+- [Getting started](https://raw.githubusercontent.com/Vaibhaav-Tiwari/neatlogs-hack/main/docs/GETTING_STARTED.md): Human onboarding and troubleshooting.
+- [Evidence](https://raw.githubusercontent.com/Vaibhaav-Tiwari/neatlogs-hack/main/docs/EVIDENCE.md): Recorded proofs and limits.
+- [Business plan](https://raw.githubusercontent.com/Vaibhaav-Tiwari/neatlogs-hack/main/docs/BUSINESS_PLAN.md): Measured results and labelled assumptions.

@@ -1,0 +1,60 @@
+{
+  "name": "tally-agents",
+  "version": "0.2.1",
+  "description": "A CFO for a fleet of coding agents: budgets, routing, ceilings and a ledger per task.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vaibhaav-Tiwari/neatlogs-hack.git"
+  },
+  "homepage": "https://github.com/Vaibhaav-Tiwari/neatlogs-hack#readme",
+  "bugs": {
+    "url": "https://github.com/Vaibhaav-Tiwari/neatlogs-hack/issues"
+  },
+  "keywords": [
+    "agents",
+    "ai-agents",
+    "coding-agents",
+    "cli",
+    "budget",
+    "finops",
+    "dashboard"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "dashboard/",
+    "demo/sample-backlog.yaml",
+    "demo/tally.yaml",
+    "demo/tally.live.yaml",
+    "docs/",
+    "docs/AGENT_GUIDE.md",
+    "llms.txt",
+    "schema/*.schema.json",
+    "schema/fixtures/finished-run/run.json",
+    "schema/fixtures/finished-run/ledger.json",
+    "schema/fixtures/finished-run/tally.yaml",
+    "README.md",
+    "LICENSE",
+    "!**/*.test.*",
+    "!dist/**/testing/**",
+    "!docs/assets/**",
+    "!dashboard/.gitkeep",
+    "release-source.json"
+  ],
+  "bin": {
+    "tally": "bin/tally.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@neatlogs/codex": "^0.1.1",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "neatlogs": "^1.1.28",
+    "yaml": "^2.9.1"
+  }
+}

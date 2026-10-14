@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tally.dev/schema/tally-config.schema.json",
+  "title": "TallyConfig",
+  "description": "tally.yaml. Everything about the target repository and the model tiers comes from here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "repo", "test", "backlog", "tiers", "ceilings", "budget", "integrations"],
+  "properties": {
+    "version": { "const": 1 },
+    "runner": { "enum": ["ao", "direct"], "default": "ao" },
+    "claudeCode": {
+      "type": "object", "additionalProperties": false, "required": ["allow"],
+      "properties": { "allow": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 }, "minItems": 1 } }
+    },
+    "repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "baseBranch"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "slug": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" },
+        "baseBranch": { "type": "string", "minLength": 1 },
+        "aoProject": { "type": "string", "minLength": 1 },
+        "aoBin": { "type": "string", "minLength": 1 },
+        "workerPublishesPr": { "type": "boolean" },
+        "blockOutOfScopeChanges": { "type": "boolean", "default": false }
+      }
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "setupCommand": { "type": "string", "minLength": 1 },
+        "timeoutSec": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "backlog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source"],
+      "properties": {
+        "source": { "enum": ["github-issues", "file"] },
+        "issueLabel": { "type": "string", "minLength": 1 },
+        "file": { "type": "string", "minLength": 1 }
+      }
+    },
+    "tiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "harness", "model", "provider", "price", "ceilingFraction"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "harness": { "enum": ["codex", "claude-code"] },
+          "sessionMode": { "type": "string", "enum": ["chat", "tui"] },
+          "model": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "minLength": 1 },
+          "priceNote": { "type": "string" },
+          "price": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["inputUsdPerMTok", "cachedInputUsdPerMTok", "outputUsdPerMTok"],
+            "properties": {
+              "inputUsdPerMTok": { "type": "number", "minimum": 0 },
+              "cachedInputUsdPerMTok": { "type": "number", "minimum": 0 },
+              "outputUsdPerMTok": { "type": "number", "minimum": 0 }
+            }
+          },
+          "ceilingFraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "modelAccessFallbackTier": { "type": "string", "minLength": 1 },
+    "ceilings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bySizeUsd"],
+      "properties": {
+        "bySizeUsd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["small", "medium", "large"],
+          "properties": {
+            "small": { "type": "number", "exclusiveMinimum": 0 },
+            "medium": { "type": "number", "exclusiveMinimum": 0 },
+            "large": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "usd"],
+      "properties": {
+        "source": { "enum": ["config", "cfoai"] },
+        "usd": { "type": "number", "exclusiveMinimum": 0 },
+        "cfoai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "orgId": { "type": "string", "minLength": 1 },
+            "scenario": { "type": "string", "minLength": 1 },
+            "pageName": { "type": "string", "minLength": 1 },
+            "table": { "type": "string", "minLength": 1 },
+            "budgetRow": { "type": "string", "minLength": 1 },
+            "spendRow": { "type": "string", "minLength": 1 },
+            "remainingRow": { "type": "string", "minLength": 1 },
+            "spendDetailTable": { "type": "string", "minLength": 1 },
+            "spendDetailTableUrl": { "type": "string", "format": "uri" },
+            "publishRunContext": { "type": "boolean", "default": false },
+            "tierSpendRows": {
+              "type": "object",
+              "additionalProperties": { "type": "string", "minLength": 1 }
+            },
+            "runSpendRow": { "type": "string", "minLength": 1 },
+            "cumulativeRunSpendRow": { "type": "string", "minLength": 1 },
+            "tableUrl": { "type": "string", "format": "uri", "pattern": "^https://[^/?#\\s]+" },
+            "pageUrl": { "type": "string", "format": "uri", "pattern": "^https://[^/?#\\s]+" },
+            "serverUrl": { "type": "string", "format": "uri" }
+          }
+        }
+      }
+    },
+    "concurrency": { "type": "integer", "minimum": 1, "default": 1 },
+    "parallelWorkers": { "type": "integer", "minimum": 1 },
+    "entire": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "generatedSummaries": { "type": "boolean", "default": false } }
+    },
+    "integrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["neatlogs", "entire", "cfoai", "slack"],
+      "properties": {
+        "neatlogs": { "type": "boolean" },
+        "entire": { "type": "boolean" },
+        "cfoai": { "type": "boolean" },
+        "slack": { "type": "boolean" }
+      }
+    }
+  }
+}

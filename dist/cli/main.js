@@ -1,0 +1,732 @@
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+import { BacklogError } from '../engine/backlog.js';
+import { ConfigError, loadConfig } from '../engine/config.js';
+import { doctorHasFailures, runDoctor } from '../engine/doctor.js';
+import { InitError, runInit } from '../engine/init.js';
+import { CommandError } from '../adapters/command.js';
+import { runUninstall } from '../engine/uninstall.js';
+import { runExperiment } from '../engine/experiment.js';
+import { planTally, readPlanBudget } from '../engine/plan.js';
+import { RunError, runDemo, runTally } from '../engine/run.js';
+import { recoverRunTraces } from '../engine/trace-recovery.js';
+import { loginCfoai } from '../adapters/cfoai.js';
+import { CrustDataError, runCrustDataMarketSearch } from '../adapters/crustdata.js';
+import { formatUsd } from '../schema/index.js';
+import { startDashboardServer } from './dashboard-server.js';
+import { openDashboardBrowser, waitForDashboard } from './dashboard-lifecycle.js';
+import { publishSite } from './publish.js';
+import { logoFrame, logoSeen, processTerminal, SETTLED, showLogo } from './logo.js';
+import { createTerminalStyle, formatDoctorLine, formatInitLine } from '../ui/terminal.js';
+export const COMMANDS = ['run', 'demo', 'dashboard', 'init', 'uninstall', 'doctor', 'login', 'market', 'publish', 'experiment', 'traces', 'logo'];
+export const VERSION = '0.2.1';
+function printDoctorLine(line, io, style = createTerminalStyle()) {
+    for (const output of formatDoctorLine(line, style))
+        io.stdout(output);
+}
+function splitPlanClauses(value) {
+    const clauses = [];
+    let part = '';
+    let parentheses = 0;
+    for (const character of value) {
+        if (character === '(')
+            parentheses += 1;
+        if (character === ')')
+            parentheses = Math.max(0, parentheses - 1);
+        if (character === ';') {
+            if (parentheses > 0)
+                part += ',';
+            else {
+                if (part.trim())
+                    clauses.push(part.trim());
+                part = '';
+            }
+        }
+        else
+            part += character;
+    }
+    if (part.trim())
+        clauses.push(part.trim());
+    return clauses;
+}
+function printPlanText(label, value, io) {
+    const clauses = splitPlanClauses(value);
+    if (!clauses.length)
+        return;
+    io.stdout(`  ${label}:`);
+    for (const clause of clauses) {
+        const prefix = '    - ';
+        const continuation = ' '.repeat(prefix.length);
+        const words = clause.split(/\s+/);
+        let line = prefix;
+        for (const word of words) {
+            if (line.length > prefix.length && line.length + word.length + 1 > 88) {
+                io.stdout(line);
+                line = `${continuation}${word}`;
+            }
+            else {
+                line += line.length === prefix.length ? word : ` ${word}`;
+            }
+        }
+        io.stdout(line);
+    }
+}
+const USAGE = `tally: a CFO for a fleet of coding agents
+
+Usage: tally <command> [options]
+
+Commands:
+  experiment Run baseline and Tally repeats with a shared safety budget
+  run      Run the backlog against the budget in tally.yaml
+  demo     Run the full loop with simulated workers on a sample backlog
+  dashboard Start the local dashboard server
+  init     Set up tally.yaml for the current repository
+  uninstall List and remove the recorded Tally installation
+  doctor   Check that each integration is connected
+  login    Connect an integration, e.g. tally login cfoai
+  market   Find and qualify likely pilot companies with CrustData
+  publish  Write a static dashboard bundle (does not deploy)
+  traces drain --run <id> Drain and read-back verify a finished run's worker traces
+  logo     Replay the Tally logo animation
+
+Options:
+  --repeats <N>     Repeats per experiment mode (default: 2)
+  --config <path>   Path to tally.yaml (default: tally.yaml)
+  --dry-run         Simulate workers; spends nothing
+  --budget <usd>    Override the budget for this run
+  --only <task>     Run a single task
+  --parallel <N>    Opt into up to N AO workers (default: 1; direct is sequential)
+  --baseline        Send every task to the strongest tier
+  --dashboard       Serve the dashboard before run/demo; keep serving until Ctrl+C
+  --open            Also open the dashboard in the browser
+  --port <number>   Dashboard port (default: 5177; use 0 for any free port)
+  --plan            Size and route tasks, but do not spawn workers
+  --live            For demo: use live read-only integrations with fake workers
+  --yes             Approve init changes or explicitly budgeted paid experiments
+  --test-command <cmd> For init: verification shell command
+  --setup-command <cmd> For init: setup shell command (empty means none)
+  --issue-label <label> For init: GitHub issue label (default: tally)
+  --neatlogs <yes|no> --entire <yes|no> --cfoai <yes|no> Init product opt-ins
+  --verbose         For init: include the full proposed YAML
+  --runner <ao|direct> For init: AO workers or sequential direct workers
+  --harness <claude-code|codex|mixed> For init: coding agent choice (Codex is default)
+  --model-access-fallback-tier <name> For init: override the default cheap-tier fallback
+  --allow-claude     For init: explicitly consent to the printed repository allow-list
+  --output <dir>    Output directory for tally market (default: .tally/market/latest)
+  --limit <number>  Result limit for tally market (default: 10)
+  --keyword <text>  Optional exact description phrase for tally market
+  --max-credits <N> Market estimated credit cap (default: 10); refuses above cap
+  --replay <query.json> Replay cached market snapshot; no API calls
+  --review <json>   Apply human review labels to a cached market snapshot
+  --jobs            Search engineering job posts for explicit coding-tool evidence
+  --secondary <query.json> Include a cached firmographic table in the job report
+                    market --plan checks free account pricing, without a search
+  --out <dir>       New directory for tally publish (required)
+  --runs <ids>      Comma-separated run folder ids (default: all real runs)
+  --run <id>        Run id for traces drain; --output overrides its run directory
+  -h, --help        Show this help
+  -v, --version     Show the version`;
+export function parseCli(argv) {
+    let parsed;
+    try {
+        parsed = parseArgs({
+            args: argv,
+            allowPositionals: true,
+            options: {
+                config: { type: 'string', default: 'tally.yaml' },
+                'dry-run': { type: 'boolean', default: false },
+                baseline: { type: 'boolean', default: false },
+                budget: { type: 'string' },
+                only: { type: 'string' },
+                parallel: { type: 'string' },
+                dashboard: { type: 'boolean', default: false },
+                open: { type: 'boolean', default: false },
+                port: { type: 'string' },
+                plan: { type: 'boolean', default: false },
+                live: { type: 'boolean', default: false },
+                yes: { type: 'boolean', default: false },
+                'test-command': { type: 'string' },
+                'setup-command': { type: 'string' },
+                'issue-label': { type: 'string' },
+                neatlogs: { type: 'string' },
+                entire: { type: 'string' },
+                cfoai: { type: 'string' },
+                verbose: { type: 'boolean', default: false },
+                runner: { type: 'string' },
+                harness: { type: 'string' },
+                'model-access-fallback-tier': { type: 'string' },
+                'allow-claude': { type: 'boolean', default: false },
+                output: { type: 'string' },
+                limit: { type: 'string' },
+                keyword: { type: 'string' },
+                replay: { type: 'string' },
+                review: { type: 'string' },
+                'max-credits': { type: 'string' },
+                jobs: { type: 'boolean', default: false },
+                secondary: { type: 'string' },
+                repeats: { type: 'string' },
+                out: { type: 'string' },
+                runs: { type: 'string' },
+                run: { type: 'string' },
+                help: { type: 'boolean', short: 'h', default: false },
+                version: { type: 'boolean', short: 'v', default: false },
+            },
+        });
+    }
+    catch (e) {
+        return { kind: 'error', message: e.message };
+    }
+    const { values, positionals } = parsed;
+    if (values.help)
+        return { kind: 'help' };
+    if (values.version)
+        return { kind: 'version' };
+    const [name, ...extra] = positionals;
+    if (name === undefined)
+        return { kind: 'help' };
+    if (!COMMANDS.includes(name)) {
+        return { kind: 'error', message: `unknown command "${name}"; expected one of ${COMMANDS.join(', ')}` };
+    }
+    if (name === 'login') {
+        if (extra[0] !== 'cfoai')
+            return { kind: 'error', message: 'login expects an integration: cfoai' };
+        if (extra.length > 1)
+            return { kind: 'error', message: `unexpected argument "${extra[1]}"` };
+    }
+    else if (name === 'traces') {
+        if (extra.length !== 1 || extra[0] !== 'drain' || !values.run)
+            return { kind: 'error', message: 'traces expects drain --run <id>' };
+        if (!/^[a-zA-Z0-9_-]+$/.test(values.run))
+            return { kind: 'error', message: 'Invalid run id' };
+        if (values['dry-run'] || values.plan)
+            return { kind: 'error', message: 'traces drain verifies real delivery; --dry-run and --plan are not supported' };
+    }
+    else if (extra.length > 0) {
+        return { kind: 'error', message: `unexpected argument "${extra[0]}"` };
+    }
+    let budgetUsd;
+    if (values.runner && !['ao', 'direct'].includes(values.runner))
+        return { kind: 'error', message: '--runner must be ao or direct' };
+    if (values.harness && !['claude-code', 'codex', 'mixed'].includes(values.harness))
+        return { kind: 'error', message: '--harness must be claude-code, codex or mixed' };
+    if (values['model-access-fallback-tier'] !== undefined && name !== 'init')
+        return { kind: 'error', message: '--model-access-fallback-tier is only valid for init' };
+    if (values['model-access-fallback-tier'] !== undefined && !values['model-access-fallback-tier'].trim())
+        return { kind: 'error', message: '--model-access-fallback-tier cannot be empty' };
+    const integrations = {};
+    for (const name of ['neatlogs', 'entire', 'cfoai']) {
+        if (values[name] === undefined)
+            continue;
+        if (!['yes', 'no'].includes(values[name]))
+            return { kind: 'error', message: `--${name} must be yes or no` };
+        integrations[name] = values[name] === 'yes';
+    }
+    if (values['test-command'] !== undefined && !values['test-command'].trim())
+        return { kind: 'error', message: '--test-command cannot be empty; Tally needs a verification command' };
+    if (values['issue-label'] !== undefined && !values['issue-label'].trim())
+        return { kind: 'error', message: '--issue-label cannot be empty' };
+    if (values.budget !== undefined) {
+        budgetUsd = Number(values.budget);
+        if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
+            return { kind: 'error', message: `--budget must be a positive number of USD, got "${values.budget}"` };
+        }
+    }
+    let port;
+    const parallel = values.parallel === undefined ? undefined : Number(values.parallel);
+    if (parallel !== undefined && (!Number.isInteger(parallel) || parallel < 1))
+        return { kind: 'error', message: '--parallel must be a positive integer' };
+    if (values.port !== undefined) {
+        port = Number(values.port);
+        if (!Number.isInteger(port) || port < 0 || port > 65535) {
+            return { kind: 'error', message: `--port must be an integer from 0 to 65535, got "${values.port}"` };
+        }
+    }
+    let limit;
+    const maxCredits = values['max-credits'] === undefined ? undefined : Number(values['max-credits']);
+    if (maxCredits !== undefined && (!Number.isFinite(maxCredits) || maxCredits <= 0))
+        return { kind: 'error', message: '--max-credits must be positive' };
+    let repeats;
+    if (values.repeats !== undefined) {
+        repeats = Number(values.repeats);
+        if (!Number.isInteger(repeats) || repeats < 1)
+            return { kind: 'error', message: '--repeats must be a positive integer' };
+    }
+    if (values.limit !== undefined) {
+        limit = Number(values.limit);
+        if (!Number.isInteger(limit) || limit <= 0 || limit > 100) {
+            return { kind: 'error', message: `--limit must be an integer from 1 to 100, got "${values.limit}"` };
+        }
+    }
+    return {
+        kind: 'command',
+        command: name,
+        options: {
+            config: values.config,
+            dryRun: values['dry-run'],
+            baseline: values.baseline,
+            budgetUsd,
+            ...(parallel === undefined ? {} : { parallel }),
+            only: values.only,
+            dashboard: values.dashboard || values.open,
+            ...(values.open ? { open: true } : {}),
+            port,
+            plan: values.plan,
+            live: values.live,
+            ...(values.yes ? { yes: true } : {}),
+            ...(values['test-command'] === undefined ? {} : { testCommand: values['test-command'] }),
+            ...(values['setup-command'] === undefined ? {} : { setupCommand: values['setup-command'] }),
+            ...(values['issue-label'] === undefined ? {} : { issueLabel: values['issue-label'] }),
+            ...(values.verbose ? { verbose: true } : {}),
+            ...(values.runner ? { runner: values.runner } : {}),
+            ...(values.harness ? { harnessChoice: values.harness } : {}),
+            ...(values['model-access-fallback-tier'] === undefined ? {} : { modelAccessFallbackTier: values['model-access-fallback-tier'] }),
+            ...(values['allow-claude'] ? { allowClaude: true } : {}),
+            ...(Object.keys(integrations).length ? { integrations } : {}),
+            ...(repeats === undefined ? {} : { repeats }),
+            loginTarget: name === 'login' ? 'cfoai' : undefined,
+            output: values.output,
+            limit,
+            keyword: values.keyword,
+            ...(values.replay === undefined ? {} : { replay: values.replay }),
+            ...(values.review === undefined ? {} : { review: values.review }),
+            ...(maxCredits === undefined ? {} : { maxCredits }),
+            ...(values.jobs ? { jobs: true } : {}),
+            ...(values.secondary === undefined ? {} : { secondary: values.secondary }),
+            ...(values.out !== undefined ? { out: values.out } : {}),
+            ...(values.runs !== undefined ? { runs: values.runs.split(',') } : {}),
+            ...(values.run !== undefined ? { runId: values.run } : {}),
+        },
+    };
+}
+async function runCommand(options, io) {
+    let dashboard;
+    let interrupted = null;
+    const interrupt = () => { interrupted = 'interrupted by user; workers stopped'; };
+    try {
+        if (options.plan) {
+            const config = loadConfig(options.config);
+            const budget = await readPlanBudget(config, { budgetUsd: options.budgetUsd });
+            printBudget({ source: budget.source, limitSource: budget.limitSource, limitNanos: budget.limitNanos, spentNanos: 0,
+                monthly: { source: budget.source, limitNanos: budget.monthlyLimitNanos, spentBeforeRunNanos: budget.monthlySpentNanos } }, io);
+            if (budget.warning)
+                io.stdout(`Budget note: ${budget.warning}`);
+            io.stdout('Planning tasks. Enabled history reads are bounded. No workers will start.');
+            const plan = await planTally({
+                configPath: options.config,
+                dryRun: options.dryRun,
+                baseline: options.baseline,
+                budgetUsd: options.budgetUsd,
+                only: options.only,
+                budgetInfo: budget,
+            });
+            if (plan.length === 0) {
+                if (options.only)
+                    io.stdout(`No task matched --only ${JSON.stringify(options.only)}; nothing would start.`);
+                else if (config.backlog.source === 'github-issues') {
+                    const label = config.backlog.issueLabel ?? 'tally';
+                    const repo = config.repo.slug ?? config.repo.path;
+                    io.stdout(`No runnable open issues with label ${JSON.stringify(label)} in ${repo}; nothing would start. Issues already linked to open PRs are excluded. Check the label and backlog before starting a run.`);
+                }
+                else {
+                    io.stdout(`No tasks found in the configured file backlog${config.backlog.file ? ` ${JSON.stringify(config.backlog.file)}` : ''}; nothing would start.`);
+                }
+            }
+            for (const task of plan) {
+                const route = task.skipped
+                    ? 'skip'
+                    : `${task.tier} ${task.harness}/${task.model} ceiling ${task.ceilingNanos === null ? 'none' : formatUsd(task.ceilingNanos)}`;
+                io.stdout(`${task.taskId}: ${task.size} (confidence ${task.confidence.toFixed(2)}) -> ${route}`);
+                const historySources = task.historySources.map((source) => {
+                    if (source === 'neatlogs')
+                        return 'remote Neatlogs';
+                    if (source === 'local')
+                        return config.integrations.neatlogs ? 'local Neatlogs fallback' : 'local history';
+                    return 'none';
+                });
+                io.stdout(`  History source: ${historySources.join(', ')}`);
+                if (task.entire)
+                    printPlanText(`Entire: ${task.entire.status === 'ok' ? 'connected' : 'setup needed'}`, task.entire.detail ?? 'Graph sizing available and used.', io);
+                if (task.historyDetail)
+                    printPlanText('History note', task.historyDetail, io);
+                printPlanText('Decision', task.decision, io);
+            }
+            return 0;
+        }
+        if (options.dashboard)
+            dashboard = await launchDashboard(options, io);
+        process.on('SIGINT', interrupt);
+        process.on('SIGTERM', interrupt);
+        const result = await runTally({
+            configPath: options.config,
+            dryRun: options.dryRun,
+            baseline: options.baseline,
+            budgetUsd: options.budgetUsd,
+            only: options.only,
+            parallel: options.parallel,
+            stopRequested: () => interrupted,
+            onEvent: progressPrinter(io),
+        });
+        io.stdout(`wrote ${result.runStatePath}`);
+        io.stdout(`wrote ${result.ledgerPath}`);
+        io.stdout(`updated ${result.latestRunDir}`);
+        io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+        if (result.runState.tasks.length === 0 && result.runState.backlog?.source === 'github-issues') {
+            const label = result.runState.backlog.issueLabel ?? 'tally';
+            const quote = (value) => `'${value.replace(/'/g, "'\\''")}'`;
+            io.stdout(`No runnable open issues with label ${JSON.stringify(label)} in ${result.runState.repo}; nothing started. Issues already linked to open PRs are excluded. Label an issue with: gh issue edit <issue-number> --repo ${quote(result.runState.repo)} --add-label ${quote(label)}`);
+        }
+        printIntegrations(result, io);
+        printRunSummary(result, io, dashboard?.url);
+        process.off('SIGINT', interrupt);
+        process.off('SIGTERM', interrupt);
+        if (interrupted) {
+            await dashboard?.close();
+            return 130;
+        }
+        if (dashboard)
+            await waitForDashboard(dashboard);
+        return 0;
+    }
+    catch (e) {
+        await dashboard?.close();
+        return reportError('tally run', e, io);
+    }
+    finally {
+        process.off('SIGINT', interrupt);
+        process.off('SIGTERM', interrupt);
+    }
+}
+async function initCommand(options, io) {
+    const style = createTerminalStyle();
+    io.stdout(style.heading('TALLY / FIRST RUN'));
+    try {
+        if (!process.stdin.isTTY && !options.yes && !options.dryRun)
+            throw new InitError('Interactive init needs a terminal; use --yes with --test-command, --setup-command, --budget, --issue-label, product flags and optional --model-access-fallback-tier for scripted input.');
+        const result = await runInit({ configPath: options.config, yes: options.yes, dryRun: options.dryRun, print: line => io.stdout(formatInitLine(line, style)),
+            testCommand: options.testCommand, setupCommand: options.setupCommand, budgetUsd: options.budgetUsd,
+            issueLabel: options.issueLabel, integrations: options.integrations, verbose: options.verbose,
+            runner: options.runner, harnessChoice: options.harnessChoice, allowClaude: options.allowClaude,
+            modelAccessFallbackTier: options.modelAccessFallbackTier });
+        if (!result.applied) {
+            io.stdout(options.dryRun ? 'Dry run: no changes made.' : 'Init cancelled: no changes made.');
+            return 0;
+        }
+        io.stdout(`${style.paint('Saved', 'success')}  ${result.configPath}`);
+        io.stdout(`${style.paint('Project', 'brand')}  ${result.projectId || 'direct runner'}`);
+        io.stdout(`${style.paint('Verify', 'brand')}   ${result.testCommand}`);
+        if (result.setupCommand)
+            io.stdout(`${style.paint('Setup', 'brand')}    ${result.setupCommand}`);
+        io.stdout(`${style.paint('Tiers', 'brand')}    ${result.tiers.join(', ')}`);
+        io.stdout(style.heading('POST-SETUP CHECK'));
+        for (const line of result.doctor)
+            printDoctorLine(line, io, style);
+        return doctorHasFailures(result.doctor) ? 1 : 0;
+    }
+    catch (e) {
+        io.stderr(`${style.paint('tally init', 'error')}: ${e instanceof Error ? e.message : 'initialization failed; no changes confirmed'}`);
+        return 2;
+    }
+}
+async function uninstallCommand(options, io) {
+    try {
+        const result = await runUninstall({ configPath: options.config, print: io.stdout });
+        io.stdout(result.removed ? 'Tally installation removed; run data and credentials retained.' : 'Uninstall cancelled.');
+        return 0;
+    }
+    catch (error) {
+        return reportError('tally uninstall', error, io);
+    }
+}
+async function demoCommand(_options, io) {
+    let dashboard;
+    try {
+        if (_options.dashboard)
+            dashboard = await launchDashboard(_options, io);
+        const result = await runDemo({ live: _options.live, onEvent: progressPrinter(io) });
+        io.stdout(`wrote ${result.runStatePath}`);
+        io.stdout(`wrote ${result.ledgerPath}`);
+        io.stdout(`updated ${result.latestRunDir}`);
+        io.stdout(`finished ${result.runState.runId}: ${result.runState.tasks.length} tasks, ${result.ledger.length} attempts`);
+        printIntegrations(result, io);
+        printRunSummary(result, io, dashboard?.url);
+        if (dashboard)
+            await waitForDashboard(dashboard);
+        return 0;
+    }
+    catch (e) {
+        await dashboard?.close();
+        return reportError('tally demo', e, io);
+    }
+}
+function printBudget(budget, io) {
+    const monthly = budget.monthly ?? { source: budget.source, limitNanos: budget.limitNanos, spentBeforeRunNanos: 0 };
+    const runRemaining = Math.max(0, budget.limitNanos - budget.spentNanos);
+    const monthlyRemaining = Math.max(0, monthly.limitNanos - monthly.spentBeforeRunNanos - budget.spentNanos);
+    const effectiveRemaining = Math.min(monthlyRemaining, runRemaining);
+    const style = createTerminalStyle();
+    io.stdout(style.heading('Budget availability'));
+    io.stdout(`  Monthly remaining  ${formatUsd(monthlyRemaining)} of ${formatUsd(monthly.limitNanos)}  ${style.paint(`(${monthly.source === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`, 'muted')}`);
+    io.stdout(`  Run cap            ${formatUsd(budget.limitNanos)}  ${style.paint(`(${budget.limitSource === 'cli' ? 'CLI --budget' : budget.limitSource === 'cfoai' ? 'cfo.ai' : 'tally.yaml'})`, 'muted')}`);
+    io.stdout(`  Available now      ${style.paint(formatUsd(effectiveRemaining), 'success')}`);
+}
+function progressPrinter(io) {
+    const lastSpend = new Map();
+    return event => {
+        if (event.type === 'budget')
+            printBudget(event.budget, io);
+        else if (event.type === 'route') {
+            io.stdout(`${event.taskId}: ${event.size} (confidence ${event.confidence.toFixed(2)}) -> ${event.tier ? `${event.tier} ${event.harness}/${event.model} ceiling ${event.ceilingNanos === null ? 'none' : formatUsd(event.ceilingNanos)}` : 'skip'}`);
+            io.stdout(`  ${event.decision}`);
+        }
+        else if (event.type === 'worker')
+            io.stdout(`${event.taskId} attempt ${event.attempt}: worker ${event.sessionId} started on ${event.tier}`);
+        else if (event.type === 'spend') {
+            const key = `${event.taskId}:${event.attempt}`;
+            const now = Date.now();
+            if (!lastSpend.has(key) || now - lastSpend.get(key) >= 10000) {
+                io.stdout(`${event.taskId} attempt ${event.attempt}: spend ${formatUsd(event.costNanos)}`);
+                lastSpend.set(key, now);
+            }
+        }
+        else
+            io.stdout(`${event.row.taskId} attempt ${event.row.attempt}: ${event.row.result} ${formatUsd(event.row.estimatedCostNanos)}${event.row.resultReason ? ` (${event.row.resultReason})` : ''}${event.row.prUrl ? ` ${event.row.prUrl}` : ''}`);
+    };
+}
+function printRunSummary(result, io, dashboardUrl) {
+    const style = createTerminalStyle();
+    const passed = result.runState.tasks.filter(task => task.status === 'passed').length;
+    const failed = result.runState.tasks.filter(task => task.status === 'failed').length;
+    const skipped = result.runState.tasks.filter(task => task.status === 'skipped').length;
+    io.stdout(style.heading('Run summary'));
+    io.stdout(`  Tasks: ${passed} passed, ${failed} failed, ${skipped} skipped`);
+    io.stdout(`  Total spend: ${formatUsd(result.runState.budget.spentNanos)}`);
+    io.stdout(`  Run cap: ${formatUsd(result.runState.budget.limitNanos)}`);
+    printBudget(result.runState.budget, io);
+    for (const url of new Set(result.runState.tasks.flatMap(task => task.prUrl ? [task.prUrl] : [])))
+        io.stdout(`PR ${url}`);
+    io.stdout(`run folder ${result.outputDir}`);
+    if (dashboardUrl)
+        io.stdout(`dashboard ${dashboardUrl} (serving until Ctrl+C)`);
+}
+function printIntegrations(result, io) {
+    const style = createTerminalStyle();
+    const labels = { neatlogs: 'Neatlogs', entire: 'Entire', cfoai: 'cfo.ai', github: 'GitHub', slack: 'Slack' };
+    io.stdout(style.heading('Sponsor integrations'));
+    for (const [name, state] of Object.entries(result.runState.integrations)) {
+        const status = state.status === 'ok' ? 'connected' : state.status === 'off' ? 'off' : state.status === 'missing' ? 'missing' : 'error';
+        io.stdout(`  ${style.paint((labels[name] ?? name).padEnd(12), 'bold')} ${style.status(status)}`);
+        if (state.detail)
+            io.stdout(`    ${style.paint(state.detail, state.status === 'error' ? 'error' : 'muted')}`);
+    }
+}
+async function loginCommand(options, io) {
+    if (options.loginTarget !== 'cfoai')
+        return reportError('tally login', new RunError(['login expects an integration: cfoai']), io);
+    try {
+        const result = await loginCfoai();
+        io.stdout(`cfo.ai connected. Tokens cached at ${result.tokenPath}`);
+        return 0;
+    }
+    catch (e) {
+        io.stderr(`tally login cfoai: ${e.message}`);
+        return 2;
+    }
+}
+async function dashboardCommand(options, io) {
+    const dashboard = await launchDashboard(options, io);
+    await waitForDashboard(dashboard);
+    return 0;
+}
+async function launchDashboard(options, io) {
+    const dashboard = await startDashboardServer({ port: options.port });
+    io.stdout(`dashboard ${dashboard.url}`);
+    io.stdout(`data ${dashboard.dataUrl}`);
+    if (options.open) {
+        try {
+            await openDashboardBrowser(dashboard.url);
+        }
+        catch {
+            io.stderr(`Could not open a browser; open ${dashboard.url} manually.`);
+        }
+    }
+    return dashboard;
+}
+async function doctorCommand(options, io) {
+    const style = createTerminalStyle();
+    const lines = await runDoctor({ configPath: options.config });
+    io.stdout('');
+    io.stdout(style.heading('TALLY / SYSTEM CHECK'));
+    io.stdout(style.paint('Configured connections and local prerequisites', 'muted'));
+    for (const line of lines)
+        for (const output of formatDoctorLine(line, style))
+            io.stdout(output);
+    const failed = lines.some(line => ['missing', 'broken', 'error'].includes(line.status));
+    io.stdout('');
+    io.stdout(failed
+        ? style.paint('Some configured items need attention. Follow the next steps above.', 'warning')
+        : style.paint('Checks complete. Optional items marked OFF can stay that way.', 'success'));
+    return doctorHasFailures(lines) ? 1 : 0;
+}
+async function marketCommand(options, io) {
+    try {
+        if (options.dryRun && !options.replay)
+            throw new CrustDataError('Market --dry-run requires --replay; use --plan for a free pricing check');
+        const result = await runCrustDataMarketSearch({
+            outputDir: options.output,
+            limit: options.limit,
+            keyword: options.keyword,
+            replay: options.replay,
+            review: options.review,
+            maxCredits: options.maxCredits,
+            jobs: options.jobs,
+            secondary: options.secondary,
+            plan: options.plan,
+            onEstimate: credits => io.stdout(`estimated maximum: ${credits} credits; cap: ${options.maxCredits ?? 10}`),
+        });
+        if (options.plan) {
+            io.stdout('market plan: no company search or output files written');
+            return 0;
+        }
+        io.stdout(`wrote ${result.queryPath}`);
+        io.stdout(`wrote ${result.companiesPath}`);
+        io.stdout(`wrote ${result.csvPath}`);
+        io.stdout(`wrote ${result.reportPath}`);
+        io.stdout(`market: ${result.companies.length} returned prospects; ${result.totalCount ?? 'unknown'} API query matches (not adoption or market size)`);
+        io.stdout(`credits: ${result.creditCost ?? 'not reported'}${result.replayed ? ' originally; cached replay made no API calls' : ''}`);
+        return 0;
+    }
+    catch (e) {
+        return reportError('tally market', e, io);
+    }
+}
+function reportError(prefix, error, io) {
+    if (error instanceof CommandError || error instanceof InitError || error instanceof ConfigError || error instanceof BacklogError || error instanceof RunError || error instanceof CrustDataError) {
+        io.stderr(`${prefix}: ${error.message}`);
+        return 2;
+    }
+    throw error;
+}
+const handlers = {
+    traces: async (options, io) => {
+        try {
+            const result = await recoverRunTraces({ runId: options.runId, outputDir: options.output });
+            io.stdout(`neatlogs: ${result.before.status} -> ${result.after.status}`);
+            io.stdout(result.after.detail ?? '');
+            return 0;
+        }
+        catch (error) {
+            io.stderr(`tally traces drain: ${error instanceof Error ? error.message : 'Trace recovery failed'}`);
+            return 2;
+        }
+    },
+    experiment: async (options, io) => {
+        let interrupted = null;
+        const interrupt = () => { interrupted = 'stopped: experiment interrupted'; };
+        process.on('SIGINT', interrupt);
+        process.on('SIGTERM', interrupt);
+        try {
+            if (options.plan || options.baseline || options.live)
+                throw new RunError(['experiment runs both modes; --plan/--baseline/--live are not supported here. Use tally run --plan to preview a mode.']);
+            const result = await runExperiment({ configPath: options.config, dryRun: options.dryRun, repeats: options.repeats, budgetUsd: options.budgetUsd, only: options.only,
+                allowReal: options.yes, stopRequested: () => interrupted, onEvent: progressPrinter(io), beforeRun: async (run) => { io.stdout(`starting ${run.mode} repeat ${run.repeat}: ${run.runId} (verification only; no pushes or PRs)`); } });
+            io.stdout(`wrote ${result.summaryPath}`);
+            io.stdout(`experiment ${result.summary.status}: ${result.summary.reason ?? result.summary.experimentId}`);
+            if (options.dashboard)
+                await dashboardCommand(options, io);
+            return result.summary.status === 'finished' ? 0 : 1;
+        }
+        catch (error) {
+            return reportError('tally experiment', error, io);
+        }
+        finally {
+            process.off('SIGINT', interrupt);
+            process.off('SIGTERM', interrupt);
+        }
+    },
+    publish: async (options, io) => {
+        try {
+            if (!options.out)
+                throw new Error('publish requires --out <dir>');
+            const result = publishSite({ out: options.out, runs: options.runs });
+            for (const file of result.files)
+                io.stdout(`${file.path}: ${file.bytes} bytes`);
+            io.stdout(`bundle: ${result.files.length} files, ${result.totalBytes} bytes`);
+            return 0;
+        }
+        catch (error) {
+            io.stderr(`tally publish: ${error.message}`);
+            return 2;
+        }
+    },
+    logo: async (_options, io) => {
+        // Reached only where it could not be drawn (a pipe, CI, a dumb terminal): print it as plain text.
+        for (const line of logoFrame(SETTLED, 'none'))
+            io.stdout(line);
+        return 0;
+    },
+    run: runCommand,
+    demo: demoCommand,
+    dashboard: dashboardCommand,
+    init: initCommand,
+    uninstall: uninstallCommand,
+    doctor: doctorCommand,
+    login: loginCommand,
+    market: marketCommand,
+};
+const consoleIO = {
+    stdout: (line) => console.log(line),
+    stderr: (line) => console.error(line),
+};
+/** Plays or prints the logo on a real terminal. Tests and other callers that pass their own io never see it. */
+async function greet(argv, parsed) {
+    let intent = 'other';
+    let interactive = true;
+    if (parsed.kind === 'help')
+        intent = argv.length === 0 ? 'bare' : 'help';
+    else if (parsed.kind === 'command' && parsed.command === 'logo')
+        intent = 'logo';
+    else if (parsed.kind === 'command' && parsed.command === 'init') {
+        intent = 'init';
+        interactive = Boolean(process.stdin.isTTY) && !parsed.options.yes && !parsed.options.dryRun;
+    }
+    if (intent === 'other')
+        return false;
+    const plan = await showLogo({
+        intent,
+        interactive,
+        env: process.env,
+        isTTY: Boolean(process.stdout.isTTY),
+        columns: process.stdout.columns ?? 80,
+        rows: process.stdout.rows ?? 24,
+        colorDepth: process.stdout.isTTY ? process.stdout.getColorDepth() : 1,
+        seen: logoSeen(),
+    }, processTerminal());
+    return plan.show !== 'none';
+}
+/** Returns the process exit code. */
+export async function main(argv, io = consoleIO) {
+    const parsed = parseCli(argv);
+    const greeted = io === consoleIO && (await greet(argv, parsed));
+    if (greeted && parsed.kind === 'command' && parsed.command === 'logo')
+        return 0;
+    switch (parsed.kind) {
+        case 'help':
+            io.stdout(USAGE);
+            return 0;
+        case 'version':
+            io.stdout(VERSION);
+            return 0;
+        case 'error':
+            io.stderr(`tally: ${parsed.message}`);
+            io.stderr('Run `tally --help` for usage.');
+            return 2;
+        case 'command':
+            return handlers[parsed.command](parsed.options, io);
+    }
+}
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+    process.exitCode = await main(process.argv.slice(2));
+}
+//# sourceMappingURL=main.js.map
