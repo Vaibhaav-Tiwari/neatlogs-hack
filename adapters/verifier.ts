@@ -30,7 +30,7 @@ export type WorktreeResolver = (repoPath: string, branch: string) => Promise<str
 export type EntireVerifyRunner = (args: string[], options: { cwd?: string }) => Promise<{ stdout: string; stderr: string; code: number }>;
 
 function defaultRunner(command: string, options: { cwd: string; timeout?: number }) {
-  return execAsync(command, { cwd: options.cwd, timeout: options.timeout });
+  return execAsync(command, { cwd: options.cwd, timeout: options.timeout, maxBuffer: 64 * 1024 * 1024 });
 }
 
 async function defaultWorktreeResolver(repoPath: string, branch: string): Promise<string | null> {
@@ -77,7 +77,18 @@ export class CommandVerifier implements VerifierPort {
       await this.run(input.config.test.command, { cwd: checkoutPath, timeout: (input.config.test.timeoutSec ?? 900) * 1000 });
       return { passed: true, reason: null };
     } catch (e) {
-      const error = e as { code?: unknown; signal?: unknown; stderr?: unknown; message?: string };
+      const error = e as { code?: unknown; signal?: unknown; killed?: unknown; stderr?: unknown; message?: string };
+
+      // Detect buffer exhaustion kill
+      if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+        return { passed: false, reason: 'command was terminated by Tally: stdout/stderr buffer limit exceeded' };
+      }
+
+      // Detect timeout kill (SIGTERM when killed by timeout)
+      if (error.killed === true || error.signal) {
+        return { passed: false, reason: 'command was terminated by Tally: timeout limit exceeded' };
+      }
+
       const detail = typeof error.stderr === 'string' && error.stderr.trim() ? error.stderr.trim().split('\n').slice(-3).join('\n') : error.message;
       return { passed: false, reason: `tests failed${error.code ? ` (${String(error.code)})` : ''}${detail ? `: ${detail}` : ''}` };
     }

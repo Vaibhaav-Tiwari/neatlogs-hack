@@ -39,6 +39,52 @@ describe('CommandVerifier', () => {
     });
     expect(commands).toEqual([{ command: 'npm test', cwd: '/tmp/task-1' }]);
   });
+
+  it('detects buffer exhaustion as a Tally-side problem, not a test failure', async () => {
+    const verifier = new CommandVerifier(async () => {
+      const error = new Error('stdout maxBuffer length exceeded');
+      (error as any).code = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+      throw error;
+    });
+
+    const result = await verifier.verify({ checkoutPath: '/tmp/task-1', config });
+    expect(result.passed).toBe(false);
+    expect(result.reason).toBe('command was terminated by Tally: stdout/stderr buffer limit exceeded');
+    expect(result.reason).not.toContain('tests failed');
+  });
+
+  it('detects timeout kill as a Tally-side problem, not a test failure', async () => {
+    const verifier = new CommandVerifier(async () => {
+      const error = new Error('Command timed out after 900000ms');
+      (error as any).killed = true;
+      (error as any).signal = 'SIGTERM';
+      throw error;
+    });
+
+    const result = await verifier.verify({ checkoutPath: '/tmp/task-1', config });
+    expect(result.passed).toBe(false);
+    expect(result.reason).toBe('command was terminated by Tally: timeout limit exceeded');
+    expect(result.reason).not.toContain('tests failed');
+  });
+
+  it('handles real shell command that outputs over 1 MB and exits 0', async () => {
+    // This test uses the real defaultRunner to ensure the maxBuffer fix is effective
+    // It should pass because the command exits with code 0 even though it produces lots of output
+    const verifier = new CommandVerifier();
+    const result = await verifier.verify({
+      checkoutPath: '/tmp',
+      config: {
+        ...config,
+        test: {
+          command: `node -e "for (let i = 0; i < 40000; i++) console.log('x'.repeat(60)); process.exit(0)"`,
+          timeoutSec: 30,
+        },
+      },
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.reason).toBeNull();
+  });
 });
 
 describe('parseEntireVerifyVerdict', () => {
